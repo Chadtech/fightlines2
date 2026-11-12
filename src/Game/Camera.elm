@@ -3,11 +3,13 @@ module Game.Camera exposing
     , Viewport
     , anchor
     , boardWidth
+    , coordinateAt
     , frame
     , setOffset
     , transform
     )
 
+import Game.Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
 import Point exposing (Point)
 
@@ -86,6 +88,44 @@ transform camera =
         ++ ")"
 
 
+boardPixels : Point -> Float
+boardPixels size =
+    min (0.92 * size.x) (0.98 * size.y)
+
+
+{-| Convert a point relative to the navigation surface's center to a map tile.
+-}
+coordinateAt : Point -> Map -> Camera -> Point -> Maybe Coordinate
+coordinateAt size map camera point =
+    let
+        tilePixels : Float
+        tilePixels =
+            boardPixels size * camera.zoom / toFloat map.width
+
+        position : Coordinate
+        position =
+            { x = floor ((point.x - camera.offset.x) / tilePixels + toFloat map.width / 2)
+            , y = floor ((point.y - camera.offset.y) / tilePixels + toFloat map.height / 2)
+            }
+
+        insideViewport : Bool
+        insideViewport =
+            (abs point.x < size.x / 2) && (abs point.y < size.y / 2)
+
+        insideMap : Bool
+        insideMap =
+            (position.x >= 0)
+                && (position.x < map.width)
+                && (position.y >= 0)
+                && (position.y < map.height)
+    in
+    if insideViewport && insideMap then
+        Just position
+
+    else
+        Nothing
+
+
 {-| Keep the view unless a subject tile is clipped. Reframe with one tile of
 breathing room, reducing zoom only when the group cannot fit the viewport.
 Viewport dimensions and offsets are in pixels; subject positions are in tiles.
@@ -115,9 +155,9 @@ frame viewport map positions camera =
                 width =
                     toFloat map.width
 
-                boardPixels : Float
-                boardPixels =
-                    min (0.92 * viewport.size.x) (0.98 * viewport.size.y)
+                widthPixels : Float
+                widthPixels =
+                    boardPixels viewport.size
 
                 visibleWidth : Float
                 visibleWidth =
@@ -129,7 +169,7 @@ frame viewport map positions camera =
 
                 tilePixels : Float
                 tilePixels =
-                    boardPixels * camera.zoom / width
+                    widthPixels * camera.zoom / width
 
                 left : Float
                 left =
@@ -151,8 +191,8 @@ frame viewport map positions camera =
                 zoom =
                     min camera.zoom
                         (min
-                            (visibleWidth * width / (boardPixels * (bounds.right - bounds.left + 3)))
-                            (visibleHeight * width / (boardPixels * (bounds.bottom - bounds.top + 3)))
+                            (visibleWidth * width / (widthPixels * (bounds.right - bounds.left + 3)))
+                            (visibleHeight * width / (widthPixels * (bounds.bottom - bounds.top + 3)))
                         )
 
                 subjectsVisible : Bool
@@ -169,8 +209,8 @@ frame viewport map positions camera =
                 { zoom = zoom
                 , offset =
                     { x =
-                        -(bounds.left + bounds.right + 1 - width) / 2 * boardPixels * zoom / width - viewport.rightInset / 2
+                        -(bounds.left + bounds.right + 1 - width) / 2 * widthPixels * zoom / width - viewport.rightInset / 2
                     , y =
-                        -(bounds.top + bounds.bottom + 1 - toFloat map.height) / 2 * boardPixels * zoom / width - viewport.bottomInset / 2
+                        -(bounds.top + bounds.bottom + 1 - toFloat map.height) / 2 * widthPixels * zoom / width - viewport.bottomInset / 2
                     }
                 }

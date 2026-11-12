@@ -63,8 +63,10 @@ import LobbyId
     exposing
         ( LobbyId
         )
+import NonEmptyList
 import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
+import ScreenSize exposing (ScreenSize)
 import Shared
 import Style as S
 import Time
@@ -75,6 +77,7 @@ import View.CardHeader as CardHeader
 import View.Dialog as Dialog
 import View.RequestError as RequestError
 import View.Select as Select
+import View.Tabs as Tabs exposing (Tabs)
 import View.TextField as TextField
 
 
@@ -114,6 +117,8 @@ type alias Player =
 type alias Model =
     { shared : Shared.Model
     , chat : Chat.Model
+    , tab : LobbyTab
+    , unreadChat : Bool
     , id : LobbyId
     , name : String
     , mapType : MapId
@@ -140,6 +145,11 @@ type Location
 type Screen
     = Setup
     | Library LibraryState
+
+
+type LobbyTab
+    = PlayersTab
+    | ChatTab
 
 
 type alias LibraryState =
@@ -184,11 +194,13 @@ type alias CopyResult =
 
 type Msg
     = SideInputChanged PlayerNumber
+    | LobbyTabClicked LobbyTab
+    | LobbyTabNavigated LobbyTab
     | ChatMsg ChatView.Msg
     | ChatPollElapsed Time.Posix
     | ChatPollReceived (Response (List Chat.Message))
     | ChatSendReceived Chat.Submission (Response Chat.Message)
-    | ChatFocusReturned (Result Browser.Dom.Error ())
+    | LobbyFocusReturned (Result Browser.Dom.Error ())
     | ChatScrollCompleted (Result Browser.Dom.Error ())
     | ControllerInputChanged Controller
     | KickPlayerButtonClicked Player
@@ -282,6 +294,8 @@ init location shared flags =
         model =
             { shared = shared
             , chat = Chat.init flags.messages |> Chat.open
+            , tab = PlayersTab
+            , unreadChat = False
             , id = lobby.id
             , name = lobby.name
             , mapType = lobby.mapType
@@ -621,9 +635,53 @@ applyChatUpdate chat model =
     ( next, scroll )
 
 
+lobbyUsesTabs : Model -> Bool
+lobbyUsesTabs model =
+    let
+        size : ScreenSize
+        size =
+            model.shared.screenSize
+    in
+    (size.width > size.height) && (size.height <= 500) && (size.width <= 1023)
+
+
+chatVisible : Model -> Bool
+chatVisible model =
+    (model.screen == Setup) && (not (lobbyUsesTabs model) || (model.tab == ChatTab))
+
+
+lobbyTabHtmlId : LobbyTab -> String
+lobbyTabHtmlId tab =
+    case tab of
+        PlayersTab ->
+            "lobby-players-tab"
+
+        ChatTab ->
+            "lobby-chat-tab"
+
+
+selectLobbyTab : LobbyTab -> Model -> ( Model, Eff Msg )
+selectLobbyTab tab model =
+    case tab of
+        PlayersTab ->
+            { model | tab = PlayersTab }
+                |> E.withOut
+
+        ChatTab ->
+            let
+                next : Model
+                next =
+                    { model
+                        | tab = ChatTab
+                        , unreadChat = False
+                    }
+            in
+            ( next, scrollChatHistory next )
+
+
 scrollChatHistory : Model -> Eff Msg
 scrollChatHistory model =
-    if (model.screen == Setup) && Chat.followsHistory model.chat then
+    if chatVisible model && Chat.followsHistory model.chat then
         E.scrollToBottom { htmlId = ChatView.messagesHtmlId } ChatScrollCompleted
 
     else
@@ -633,9 +691,21 @@ scrollChatHistory model =
 openChat : Model -> ( Model, Eff Msg )
 openChat model =
     if (model.screen == Setup) && not model.shared.devPanelOpen then
-        ( model
-        , E.focus { htmlId = ChatView.inputHtmlId } ChatFocusReturned
-        )
+        let
+            selected : ( Model, Eff Msg )
+            selected =
+                if lobbyUsesTabs model then
+                    selectLobbyTab ChatTab model
+
+                else
+                    ( model, E.none )
+        in
+        selected
+            |> E.and
+                (E.focus
+                    { htmlId = ChatView.inputHtmlId }
+                    LobbyFocusReturned
+                )
 
     else
         model
@@ -722,6 +792,17 @@ pollChat model =
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
+        LobbyTabClicked tab ->
+            selectLobbyTab tab model
+
+        LobbyTabNavigated tab ->
+            selectLobbyTab tab model
+                |> E.and
+                    (E.focus
+                        { htmlId = lobbyTabHtmlId tab }
+                        LobbyFocusReturned
+                    )
+
         ChatMsg chatMsg ->
             handleChatMsg chatMsg model
 
@@ -732,24 +813,30 @@ update msg model =
             case result of
                 Ok messages ->
                     let
+                        incoming : Bool
+                        incoming =
+                            Chat.hasNewIncoming
+                                { known = model.chat.messages
+                                , received = messages
+                                , ownNames =
+                                    model.players
+                                        |> List.filter .isYou
+                                        |> List.map .name
+                                }
+
                         notification : Eff Msg
                         notification =
-                            if
-                                Chat.hasNewIncoming
-                                    { known = model.chat.messages
-                                    , received = messages
-                                    , ownNames =
-                                        model.players
-                                            |> List.filter .isYou
-                                            |> List.map .name
-                                    }
-                            then
+                            if incoming then
                                 E.audio Audio.chatReceived
 
                             else
                                 E.none
                     in
-                    model
+                    { model
+                        | unreadChat =
+                            not (chatVisible model)
+                                && (incoming || model.unreadChat)
+                    }
                         |> applyChatUpdate (Chat.receive messages model.chat)
                         |> E.and notification
 
@@ -768,8 +855,8 @@ update msg model =
 
                 focus : Eff Msg
                 focus =
-                    if (model.screen == Setup) && Chat.isOpen chat && not (isBusy model) then
-                        E.focus { htmlId = ChatView.inputHtmlId } ChatFocusReturned
+                    if chatVisible model && Chat.isOpen chat && not (isBusy model) then
+                        E.focus { htmlId = ChatView.inputHtmlId } LobbyFocusReturned
 
                     else
                         E.none
@@ -794,7 +881,7 @@ update msg model =
                     model
                         |> E.withOut
 
-        ChatFocusReturned result ->
+        LobbyFocusReturned result ->
             case result of
                 Ok _ ->
                     model
@@ -1151,6 +1238,9 @@ pageView model =
                             , S.flex1
                             , S.minH0
                             , S.col
+                            , S.shortLandscape
+                                [ S.pt4
+                                ]
                             , S.belowWidth 400
                                 [ S.pt16
                                 ]
@@ -1170,6 +1260,10 @@ pageView model =
             , S.wFull
             , S.minH0
             , S.overflowHidden
+            , S.shortLandscape
+                [ S.g1
+                , S.pb2
+                ]
             ]
         ]
         content
@@ -1285,9 +1379,13 @@ libraryView model library =
                 , S.g4
                 , S.flex1
                 , S.minH0
-                , S.belowWidth 720
+                , S.belowWidthExceptShortLandscape 720
                     [ S.col
                     , S.overflowAuto
+                    ]
+                , S.shortLandscape
+                    [ S.row
+                    , S.g2
                     ]
                 ]
             ]
@@ -1299,9 +1397,14 @@ libraryView model library =
                     , S.col
                     , S.g3
                     , S.minH0
-                    , S.belowWidth 720
+                    , S.belowWidthExceptShortLandscape 720
                         [ S.wFull
                         , S.h48
+                        ]
+                    , S.shortLandscape
+                        [ S.w40Pct
+                        , S.hAuto
+                        , S.g2
                         ]
                     ]
                 ]
@@ -1336,9 +1439,13 @@ libraryView model library =
                     , S.wFull
                     , S.minH0
                     , S.col
-                    , S.belowWidth 720
+                    , S.belowWidthExceptShortLandscape 720
                         [ S.minH76
                         , S.shrink0
+                        ]
+                    , S.shortLandscape
+                        [ S.minH0
+                        , S.wAuto
                         ]
                     ]
                 ]
@@ -1383,9 +1490,14 @@ mapDetailsView map =
             , S.g4
             , S.flex1
             , S.minH0
-            , S.belowWidth 1100
+            , S.belowWidthExceptShortLandscape 1100
                 [ S.gridCols1
                 , S.gridRows "minmax(0, 1.2fr) minmax(0, 1fr)"
+                ]
+            , S.shortLandscape
+                [ S.gridCols2
+                , S.gridRows "minmax(0, 1fr)"
+                , S.g2
                 ]
             ]
         ]
@@ -1463,9 +1575,14 @@ lobbyView model =
             , S.wFull
             , S.flex1
             , S.minH0
-            , S.belowWidth 720
+            , S.belowWidthExceptShortLandscape 720
                 [ S.col
                 , S.overflowAuto
+                ]
+            , S.shortLandscape
+                [ S.grid
+                , S.gridRows "minmax(0, 1fr)"
+                , S.g2
                 ]
             ]
         ]
@@ -1474,22 +1591,54 @@ lobbyView model =
                 [ S.col
                 , S.minW0
                 , S.minH0
-                , S.belowWidth 720
+                , S.belowWidthExceptShortLandscape 720
                     [ S.h80
                     , S.shrink0
                     ]
+                , S.shortLandscape
+                    [ S.hAuto
+                    , S.overflowAuto
+                    ]
                 ]
             ]
-            [ mapView model
+            [ H.div
+                [ A.css
+                    [ S.flex1
+                    , S.minH0
+                    , S.col
+                    , S.shortLandscape
+                        [ S.minH48
+                        ]
+                    ]
+                ]
+                [ mapView model ]
             ]
-        , H.div
+        , lobbySideView model
+        ]
+    , H.div
+        [ A.css
+            [ S.shrink0
+            ]
+        ]
+        [ lobbyActionsView model
+        ]
+    ]
+
+
+lobbySideView : Model -> Html Msg
+lobbySideView model =
+    if lobbyUsesTabs model then
+        lobbyTabsView model
+
+    else
+        H.div
             [ A.css
                 [ S.minW0
                 , S.minH0
                 , S.grid
                 , S.gridRows "minmax(0, auto) minmax(9rem, 1fr)"
                 , S.g4
-                , S.belowWidth 720
+                , S.belowWidthExceptShortLandscape 720
                     [ S.gridRows "auto 16rem"
                     , S.shrink0
                     ]
@@ -1505,15 +1654,74 @@ lobbyView model =
                 ]
             , ChatView.lobbyPanel model.chat |> H.map ChatMsg
             ]
-        ]
-    , H.div
+
+
+lobbyTabsView : Model -> Html Msg
+lobbyTabsView model =
+    let
+        chatLabel : String
+        chatLabel =
+            if model.unreadChat then
+                "chat •"
+
+            else
+                "chat"
+
+        lobbyTabs : Tabs LobbyTab Msg
+        lobbyTabs =
+            Tabs.new
+                { label = "lobby"
+                , selected = model.tab
+                , options =
+                    NonEmptyList.fromCons
+                        { value = PlayersTab, label = "players" }
+                        [ { value = ChatTab, label = chatLabel }
+                        ]
+                , htmlId = lobbyTabHtmlId
+                , onClick = LobbyTabClicked
+                , onNavigate = LobbyTabNavigated
+                }
+                |> Tabs.horizontal
+
+        tabs : Tabs LobbyTab Msg
+        tabs =
+            if model.unreadChat then
+                lobbyTabs
+                    |> Tabs.withAccessibleLabel ChatTab "chat, unread messages"
+
+            else
+                lobbyTabs
+    in
+    H.article
         [ A.css
-            [ S.shrink0
+            [ S.minW0
+            , S.minH0
+            , S.grid
+            , S.gridRows "auto minmax(0, 1fr)"
+            , S.bgGray1
+            , S.outdent
+            , S.overflowHidden
             ]
         ]
-        [ lobbyActionsView model
+        [ Tabs.toHeader tabs
+        , Tabs.panel tabs
+            PlayersTab
+            [ H.div
+                [ A.css
+                    [ S.hFull
+                    , S.col
+                    , S.g2
+                    , S.p2
+                    , S.overflowAuto
+                    ]
+                ]
+                (playersContent model)
+            ]
+        , Tabs.panel tabs
+            ChatTab
+            [ ChatView.lobbyTab model.chat |> H.map ChatMsg
+            ]
         ]
-    ]
 
 
 lobbyHeaderView : String -> Html Msg
@@ -1528,6 +1736,9 @@ lobbyHeaderView name =
             , S.shrink0
             , S.belowWidth 400
                 [ S.minH16
+                ]
+            , S.shortLandscape
+                [ S.minH0
                 ]
             ]
         ]
@@ -1959,6 +2170,18 @@ startControlsView model =
 
 playersView : Model -> Html Msg
 playersView model =
+    playersContent model
+        |> Card.toHtml
+            (Card.simple
+                |> Card.withHeader
+                    (CardHeader.simple "players"
+                        |> CardHeader.withCaption (String.fromInt (List.length model.players) ++ " / 2")
+                    )
+            )
+
+
+playersContent : Model -> List (Html Msg)
+playersContent model =
     [ H.ul
         [ A.css
             [ S.col
@@ -1970,13 +2193,6 @@ playersView model =
     , sideView model
     , inviteView model
     ]
-        |> Card.toHtml
-            (Card.simple
-                |> Card.withHeader
-                    (CardHeader.simple "players"
-                        |> CardHeader.withCaption (String.fromInt (List.length model.players) ++ " / 2")
-                    )
-            )
 
 
 sideLabel : PlayerNumber -> String

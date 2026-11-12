@@ -172,6 +172,9 @@ supplies the accessible heading. The ordinary beveled card has no title bar
 and contains a full-width primary `match making` button followed by secondary
 `create a lobby`, `feedback`, and `about` buttons. Keep it at most
 24rem wide with viewport gutters. `create a lobby` opens the existing form at `/new`.
+On short landscape screens (at most 500px high and 1023px wide), center the
+logo, subtitle, and quotation in a left column beside the menu. Tighten the
+vertical spacing and keep the four menu actions stacked in the right column.
 About opens a wide reading dialog
 (64rem, capped by the viewport gutters) with titled game, intro, contact, code, pacifism, and privacy policy sections
 and the creator portrait. Contact addresses and account names are real
@@ -266,6 +269,8 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
   navigation with `Tabs.toHtml` and its content with `Tabs.panel`. The component
   owns tab styling, ARIA links, and Up/Down/Home/End navigation. The caller owns
   selection, keyboard focus effects, content spacing, and the surrounding layout.
+  Use `Tabs.horizontal` and `Tabs.toHeader` for horizontal tabs inset into a
+  panel header, as in the landscape lobby and mobile selection panel.
 - The spacing unit is 0.25rem: `p1`/`g1` are 0.25rem, `p2`/`g2` are 0.5rem,
   and `p3`/`g3` are 0.75rem. `p2px` is a literal 2px inset.
 - The joined lobby is a full-width workspace bounded by the viewport, without
@@ -291,8 +296,13 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
   to `close lobby`. Disable duplicate requests while closing, retain errors in
   the dialog for retry, and return home on success.
   Below 720px, stack battlefield, players, and chat inside a scrolling workspace
-  while keeping the header and action bar visible. Keep creation and joining as
-  centered compact forms.
+  while keeping the header and action bar visible. In short landscape, keep
+  the battlefield beside one card with fixed players and chat tabs in its header.
+  Open on players and scroll the settings beneath the tabs. Let the chat
+  transcript scroll within its panel. Keep
+  the chat composer visible, mark unread messages with a dot on the chat tab,
+  and have C select chat and focus the composer.
+  Keep creation and joining as centered compact forms.
   The players card contains `copy invite link`; show a selectable URL and useful
   error text there if clipboard copying fails.
 - `choose map` opens a separate full-width library screen at `/lobby/:id/maps`,
@@ -300,7 +310,8 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
   all thumbnail choices in one scrollable left column, and the selected map's
   large preview in a closely fitted inset surface beside its dimensions,
   starting-player legend, and description in the right column. Stack preview and
-  details below 1100px, and stack the library columns below 720px. Thumbnails
+  details below 1100px, and stack the library columns below 720px. In short
+  landscape, keep the map list, preview, and details side by side. Thumbnails
   use saved PNG images of the actual terrain, buildings, and starting units with
   still water. Generate these from the shared preview renderer when saving maps;
   keep the large selected preview as SVG. The map list sits in one inset surface with alternating green row backgrounds. The
@@ -378,8 +389,11 @@ target. Keep it visible while details is selected. The label selects orders;
 only ⓘ opens the order guide. Never nest the buttons; details reuse the inspector's unit, resource,
 cargo, and terrain help. Keep the tab header fixed above the scrolling content.
 In portrait, cover the entire view, including open dialogs, with
-**rotate your phone to landscape**. Keep selection and draft orders across
-rotation. Omit the floating version/audio overlay in this minimal layout.
+a phone and curved arrow above **turn your phone for landscape orientation**.
+Animate the phone from portrait to landscape once as the prompt opens. With
+reduced motion enabled, show the phone in landscape immediately. Keep selection
+and draft orders across rotation. Omit the floating version/audio overlay in
+this minimal layout.
 When mobile view is active, every dialog fills the viewport, including the orders
 reference and dev panel. Keep the title and close control visible, scroll long
 content within the dialog, and preserve each dialog's ordinary focus and cancel
@@ -512,9 +526,11 @@ behavior. Desktop dialogs keep their usual sizes.
   44px height on narrow screens or coarse pointers; icon buttons also have at
   least 44px width. Keep the short version label and hide its timestamp below
   768px, retaining release details in its accessible title.
-  One finger pans and two fingers pinch-zoom around their midpoint. Ordinary
-  taps select units and commit highlighted destinations; gesture completion and
-  cancellation must not activate a tile. Keep native page zoom available outside
+  One finger pans and two fingers pinch-zoom around their midpoint. While
+  choosing a move or attack move, one finger traces the route and lifting it on
+  a reachable destination confirms the route. Ordinary taps select units and
+  commit highlighted destinations. Panning, pinching, and cancelled touches
+  leave destinations unconfirmed. Keep native page zoom available outside
   the map, and preserve desktop mouse, wheel, and keyboard controls.
 - Selected objects supply their own titles; omit a generic selection/status heading.
   Units show their type and owning player’s name on one line, spaced to opposite
@@ -583,8 +599,9 @@ behavior. Desktop dialogs keep their usual sizes.
   keeps the unit inspected with the popup closed. Clicking it again reopens
   orders when eligible. Do not show orders and a saved order simultaneously. Locked orders cannot
   be revoked. Keep resource explanations in the expandable gauge help.
-- Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
-  a click still inspects units, depots and terrain. Scroll zooms around the cursor,
+- Primary-button dragging pans after a 6px threshold. During move or attack move
+  destination selection, dragging traces the route. Clicking otherwise inspects
+  units, depots and terrain. Scroll zooms around the cursor,
   bounded to 35–300% of the overview scale. Open at 100%, centered on the whole map.
   Reset restores that centered overview at 100%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
   arrows or WASD pan through game-page window commands while the order popup is closed

@@ -1,5 +1,7 @@
 const { test, expect, openGame, createGame, graphql, snapshot } = require('./helpers.cjs');
 
+const interaction = { tag: '@mobile-interaction' };
+
 async function swipeUp(page, scrollArea) {
   const bounds = await scrollArea.boundingBox();
   expect(bounds, 'visible scroll area').not.toBeNull();
@@ -23,6 +25,113 @@ async function swipeUp(page, scrollArea) {
   }
 }
 
+test('home keeps all menu actions visible in short landscape', interaction, async ({ page }) => {
+  await page.goto('/');
+  const logo = page.getByRole('heading', { name: 'fightlines', exact: true });
+  const menu = page.getByRole('navigation', { name: 'main navigation' });
+  const about = menu.getByRole('button', { name: 'about', exact: true });
+
+  for (const viewport of [page.viewportSize(), { width: 667, height: 260 }]) {
+    await page.setViewportSize(viewport);
+    await expect(logo).toBeInViewport({ ratio: 1 });
+    await expect(menu).toBeInViewport({ ratio: 1 });
+    await expect(page.locator('blockquote')).toBeInViewport({ ratio: 1 });
+    const logoBounds = await logo.boundingBox();
+    const menuBounds = await menu.boundingBox();
+    expect(menuBounds.x).toBeGreaterThan(logoBounds.x + logoBounds.width);
+  }
+
+  await page.setViewportSize({ width: 852, height: 393 });
+  await about.tap();
+  const dialog = page.getByRole('dialog', { name: 'about fightlines', exact: true });
+  await dialog.getByRole('button', { name: 'close', exact: true }).tap();
+  await expect(about).toBeFocused();
+});
+
+test('short landscape lobby keeps setup, chat, and map selection reachable', interaction, async ({ page }) => {
+  const { createLobby } = await graphql(page,
+    'mutation { createLobby(name: "commander", lobbyName: "landscape patrol") { id } }');
+  await page.goto(`/lobby/${createLobby.id}`);
+  const chooseMap = page.getByRole('button', { name: 'choose map', exact: true });
+  const start = page.getByRole('button', { name: /^start game/ });
+  const chat = page.getByRole('textbox', { name: 'chat message' });
+  const playersTab = page.getByRole('tab', { name: 'players', exact: true });
+  const chatTab = page.getByRole('tab', { name: 'chat', exact: true });
+  const send = page.getByRole('button', { name: 'send', exact: true });
+
+  await expect(playersTab).toHaveAttribute('aria-selected', 'true');
+  await expect(chat).toBeHidden();
+  await playersTab.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(chatTab).toBeFocused();
+  await expect(chatTab).toHaveAttribute('aria-selected', 'true');
+  await page.keyboard.press('ArrowLeft');
+  await expect(playersTab).toBeFocused();
+
+  for (const viewport of [{ width: 852, height: 393 }, { width: 667, height: 260 }]) {
+    await page.setViewportSize(viewport);
+    await expect(start).toBeInViewport({ ratio: 1 });
+    await chooseMap.tap();
+    await page.getByLabel('search maps').fill('visual');
+    await page.getByRole('button', { name: 'preview visual battlefield', exact: true }).tap();
+    const useMap = page.getByRole('button', { name: 'use this map', exact: true });
+    await expect(useMap).toBeInViewport({ ratio: 1 });
+    await useMap.tap();
+    await expect(chooseMap).toBeVisible();
+    await page.keyboard.press('c');
+    await expect(chatTab).toHaveAttribute('aria-selected', 'true');
+    await expect(chat).toBeFocused();
+    await expect(chat).toBeInViewport({ ratio: 1 });
+    await expect(send).toBeInViewport({ ratio: 1 });
+    await expect(start).toBeInViewport({ ratio: 1 });
+    await chat.fill(`hello from ${viewport.width}`);
+    await send.tap();
+    await expect(page.getByRole('paragraph').filter({
+      hasText: `commander: hello from ${viewport.width}`,
+    })).toBeInViewport();
+    await playersTab.tap();
+    await expect(chat).toBeHidden();
+  }
+
+  const playersPanel = page.getByRole('tabpanel', { name: 'players', exact: true });
+  const playerSettings = playersPanel.locator(':scope > div');
+  const tabBar = page.getByRole('tablist', { name: 'lobby' });
+  await expect(playersPanel.getByRole('heading', { name: 'players', exact: true })).toHaveCount(0);
+  const tabBarBounds = await tabBar.boundingBox();
+  await swipeUp(page, playerSettings);
+  await expect.poll(() => playerSettings.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  expect(await tabBar.boundingBox()).toEqual(tabBarBounds);
+
+  await page.getByLabel('player 2').selectOption({ label: 'ai' });
+  await start.tap();
+  await expect(page).toHaveURL(/\/game\/[0-9a-f]+$/);
+});
+
+test('short landscape chat marks incoming messages until opened', interaction, async ({ page, browser, baseURL }) => {
+  const { createLobby } = await graphql(page,
+    'mutation { createLobby(name: "commander", lobbyName: "chat patrol") { id } }');
+  const id = JSON.stringify(createLobby.id);
+  await page.goto(`/lobby/${createLobby.id}`);
+  const chatTab = page.getByRole('tab', { name: /^chat/ });
+  await expect(chatTab).toHaveAccessibleName('chat');
+
+  const peer = await browser.newContext({ baseURL });
+  try {
+    const peerPage = await peer.newPage();
+    await graphql(peerPage, `mutation { joinLobby(id: ${id}, name: "scout") { id } }`);
+    await graphql(peerPage, `mutation {
+      sendChat(input: { id: ${id}, messageId: "landscape-chat-1", text: "ready to play" }) { sequence }
+    }`);
+    await expect(chatTab).toHaveAccessibleName('chat, unread messages');
+    await expect(chatTab).toHaveText('chat •');
+    await chatTab.tap();
+    await expect(chatTab).toHaveAccessibleName('chat');
+    await expect(page.getByText('scout: ready to play')).toBeInViewport();
+  } finally {
+    await peer.close();
+  }
+});
+
 test('battlefield', async ({ page }) => {
   await openGame(page);
   await snapshot(page, 'battlefield');
@@ -41,6 +150,58 @@ test('orders rail', async ({ page }) => {
   await swipeUp(page, scrollArea);
   await expect.poll(() => scrollArea.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
 });
+
+for (const order of ['move', 'attack move']) {
+  test(`touch drag traces and confirms ${order}`, interaction, async ({ page }) => {
+    await openGame(page);
+    const battlefield = page.getByRole('group', { name: 'battlefield', exact: true });
+    await battlefield.getByRole('button', { name: /tank 11$/ }).tap();
+    const orders = page.getByRole('region', { name: 'unit orders', exact: true });
+    await orders.getByRole('button', { name: order, exact: true }).tap();
+    await expect(page.getByText('drag to trace a route, or tap a destination.')).toBeVisible();
+
+    const bounds = await battlefield.boundingBox();
+    const tile = (x, y) => ({
+      x: bounds.x + (x + 0.5) * bounds.width / 17,
+      y: bounds.y + (y + 0.5) * bounds.height / 17,
+    });
+    const origin = tile(4, 8);
+    const destination = tile(5, 8);
+    // The direct route would skip both waypoints. Trace around the corner instead.
+    const points = '72,136 72,120 88,120 88,136';
+    const preview = battlefield.locator('polyline[stroke-width="1.5"]');
+    const saved = battlefield.locator('polyline[stroke-dasharray="2 1"]');
+    const session = await page.context().newCDPSession(page);
+    const touch = (type, touchPoints = []) =>
+      session.send('Input.dispatchTouchEvent', { type, touchPoints });
+
+    try {
+      await touch('touchStart', [origin]);
+      await touch('touchMove', [tile(4, 9)]);
+      await expect(preview).toHaveAttribute('points', '72,136 72,152');
+      await touch('touchCancel');
+      await expect(saved).toHaveCount(0);
+
+      await touch('touchStart', [origin]);
+      await touch('touchMove', [tile(4, 7)]);
+      await touch('touchMove', [tile(5, 7)]);
+      await touch('touchMove', [destination]);
+      await expect(preview).toHaveAttribute('points', points);
+      expect(await battlefield.boundingBox()).toEqual(bounds);
+      await touch('touchEnd');
+    } finally {
+      await session.detach();
+    }
+
+    if (order === 'attack move') {
+      const facing = battlefield.getByLabel('choose attack move final direction');
+      await expect(facing).toBeVisible();
+      await expect(preview).toHaveAttribute('points', points);
+      await facing.getByRole('button', { name: 'face east', exact: true }).tap();
+    }
+    await expect(saved).toHaveAttribute('points', points);
+  });
+}
 
 test('details rail', async ({ page }) => {
   await openMobileDetails(page);

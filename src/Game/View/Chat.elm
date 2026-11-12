@@ -5,6 +5,7 @@ module Game.View.Chat exposing
     , history
     , inputHtmlId
     , lobbyPanel
+    , lobbyTab
     , messagesHtmlId
     , notification
     , openKeyDecoder
@@ -55,6 +56,7 @@ type ComposerPlacement
 
 type TranscriptPlacement
     = FillingTranscript
+    | LobbyTabTranscript
     | HistoryTranscript
 
 
@@ -143,6 +145,31 @@ dialog layout model composer =
 
 lobbyPanel : Chat.Model -> Html Msg
 lobbyPanel model =
+    lobbyChatContent FillingTranscript model
+        |> Card.toHtml
+            (Card.panel
+                |> Card.withHeader (CardHeader.simple "chat")
+            )
+
+
+lobbyTab : Chat.Model -> Html Msg
+lobbyTab model =
+    H.div
+        [ A.css
+            [ S.col
+            , S.hFull
+            , S.p1
+            , S.g1
+            ]
+        ]
+        (lobbyChatContent LobbyTabTranscript model)
+
+
+lobbyChatContent :
+    TranscriptPlacement
+    -> Chat.Model
+    -> List (Html Msg)
+lobbyChatContent placement model =
     let
         input : Html Msg
         input =
@@ -153,15 +180,11 @@ lobbyPanel model =
                 _ ->
                     H.text ""
     in
-    [ transcript FillingTranscript
+    [ transcript placement
         { onScroll = Just HistoryScrolled }
         model.messages
     , input
     ]
-        |> Card.toHtml
-            (Card.panel
-                |> Card.withHeader (CardHeader.simple "chat")
-            )
 
 
 editor : ComposerPlacement -> Composer -> Html Msg
@@ -494,10 +517,19 @@ transcript placement events messages =
                 FillingTranscript ->
                     [ S.flex1
                     , S.minH0
+                    , S.p3
+                    ]
+
+                LobbyTabTranscript ->
+                    [ S.flex1
+                    , S.minH0
+                    , S.p1
                     ]
 
                 HistoryTranscript ->
-                    [ S.maxH35Viewport ]
+                    [ S.maxH35Viewport
+                    , S.p3
+                    ]
 
         attributes : List (H.Attribute msg)
         attributes =
@@ -510,7 +542,6 @@ transcript placement events messages =
                 , S.bgNightwood3
                 , S.textGray5
                 , S.indentStrong
-                , S.p3
                 , S.overflowAuto
                 , S.batch placementStyles
                 ]

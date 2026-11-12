@@ -28,6 +28,7 @@ import Fightlines.Route as Route
     exposing
         ( Route
         )
+import Fightlines.View.MobileBattlefield as MobileBattlefield
 import Fightlines.View.TurnIntroduction as TurnIntroduction
 import Fightlines.View.WelcomeBriefing as WelcomeBriefing
 import Html.Styled as H
@@ -883,7 +884,13 @@ shell page =
                         |> Card.toHtml Card.simple
                     ]
     in
-    AppShell.toHtml (Home.styles :: TurnIntroduction.styles :: WelcomeBriefing.styles :: content)
+    AppShell.toHtml
+        (Home.styles
+            :: MobileBattlefield.rotationStyles
+            :: TurnIntroduction.styles
+            :: WelcomeBriefing.styles
+            :: content
+        )
 
 
 

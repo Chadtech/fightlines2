@@ -6,6 +6,7 @@ module PointerGesture exposing
     , idle
     , move
     , press
+    , pressedAt
     , suppressesClick
     )
 
@@ -31,6 +32,18 @@ idle =
 press : { start : Point, origin : Point } -> PointerGesture
 press points =
     Pressed (Drag.startAt points)
+
+
+{-| The starting point of a press that has yet to cross the drag threshold.
+-}
+pressedAt : PointerGesture -> Maybe Point
+pressedAt gesture =
+    case gesture of
+        Pressed drag ->
+            Just (Drag.start drag)
+
+        _ ->
+            Nothing
 
 
 active : PointerGesture -> Bool

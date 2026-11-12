@@ -216,11 +216,12 @@ with the primary mouse button to pan; scroll to zoom around the cursor. The righ
 panel has selection details and unit actions; the bottom-left control panel has
 pan arrows, zoom and reset controls. Games open at 100%, centered on the whole-map overview.
 Reset restores this centered overview; zoom ranges from 35% to 300%. Arrow keys or WASD pan the map while the order popup is closed and no move or ambush direction is being chosen.
-Plus/minus zoom without requiring battlefield focus; Home resets the view while the battlefield is focused. Dragging does not select a tile.
-On a phone, drag with one finger to pan and pinch with two fingers to zoom.
-Tap a unit, choose its order, then tap a highlighted destination; hovering is
-not required. Dragging while choosing a destination pans without saving the
-order. The selected-unit panel scrolls above the full-width turn controls.
+Plus/minus zoom without requiring battlefield focus; Home resets the view while the battlefield is focused.
+On a phone, drag with one finger to pan or use two fingers to pan and zoom.
+After choosing **move** or **attack move**, drag one finger along the route and
+lift it on a reachable destination, or tap a highlighted destination directly.
+For **attack move**, choose the final facing after setting the route.
+The selected-unit panel scrolls above the full-width turn controls.
 Use the minus/plus buttons to zoom, or tap the percentage to reset the view.
 The order menu uses two columns above the selected-unit panel, with internal
 scrolling when space is limited. Rotate the phone for a wider battlefield.
@@ -257,9 +258,10 @@ While a unit's order menu is open, press `m` for move, `h` for hold position,
 Keys immediately choose enabled orders; unavailable orders are ignored.
 Up/down arrows or W/S still navigate the menu, and Escape cancels.
 Select one of your units, choose **move** to highlight reachable
-squares. Click a highlighted square to save a move. Hover across squares to preview your exact route; retrace
-the line to shorten it. Skipped squares connect from the current path tip within
-the remaining budget. If the traced route exceeds the budget, an affordable
+squares. Click a highlighted square to save a move. Hover or drag across
+squares to preview your route, and release on a reachable square to finish a
+drag. Retrace the line to shorten it. Skipped squares connect from the current
+path tip within the remaining budget. If the traced route exceeds the budget, an affordable
 route from the unit is chosen when one exists. Saving stops hover previews and hides reachable-square highlights.
 Select the unit and choose the full-width **revoke order** button beneath its
 portrait to remove the saved plan and

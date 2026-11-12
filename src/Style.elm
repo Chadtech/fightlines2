@@ -3,6 +3,7 @@ module Style exposing
     , accentYellow5
     , active
     , after
+    , alignContentCenter
     , animation
     , animationNone
     , appearanceNone
@@ -12,6 +13,7 @@ module Style exposing
     , batch
     , belowHeight
     , belowWidth
+    , belowWidthExceptShortLandscape
     , bgBlack70
     , bgBlue0
     , bgBlue1
@@ -119,6 +121,7 @@ module Style exposing
     , gray5Str
     , green1Str
     , grid
+    , gridArea
     , gridCols1
     , gridCols2
     , gridColumns
@@ -247,6 +250,7 @@ module Style exposing
     , minH24
     , minH32
     , minH36
+    , minH48
     , minH6
     , minH76
     , minH7p5
@@ -553,6 +557,16 @@ justifySelfCenter =
 justifyItemsCenter : Css.Style
 justifyItemsCenter =
     Css.property "justify-items" "center"
+
+
+alignContentCenter : Css.Style
+alignContentCenter =
+    Css.property "align-content" "center"
+
+
+gridArea : String -> Css.Style
+gridArea area =
+    Css.property "grid-area" area
 
 
 gridRowsRem : Int -> Float -> Css.Style
@@ -3405,6 +3419,11 @@ minH36 =
     Css.minHeight (Css.rem 9)
 
 
+minH48 : Css.Style
+minH48 =
+    Css.minHeight s48
+
+
 minH24 : Css.Style
 minH24 =
     Css.minHeight (Css.rem 6)
@@ -3659,3 +3678,17 @@ shortLandscape : List Css.Style -> Css.Style
 shortLandscape =
     Css.Media.withMediaQuery
         [ "(orientation: landscape) and (max-height: 500px) and (max-width: 1023px)" ]
+
+
+{-| Apply styles at or below the given width in CSS pixels unless the
+viewport matches `shortLandscape`. Each branch of the `or` negates one
+part of that query. Keep the thresholds in sync with `shortLandscape`
+so the stacked lobby styles and short landscape styles never overlap.
+-}
+belowWidthExceptShortLandscape : Float -> List Css.Style -> Css.Style
+belowWidthExceptShortLandscape width =
+    Css.Media.withMediaQuery
+        [ "(max-width: "
+            ++ String.fromFloat width
+            ++ "px) and ((orientation: portrait) or (height > 500px) or (width > 1023px))"
+        ]

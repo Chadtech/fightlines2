@@ -3,6 +3,8 @@ module Game.BattlefieldNavigation exposing
     , Model
     , Msg(..)
     , TouchInput(..)
+    , TouchRoute(..)
+    , TouchUpdate
     , active
     , camera
     , finishReturn
@@ -21,6 +23,7 @@ module Game.BattlefieldNavigation exposing
     , subscriptions
     , suppressesClick
     , touch
+    , touchWithRoute
     , update
     , zoomIn
     , zoomOut
@@ -68,7 +71,8 @@ type Msg
     | WindowVisibilityChanged Browser.Events.Visibility
 
 
-{-| Touch positions are relative to the navigation surface's center.
+{-| Touch positions are client coordinates minus half the surface size.
+Subtract the surface origin as well when mapping a contact to a board tile.
 -}
 type TouchInput
     = TouchStarted (List Point)
@@ -84,9 +88,20 @@ type alias TouchRelease =
 
 
 type TouchGesture
-    = SingleTouch PointerGesture
+    = SingleTouch DragMode PointerGesture
     | Pinching Pinch
     | AwaitingTouchRelease
+
+
+type TouchRoute
+    = TraceAt Point
+    | ReleaseAt Point
+
+
+type alias TouchUpdate =
+    { navigation : Model
+    , route : List TouchRoute
+    }
 
 
 type alias Pinch =
@@ -154,7 +169,7 @@ suppressesClick model =
         MouseGesture gesture ->
             PointerGesture.suppressesClick gesture
 
-        TouchGesture (SingleTouch gesture) ->
+        TouchGesture (SingleTouch _ gesture) ->
             PointerGesture.suppressesClick gesture
 
         TouchGesture _ ->
@@ -216,23 +231,78 @@ press point model =
 
 touch : TouchInput -> Model -> Model
 touch input model =
-    case input of
-        TouchStarted points ->
+    (touchWithRoute PanCamera input model).navigation
+
+
+touchWithRoute :
+    DragMode
+    -> TouchInput
+    -> Model
+    -> TouchUpdate
+touchWithRoute mode input model =
+    let
+        navigation : Model
+        navigation =
+            case input of
+                TouchStarted points ->
+                    case model.gesture of
+                        TouchGesture AwaitingTouchRelease ->
+                            model
+
+                        _ ->
+                            startTouch mode points model
+
+                TouchMoved points ->
+                    moveTouch points model
+
+                TouchEnded touches ->
+                    endTouch touches model
+
+                TouchCancelled ->
+                    model |> setGesture (MouseGesture PointerGesture.cancel)
+
+        route : List TouchRoute
+        route =
             case model.gesture of
-                TouchGesture AwaitingTouchRelease ->
-                    model
+                TouchGesture (SingleTouch TraceRoute gesture) ->
+                    if suppressesClick navigation then
+                        tracedContacts input gesture
+
+                    else
+                        []
 
                 _ ->
-                    startTouch points model
+                    []
+    in
+    { navigation = navigation, route = route }
 
-        TouchMoved points ->
-            moveTouch points model
 
-        TouchEnded touches ->
-            endTouch touches model
+tracedContacts : TouchInput -> PointerGesture -> List TouchRoute
+tracedContacts input gesture =
+    let
+        fromStart : TouchRoute -> List TouchRoute
+        fromStart contact =
+            case PointerGesture.pressedAt gesture of
+                Just start ->
+                    [ TraceAt start, contact ]
 
-        TouchCancelled ->
-            model |> setGesture (MouseGesture PointerGesture.cancel)
+                Nothing ->
+                    [ contact ]
+    in
+    case input of
+        TouchMoved [ point ] ->
+            fromStart (TraceAt point)
+
+        TouchEnded { remaining, released } ->
+            case ( remaining, released ) of
+                ( [], [ point ] ) ->
+                    fromStart (ReleaseAt point)
+
+                _ ->
+                    []
+
+        _ ->
+            []
 
 
 scroll : Point -> Float -> Model -> Model
@@ -293,8 +363,8 @@ drag dragMode point model =
         MouseGesture gesture ->
             move MouseGesture gesture
 
-        TouchGesture (SingleTouch gesture) ->
-            move (SingleTouch >> TouchGesture) gesture
+        TouchGesture (SingleTouch mode gesture) ->
+            move (SingleTouch mode >> TouchGesture) gesture
 
         TouchGesture _ ->
             model
@@ -340,8 +410,8 @@ pinch points =
     }
 
 
-startTouch : List Point -> Model -> Model
-startTouch points model =
+startTouch : DragMode -> List Point -> Model -> Model
+startTouch mode points model =
     case points of
         first :: second :: _ ->
             model |> setGesture (TouchGesture (Pinching (pinch { first = first, second = second })))
@@ -349,7 +419,7 @@ startTouch points model =
         [ point ] ->
             model
                 |> setGesture
-                    (TouchGesture (SingleTouch (PointerGesture.press { start = point, origin = model.offset })))
+                    (TouchGesture (SingleTouch mode (PointerGesture.press { start = point, origin = model.offset })))
 
         [] ->
             model
@@ -358,10 +428,8 @@ startTouch points model =
 moveTouch : List Point -> Model -> Model
 moveTouch points model =
     case ( model.gesture, points ) of
-        ( TouchGesture (SingleTouch _), [ point ] ) ->
-            -- Touch always pans. Route tracing remains available to mouse and keyboard;
-            -- a tap on a reachable tile saves a route without requiring hover.
-            drag PanCamera point model
+        ( TouchGesture (SingleTouch mode _), [ point ] ) ->
+            drag mode point model
 
         ( TouchGesture (Pinching previous), first :: second :: _ ) ->
             let
@@ -387,7 +455,7 @@ moveTouch points model =
 endTouch : TouchRelease -> Model -> Model
 endTouch touches model =
     case ( model.gesture, touches.remaining ) of
-        ( TouchGesture (SingleTouch gesture), [] ) ->
+        ( TouchGesture (SingleTouch mode gesture), [] ) ->
             let
                 moved : Model
                 moved =
@@ -395,7 +463,7 @@ endTouch touches model =
                         [ point ] ->
                             model
                                 |> setGesture (MouseGesture gesture)
-                                |> drag PanCamera point
+                                |> drag mode point
 
                         _ ->
                             model |> setGesture (MouseGesture gesture)

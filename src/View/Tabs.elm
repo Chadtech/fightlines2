@@ -4,7 +4,9 @@ module View.Tabs exposing
     , horizontal
     , new
     , panel
+    , toHeader
     , toHtml
+    , withAccessibleLabel
     , withHelp
     )
 
@@ -35,6 +37,7 @@ type Tabs value msg
         , onClick : value -> msg
         , onNavigate : value -> msg
         , orientation : Orientation
+        , accessibleLabel : Option value -> String
         , help : List (Help value msg)
         }
 
@@ -126,6 +129,7 @@ new config =
         , onClick = config.onClick
         , onNavigate = config.onNavigate
         , orientation = Vertical
+        , accessibleLabel = .label
         , help = []
         }
 
@@ -133,6 +137,24 @@ new config =
 horizontal : Tabs value msg -> Tabs value msg
 horizontal (Tabs config) =
     Tabs { config | orientation = Horizontal }
+
+
+withAccessibleLabel :
+    value
+    -> String
+    -> Tabs value msg
+    -> Tabs value msg
+withAccessibleLabel value label (Tabs config) =
+    let
+        accessibleLabel : Option value -> String
+        accessibleLabel option =
+            if option.value == value then
+                label
+
+            else
+                config.accessibleLabel option
+    in
+    Tabs { config | accessibleLabel = accessibleLabel }
 
 
 helpButtonHtmlId : String -> String
@@ -152,6 +174,20 @@ withHelp help (Tabs config) =
 ----------------------------------------------------------------
 -- VIEW --
 ----------------------------------------------------------------
+
+
+{-| Inset horizontal tabs on the panel's own surface.
+-}
+toHeader : Tabs value msg -> Html msg
+toHeader tabs =
+    H.div
+        [ A.css
+            [ S.shrink0
+            , S.p2
+            ]
+        ]
+        [ toHtml tabs
+        ]
 
 
 toHtml : Tabs value msg -> Html msg
@@ -381,6 +417,7 @@ tabButton (Tabs config) option =
         , A.id (config.htmlId option.value)
         , A.tabindex tabIndex
         , A.attribute "role" "tab"
+        , Aria.label (config.accessibleLabel option)
         , A.attribute "aria-selected" selectedText
         , A.attribute "aria-controls" (panelHtmlId (config.htmlId option.value))
         , Ev.onClick (config.onClick option.value)

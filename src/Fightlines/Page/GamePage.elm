@@ -142,6 +142,7 @@ import LobbyId
     exposing
         ( LobbyId
         )
+import Point exposing (Point)
 import Ports.Js.To as ToJs
 import Preference
 import Random
@@ -163,6 +164,12 @@ import View.RequestError as RequestError
 ----------------------------------------------------------------
 -- TYPES --
 ----------------------------------------------------------------
+
+
+type alias BattlefieldViewport =
+    { origin : Point
+    , camera : Camera.Viewport
+    }
 
 
 type alias Model =
@@ -187,7 +194,7 @@ type alias Model =
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , navigation : BattlefieldNavigation.Model
-    , battlefieldViewport : Maybe Camera.Viewport
+    , battlefieldViewport : Maybe BattlefieldViewport
     , frame : AnimationFrame.Frame
     , resigning : Bool
     , menu : Menu
@@ -539,7 +546,7 @@ setResigning resigning model =
     { model | resigning = resigning }
 
 
-setBattlefieldViewport : Maybe Camera.Viewport -> Model -> Model
+setBattlefieldViewport : Maybe BattlefieldViewport -> Model -> Model
 setBattlefieldViewport battlefieldViewport model =
     { model | battlefieldViewport = battlefieldViewport }
 
@@ -1426,6 +1433,58 @@ mapNavigation change model =
         |> updatePlaybackCamera
 
 
+handleBattlefieldTouch : BattlefieldNavigation.TouchInput -> Model -> Model
+handleBattlefieldTouch input model =
+    let
+        mode : BattlefieldNavigation.DragMode
+        mode =
+            if pathPreview model /= Nothing then
+                BattlefieldNavigation.TraceRoute
+
+            else
+                BattlefieldNavigation.PanCamera
+
+        touched : BattlefieldNavigation.TouchUpdate
+        touched =
+            BattlefieldNavigation.touchWithRoute mode input model.navigation
+
+        next : Model
+        next =
+            mapNavigation (always touched.navigation) model
+
+        routeAt :
+            (Coordinate -> Model -> Model)
+            -> Point
+            -> Model
+            -> Model
+        routeAt action point state =
+            case ( pathPreview state, state.battlefieldViewport ) of
+                ( Just _, Just viewport ) ->
+                    Camera.coordinateAt
+                        viewport.camera.size
+                        state.map
+                        (BattlefieldNavigation.camera state.navigation)
+                        { x = point.x - viewport.origin.x
+                        , y = point.y - viewport.origin.y
+                        }
+                        |> Maybe.map (\position -> action position state)
+                        |> Maybe.withDefault state
+
+                _ ->
+                    state
+
+        traceContact : BattlefieldNavigation.TouchRoute -> Model -> Model
+        traceContact contact =
+            case contact of
+                BattlefieldNavigation.TraceAt point ->
+                    routeAt previewTile point
+
+                BattlefieldNavigation.ReleaseAt point ->
+                    routeAt selectTile point
+    in
+    List.foldl traceContact next touched.route
+
+
 groundPickupDialogHtmlId : String
 groundPickupDialogHtmlId =
     "ground-freight-pickup-dialog"
@@ -1664,8 +1723,7 @@ handleBattlefieldMsg msg model =
             next
 
         Battlefield.TouchInputReceived input ->
-            model
-                |> mapNavigation (BattlefieldNavigation.touch input)
+            handleBattlefieldTouch input model
 
         Battlefield.PointerPressed point ->
             model
@@ -1759,7 +1817,7 @@ updatePlaybackCamera model =
                 held : PlaybackPresentation.PlaybackCamera
                 held =
                     PlaybackPresentation.frameCamera
-                        viewport
+                        viewport.camera
                         model.map
                         (BattlefieldNavigation.camera model.navigation)
                         playing.animation
@@ -2730,7 +2788,12 @@ update lobbyId msg model =
                                 }
                         in
                         model
-                            |> setBattlefieldViewport (Just viewport)
+                            |> setBattlefieldViewport
+                                (Just
+                                    { origin = { x = battlefield.element.x, y = battlefield.element.y }
+                                    , camera = viewport
+                                    }
+                                )
                             |> updatePlaybackCamera
                             |> E.withOut
 
@@ -2774,7 +2837,12 @@ update lobbyId msg model =
                                 }
                     in
                     model
-                        |> setBattlefieldViewport (Just viewport)
+                        |> setBattlefieldViewport
+                            (Just
+                                { origin = { x = measured.battlefield.element.x, y = measured.battlefield.element.y }
+                                , camera = viewport
+                                }
+                            )
                         |> updatePlaybackCamera
                         |> E.withOut
 
@@ -4763,7 +4831,7 @@ mobileOrdersPanel model =
                                 "tap a target on the map"
 
                             else if pathPreview model /= Nothing then
-                                "tap a highlighted tile to plan a route"
+                                "drag to trace a route, or tap a destination."
 
                             else
                                 ""

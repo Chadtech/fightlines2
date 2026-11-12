@@ -3,6 +3,7 @@ module Fightlines.View.MobileBattlefield exposing
     , ordersHelpButtonHtmlId
     , panelHeader
     , portraitDialog
+    , rotationStyles
     , tabHtmlId
     , toHtml
     , topBar
@@ -15,6 +16,8 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import NonEmptyList
 import Style as S
+import Svg.Styled as Svg
+import Svg.Styled.Attributes as SA
 import View.Aria as Aria
 import View.Dialog as Dialog exposing (Dialog)
 import View.Tabs as Tabs exposing (Tabs)
@@ -117,7 +120,7 @@ panelHeader config =
             else
                 tabs
     in
-    Tabs.toHtml withHelp
+    Tabs.toHeader withHelp
 
 
 {-| Equal-width outer columns keep the central controls centered on the screen.
@@ -173,15 +176,90 @@ portraitDialog onCancel =
         [ H.div
             [ A.css
                 [ S.col
+                , S.g3
+                , S.grow
                 , S.itemsCenter
                 , S.justifyCenter
-                , S.p3
                 , S.textAlignCenter
                 ]
             ]
-            [ H.text "rotate your phone to landscape" ]
+            [ rotationGraphic
+            , H.text "turn your phone for landscape orientation"
+            ]
         ]
         |> Dialog.fullscreen
+
+
+rotationStyles : Html msg
+rotationStyles =
+    H.node "style"
+        []
+        [ H.text """
+            @keyframes fightlines-phone-turn {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(90deg); }
+            }
+        """
+        ]
+
+
+rotationGraphic : Html msg
+rotationGraphic =
+    Svg.svg
+        [ Aria.hidden True
+        , SA.viewBox "0 0 224 148"
+        , SA.width "224"
+        , SA.css
+            [ Css.maxWidth (Css.pct 100)
+            , Css.height Css.auto
+            , S.shrink0
+            ]
+        , SA.stroke S.yellow5Str
+        , SA.strokeWidth "2"
+        ]
+        [ Svg.path
+            [ SA.d "M134 21 H149 A37 37 0 0 1 186 58 V63 M179 56 L186 63 L193 56"
+            , SA.fill "none"
+            , SA.strokeLinecap "round"
+            , SA.strokeLinejoin "round"
+            ]
+            []
+        , Svg.g
+            [ SA.css
+                [ Css.property "transform-origin" "104px 81px"
+                , Css.property "transform" "rotate(90deg)"
+                , S.animation "fightlines-phone-turn 850ms ease-in-out 250ms both"
+                , S.reducedMotion
+                    [ S.animationNone ]
+                ]
+            ]
+            [ Svg.rect
+                [ SA.x "72"
+                , SA.y "26"
+                , SA.width "64"
+                , SA.height "110"
+                , SA.rx "12"
+                , SA.fill S.nightwood3Str
+                ]
+                []
+            , Svg.rect
+                [ SA.x "79"
+                , SA.y "33"
+                , SA.width "50"
+                , SA.height "96"
+                , SA.rx "5"
+                , SA.fill S.nightwood2Str
+                , SA.stroke S.gray3Str
+                , SA.strokeWidth "1"
+                ]
+                []
+            , Svg.path
+                [ SA.d "M98 34 H110"
+                , SA.strokeLinecap "round"
+                ]
+                []
+            ]
+        ]
 
 
 {-| The rail has an independently scrolling task area and a persistent footer.
@@ -270,13 +348,7 @@ toHtml contents =
                         , S.pbSafeArea
                         ]
                     ]
-                    [ H.div
-                        [ A.css
-                            [ S.shrink0
-                            , S.p2
-                            ]
-                        ]
-                        [ contents.panelHeader ]
+                    [ contents.panelHeader
                     , H.div
                         [ A.css
                             [ S.flex1

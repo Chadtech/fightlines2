@@ -1069,16 +1069,20 @@ and Home/End navigation; existing vertical tabs retain Up/Down navigation.
 Hidden portrait surfaces do not overwrite the last measured camera viewport.
 
 `Battlefield` decodes touch contacts from the browser's array-like `TouchList`
-relative to the map surface's center. `BattlefieldNavigation` keeps mouse and
+as client coordinates adjusted by half the surface size.
+`BattlefieldNavigation` keeps mouse and
 touch gestures in distinct alternatives, with single-finger drag state inside
-its touch alternative. `BattlefieldNavigation.touch` owns single
-finger panning, midpoint-anchored pinch zoom, and gesture cancellation. Touch
-dragging always pans, including during route planning; tapping a reachable tile
-uses the existing destination selection path. Mouse route tracing remains
-unchanged. Gesture movement suppresses compatibility clicks, while taps and
-small finger jitter retain ordinary click activation. After a pinch, remaining
-fingers wait for release before another gesture can start. No device flags or
-user-agent detection are needed.
+its touch alternative. During Move or Attack Move destination selection,
+`GamePage` requests route tracing for new single-finger gestures.
+`BattlefieldNavigation` applies the existing drag threshold and reports trace
+points and releases. `GamePage` converts them to map coordinates using the
+measured viewport and the camera, then uses the same route preview and destination
+selection as mouse input. Single-finger dragging pans in other interactions.
+A second contact on the map switches to midpoint-anchored pinch zoom.
+Cancellation and pinch gestures leave the route unconfirmed. Remaining fingers
+after a pinch wait for release before another gesture can start. Drags suppress
+compatibility clicks, while taps and small finger jitter retain ordinary click
+activation.
 
 `BattlefieldWorkspace` reserves rows for controls and a bounded selection panel
 below 768px. Short landscape screens up to 1023px instead put inspection beside

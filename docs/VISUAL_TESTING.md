@@ -24,9 +24,10 @@ suite, so the check-in workflow includes this guard. Browser installation is an
 explicit setup step, not an implicit download during checks.
 
 Each invocation rebuilds the frontend and debug server once. It starts isolated
-servers on `127.0.0.1:4187` for desktop and `127.0.0.1:4188` for mobile, so
-the two groups have independent lobby-creation budgets. Both servers exit
-after the run. The suite fails if either port is occupied. Run one visual
+servers on `127.0.0.1:4187` for desktop, `127.0.0.1:4188` for mobile visual
+tests, and `127.0.0.1:4189` for tagged mobile interaction tests. Each group
+has an independent lobby-creation budget. The servers exit after the run.
+The suite fails if any of these ports is occupied. Run one visual
 invocation at a time. Do not build the same checkout concurrently from another
 terminal.
 
@@ -129,7 +130,7 @@ To check repeatability without rewriting baselines:
 for run in 1 2 3; do npm run test:visual || break; done
 ```
 
-Repeat whole invocations, not `--repeat-each`: each invocation restarts both servers
+Repeat whole invocations, not `--repeat-each`: each invocation restarts the servers
 and their per-IP lobby-creation rate limiters. Many repeats against one server
 correctly hit that limiter; tests do not disable production admission controls.
 

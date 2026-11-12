@@ -320,6 +320,14 @@ view model =
             , S.justifyCenter
             , S.g8
             , S.py8
+            , S.shortLandscape
+                [ S.grid
+                , S.gridColumns "minmax(0, 25rem) minmax(0, 20rem)"
+                , S.alignContentCenter
+                , S.g2
+                , S.columnGap6
+                , S.p0
+                ]
             ]
         ]
         [ battlefieldBackground model
@@ -331,10 +339,19 @@ view model =
                 , S.maxW160
                 , S.col
                 , S.g3
+                , S.shortLandscape
+                    [ S.g2
+                    ]
                 ]
             ]
             [ H.h1
-                []
+                [ A.css
+                    [ S.shortLandscape
+                        [ S.selfCenter
+                        , S.widthValue "min(100%, 85svh)"
+                        ]
+                    ]
+                ]
                 [ H.img
                     [ A.src "assets/fightlines-logo-v1.png"
                     , A.alt "fightlines"
@@ -370,20 +387,33 @@ view model =
                 [ S.relative
                 , S.wFull
                 , S.maxW96
+                , S.shortLandscape
+                    [ S.gridArea "1 / 2 / span 2"
+                    ]
                 ]
             ]
-            [ [ matchMakingControl
-              , createLobbyButton
-                    |> Button.fullWidth
-                    |> Button.toHtml
-              , Button.secondary "feedback" FeedbackButtonClicked
-                    |> Button.fullWidth
-                    |> Button.withHtmlId feedbackButtonHtmlId
-                    |> Button.toHtml
-              , Button.secondary "about" AboutButtonClicked
-                    |> Button.fullWidth
-                    |> Button.withHtmlId aboutButtonHtmlId
-                    |> Button.toHtml
+            [ [ H.div
+                    [ A.css
+                        [ S.col
+                        , S.g3
+                        , S.shortLandscape
+                            [ S.g2
+                            ]
+                        ]
+                    ]
+                    [ matchMakingControl
+                    , createLobbyButton
+                        |> Button.fullWidth
+                        |> Button.toHtml
+                    , Button.secondary "feedback" FeedbackButtonClicked
+                        |> Button.fullWidth
+                        |> Button.withHtmlId feedbackButtonHtmlId
+                        |> Button.toHtml
+                    , Button.secondary "about" AboutButtonClicked
+                        |> Button.fullWidth
+                        |> Button.withHtmlId aboutButtonHtmlId
+                        |> Button.toHtml
+                    ]
               ]
                 |> Card.toHtml Card.simple
             ]
@@ -548,6 +578,9 @@ quotation =
                 , S.wFull
                 , S.textAlignCenter
                 ]
+            , S.shortLandscape
+                [ S.g1
+                ]
             ]
         ]
         [ H.p
@@ -555,6 +588,9 @@ quotation =
                 [ S.fontSizeRem 1.5
                 , S.belowWidth 720
                     [ S.fontSizeRem 1.25
+                    ]
+                , S.shortLandscape
+                    [ S.fontSizeRem 1
                     ]
                 ]
             ]

@@ -296,10 +296,10 @@ checks lobbyId friendlyId enemyId shared =
         viewportWithoutSelection =
             case measuredWithoutSelection.battlefieldViewport of
                 Just viewport ->
-                    (viewport.size.x == 852)
-                        && (viewport.size.y == 345)
-                        && (viewport.bottomInset == 0)
-                        && (viewport.rightInset == 0)
+                    (viewport.origin == { x = 0, y = 48 })
+                        && (viewport.camera.size == { x = 852, y = 345 })
+                        && (viewport.camera.bottomInset == 0)
+                        && (viewport.camera.rightInset == 0)
 
                 Nothing ->
                     False
