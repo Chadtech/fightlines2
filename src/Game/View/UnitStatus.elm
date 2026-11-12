@@ -3,7 +3,6 @@ module Game.View.UnitStatus exposing
     , toHtml
     )
 
-import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.UnitKind exposing (UnitKind)
 import Css
 import Game.Unit as Unit exposing (Unit)
@@ -241,7 +240,7 @@ portrait : String -> Unit -> Html msg
 portrait playerName unit =
     H.div
         [ Aria.role Aria.Image
-        , Aria.label (playerName ++ " " ++ unitTitle unit)
+        , Aria.label (playerName ++ " " ++ Unit.name unit)
         , A.css
             [ S.bgNightwood3
             , S.indentStrong
@@ -289,7 +288,7 @@ unitHeader events playerName unit =
                     [ S.textGray5
                     ]
                 ]
-                [ H.text (unitTitle unit)
+                [ H.text (Unit.name unit)
                 ]
             , InspectionHelp.button
                 events
@@ -424,12 +423,3 @@ gauge events kind resource =
                 []
             ]
         ]
-
-
-unitTitle : Unit -> String
-unitTitle unit =
-    if unit.entrenchment == Entrenchment.Entrenched then
-        "entrenched " ++ UnitKindUtil.label unit.kind
-
-    else
-        UnitKindUtil.label unit.kind

@@ -50,6 +50,23 @@ test('battlefield, selected tank, orders, and settings', async ({ page }) => {
   await expect(page.locator('#settings')).toHaveCount(0);
 });
 
+test('units without orders excludes units with a saved order', async ({ page }) => {
+  await openGame(page);
+  await page.getByRole('button', { name: /tank 11$/ }).click();
+  await page.keyboard.press('h');
+  await page.getByRole('button', { name: 'submit turn', exact: true }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'units without orders', exact: true });
+  const units = dialog.getByRole('list', { name: 'units that will hold position' });
+  await expect(units.getByRole('listitem').first()).toBeVisible();
+  await expect(units.getByRole('listitem').filter({ hasText: /tank/ })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'submit anyway' })).toBeInViewport({ ratio: 1 });
+  await dialog.getByRole('button', { name: 'keep planning' }).press('Enter');
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole('button', { name: 'submit turn', exact: true }).click();
+  await expect(dialog).toBeVisible();
+});
+
 test('first-game briefing and turn introduction', async ({ page }) => {
   const url = await createGame(page);
   await page.addInitScript(() => localStorage.setItem('fightlines.localStorage', JSON.stringify({

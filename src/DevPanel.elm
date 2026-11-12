@@ -101,6 +101,7 @@ dialog errors features model =
                 , S.gridColumns "7rem minmax(0, 1fr)"
                 , S.g3
                 , S.h75Viewport
+                , S.flex1
                 , S.minH0
                 , S.belowWidth 480
                     [ S.gridColumns "5rem minmax(0, 1fr)" ]
@@ -109,9 +110,17 @@ dialog errors features model =
             [ tabs errors model.selectedTab
             , tabContent errors features model.selectedTab
             ]
+        , H.div
+            [ A.css
+                [ S.row
+                , S.shrink0
+                ]
+            ]
+            [ Button.primary "done" Canceled
+                |> Button.toHtml
+            ]
         ]
         |> Dialog.workspace
-        |> Dialog.withCloseButton
 
 
 tabs : List Error -> Tab -> Html Msg

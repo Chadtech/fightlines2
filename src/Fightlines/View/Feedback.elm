@@ -83,7 +83,7 @@ dialog layout draft =
                 [ S.col
                 , S.g1
                 , S.when layout.mobile
-                    (S.batch [ S.flex1, S.minH20 ])
+                    [ S.flex1, S.minH20 ]
                 ]
             ]
             [ H.text "your feedback"
@@ -152,7 +152,7 @@ status draft =
         [ Aria.role role
         , A.css
             [ S.wrapAnywhere
-            , S.when (String.isEmpty message) S.absolute
+            , S.when (String.isEmpty message) [ S.absolute ]
             ]
         ]
         [ H.text message ]

@@ -121,7 +121,7 @@ dialog layout model composer =
                     [ A.hidden (not composer.history)
                     , A.id historyHtmlId
                     , A.css
-                        [ S.when (not composer.history) S.displayNone ]
+                        [ S.when (not composer.history) [ S.displayNone ] ]
                     ]
                     historyBody
                 , editor DialogComposer composer

@@ -9,6 +9,7 @@ module Game.Unit exposing
     , loadingTarget
     , mapPosition
     , mapResources
+    , name
     , occupiedCargoSlots
     , onMap
     , physicalPosition
@@ -96,20 +97,20 @@ selection =
 
 label : Unit -> String
 label unit =
-    let
-        kindLabel : String
-        kindLabel =
-            if unit.entrenchment == Entrenchment.Entrenched then
-                "entrenched " ++ UnitKindUtil.label unit.kind
-
-            else
-                UnitKindUtil.label unit.kind
-    in
     String.join " "
         [ PlayerNumber.label unit.playerNumber
-        , kindLabel
+        , name unit
         , UnitId.toString unit.id
         ]
+
+
+name : Unit -> String
+name unit =
+    if unit.entrenchment == Entrenchment.Entrenched then
+        "entrenched " ++ UnitKindUtil.label unit.kind
+
+    else
+        UnitKindUtil.label unit.kind
 
 
 setId : UnitId -> Unit -> Unit

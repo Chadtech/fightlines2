@@ -1,5 +1,5 @@
 module Game.View.CargoPassenger exposing
-    ( contents
+    ( cardContents
     , toHtml
     )
 
@@ -19,6 +19,11 @@ import View.Aria as Aria
 type ResourceKind
     = Health
     | Supplies
+
+
+type Layout
+    = Compact
+    | Card
 
 
 toHtml : { onSelect : msg } -> Unit -> Html msg
@@ -44,18 +49,36 @@ toHtml config unit =
                 ]
             ]
         ]
-        (contents unit)
+        (contents Compact unit)
 
 
-contents : Unit -> List (Html msg)
-contents unit =
+cardContents : Unit -> List (Html msg)
+cardContents =
+    contents Card
+
+
+contents : Layout -> Unit -> List (Html msg)
+contents layout unit =
     let
+        isCard : Bool
+        isCard =
+            layout == Card
+
+        resourceLayout : Css.Style
+        resourceLayout =
+            if isCard then
+                S.col
+
+            else
+                S.row
+
         resourceMeters : List (Html msg)
         resourceMeters =
             case unit.resources of
                 Just details ->
-                    [ resource Health details.hitPoints
-                    , resource Supplies
+                    [ resource layout Health details.hitPoints
+                    , resource layout
+                        Supplies
                         { current = details.supplies.current
                         , maximum = details.supplies.maximum
                         }
@@ -73,25 +96,34 @@ contents unit =
             [ S.shrink0
             , S.bgNightwood3
             , S.indentStrong
+            , S.when isCard
+                [ S.widthValue "clamp(3.5rem, 13vw, 7rem)"
+                , S.hAuto
+                ]
             ]
         ]
         [ UnitSprite.toSvg 0 unit
         ]
-    , H.div
+    , H.span
         [ A.css
             [ S.col
             , S.g1
             , S.flex1
             , S.minW0
+            , S.when isCard [ S.g2 ]
             ]
         ]
         [ H.span
-            []
+            [ A.css
+                [ S.when isCard [ S.textGray5 ]
+                , S.when isCard [ S.fontSizeRem 1.25 ]
+                ]
+            ]
             [ H.text (UnitKindUtil.label unit.kind)
             ]
-        , H.div
+        , H.span
             [ A.css
-                [ S.row
+                [ resourceLayout
                 , S.flexWrap
                 , S.g2
                 ]
@@ -102,14 +134,24 @@ contents unit =
 
 
 resource :
-    ResourceKind
+    Layout
+    -> ResourceKind
     ->
         { current : Int
         , maximum : Int
         }
     -> Html msg
-resource kind level =
+resource layout kind level =
     let
+        width : Css.Style
+        width =
+            case layout of
+                Compact ->
+                    S.w32
+
+                Card ->
+                    S.wFull
+
         fraction : Float
         fraction =
             toFloat level.current / toFloat level.maximum
@@ -155,12 +197,12 @@ resource kind level =
             else
                 description
     in
-    H.div
+    H.span
         [ A.title status
         , A.css
             [ S.col
             , S.g1
-            , Css.width (Css.rem 8)
+            , width
             ]
         ]
         [ H.span
@@ -170,7 +212,7 @@ resource kind level =
             ]
             [ H.text status
             ]
-        , H.div
+        , H.span
             [ Aria.role Aria.Meter
             , Aria.label label
             , Aria.valueMin 0
@@ -181,7 +223,7 @@ resource kind level =
                 , Css.height (Css.rem 0.25)
                 ]
             ]
-            [ H.div
+            [ H.span
                 [ A.css
                     [ fill
                     , S.hFull

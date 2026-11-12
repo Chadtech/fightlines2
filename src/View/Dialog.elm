@@ -249,7 +249,7 @@ toHtml (Dialog model) =
 
                 Announcement ->
                     [ S.w152
-                    , S.maxHViewportInset8
+                    , Css.property "max-height" "calc(100dvh - 2rem)"
                     , S.overflowAuto
                     , S.backdrop
                         [ S.bgBlack70
@@ -393,7 +393,7 @@ toHtml (Dialog model) =
             [ H.div
                 [ A.css
                     [ S.p2px
-                    , S.when model.fullscreen S.shrink0
+                    , S.when model.fullscreen [ S.shrink0 ]
                     ]
                 ]
                 [ headerContent ]

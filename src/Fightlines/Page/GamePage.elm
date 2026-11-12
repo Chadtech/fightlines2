@@ -108,7 +108,7 @@ import Game.UnloadPlanning
         ( UnloadChoice
         , UnloadPlanning
         )
-import Game.UnloadingTruck as UnloadingTruck
+import Game.UnloadingTruck as UnloadingTruck exposing (UnloadingTruck)
 import Game.View.Battlefield as Battlefield
     exposing
         ( UnloadRoute
@@ -124,6 +124,7 @@ import Game.View.MovementRoute as MovementRoute
 import Game.View.RotationChoices as RotationChoices
 import Game.View.TurnControls as TurnControls
 import Game.View.UnitDeath as UnitDeath
+import Game.View.UnitSprite as UnitSprite
 import Game.View.UnitStatus as UnitStatus
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
@@ -132,7 +133,6 @@ import Html.Styled as H
         ( Html
         )
 import Html.Styled.Attributes as A
-import Html.Styled.Events as HtmlEvents
 import Html.Styled.Lazy as Lazy
 import InvariantCheck as IC exposing (InvariantCheck)
 import Json.Decode as Decode
@@ -148,6 +148,8 @@ import Preference
 import Random
 import Shared
 import Style as S
+import Svg.Styled as Svg
+import Svg.Styled.Attributes as SA
 import Time
 import Util.Html.Event as HtmlEvent
 import Util.List as ListUtil
@@ -315,7 +317,6 @@ type Msg
     | SubmissionCancelled
     | SubmissionConfirmed
     | SubmitKeyPressed
-    | SubmissionEnterPressed
     | SkipUnplannedUnitsWarningChanged Bool
     | TurnControlsMsg TurnControls.Msg
     | RequestRetryClicked
@@ -2413,9 +2414,6 @@ isUserInteraction msg =
         SubmitKeyPressed ->
             True
 
-        SubmissionEnterPressed ->
-            True
-
         SkipUnplannedUnitsWarningChanged _ ->
             True
 
@@ -3148,9 +3146,6 @@ update lobbyId msg model =
         SubmissionConfirmed ->
             confirmSubmission lobbyId model
 
-        SubmissionEnterPressed ->
-            confirmSubmission lobbyId model
-
         SkipUnplannedUnitsWarningChanged skip ->
             ( { model | skipUnplannedUnitsWarning = skip }
             , E.setLocalStorage
@@ -3790,9 +3785,6 @@ playAudio msg model =
             Audio.confirm
 
         SubmitKeyPressed ->
-            Audio.confirm
-
-        SubmissionEnterPressed ->
             Audio.confirm
 
         SkipUnplannedUnitsWarningChanged _ ->
@@ -4847,6 +4839,21 @@ mobileOrdersPanel model =
 
                             else
                                 ""
+
+                        context : Html Msg
+                        context =
+                            case unloadPlanning model.currentTurn.phase of
+                                Just planning ->
+                                    mobileUnloadPreview model.units planning
+
+                                Nothing ->
+                                    if String.isEmpty instruction then
+                                        H.text ""
+
+                                    else
+                                        H.p
+                                            []
+                                            [ H.text instruction ]
                     in
                     H.div
                         [ A.css
@@ -4854,9 +4861,7 @@ mobileOrdersPanel model =
                             , S.g2
                             ]
                         ]
-                        [ H.p
-                            []
-                            [ H.text instruction ]
+                        [ context
                         , action
                         ]
 
@@ -4864,6 +4869,108 @@ mobileOrdersPanel model =
                     H.p
                         []
                         [ H.text "tap a unit to plan its orders" ]
+
+
+mobileUnloadPreview : List Unit -> UnloadPlanning -> Html Msg
+mobileUnloadPreview units planning =
+    let
+        portrait : Maybe { image : Html Msg, name : String }
+        portrait =
+            case planning.cargo of
+                UnloadCargo.Passenger id ->
+                    units
+                        |> ListUtil.find (\unit -> unit.id == id)
+                        |> Maybe.map passengerPortrait
+
+                UnloadCargo.Crate index ->
+                    unloadingStock units planning.truck index
+                        |> Maybe.map freightPortrait
+
+        passengerPortrait : Unit -> { image : Html Msg, name : String }
+        passengerPortrait unit =
+            { image =
+                unitThumbnail 3 unit
+            , name = Unit.name unit
+            }
+
+        freightPortrait : Supply.CargoStock -> { image : Html Msg, name : String }
+        freightPortrait stock =
+            { image =
+                H.img
+                    [ A.src (Supply.cargoImage stock.kind)
+                    , A.alt ""
+                    , A.css [ S.w12, S.hAuto, S.shrink0 ]
+                    ]
+                    []
+            , name = Supply.cargoLabel stock.kind
+            }
+
+        order : PlannedOrder
+        order =
+            UnloadingTruck.toOrder planning.truck
+
+        passengerCount : Int
+        passengerCount =
+            List.length (PlannedOrder.unloads order)
+
+        freightCount : Int
+        freightCount =
+            List.length (PlannedOrder.crateUnloads order)
+
+        current : Int
+        current =
+            1 + passengerCount + freightCount
+
+        progress : String
+        progress =
+            "unloading "
+                ++ String.fromInt current
+                ++ " of "
+                ++ String.fromInt (current + List.length planning.remaining)
+    in
+    case portrait of
+        Just cargo ->
+            H.div
+                [ Aria.role Aria.Status
+                , A.css
+                    [ S.col
+                    , S.g1
+                    , S.p2
+                    , S.bgNightwood3
+                    , S.indentStrong
+                    ]
+                ]
+                [ H.span
+                    [ A.css [ S.textYellow5 ] ]
+                    [ H.text progress ]
+                , H.div
+                    [ A.css
+                        [ S.row
+                        , S.itemsCenter
+                        , S.g2
+                        , S.textGray5
+                        ]
+                    ]
+                    [ cargo.image
+                    , H.text cargo.name
+                    ]
+                ]
+
+        Nothing ->
+            H.text ""
+
+
+unitThumbnail : Float -> Unit -> Html msg
+unitThumbnail sizeRem unit =
+    Svg.svg
+        [ SA.viewBox "0 0 16 16"
+        , Aria.hidden True
+        , SA.css
+            [ S.squareRem sizeRem
+            , S.shrink0
+            ]
+        ]
+        [ UnitSprite.toSvg 0 unit ]
 
 
 orderMenu : Model -> Html Msg
@@ -4902,10 +5009,7 @@ selectionView layout model =
         Just planning ->
             case planning.cargo of
                 UnloadCargo.Crate index ->
-                    model.units
-                        |> ListUtil.find (\unit -> unit.id == UnloadingTruck.unitId planning.truck)
-                        |> Maybe.andThen .resources
-                        |> Maybe.andThen (.supplyCargo >> List.drop index >> List.head)
+                    unloadingStock model.units planning.truck index
                         |> Maybe.map (BattlefieldInspection.unloadingFreight index)
                         |> Maybe.withDefault (battlefieldSelectionView layout model)
 
@@ -4914,6 +5018,27 @@ selectionView layout model =
 
         Nothing ->
             battlefieldSelectionView layout model
+
+
+unloadingStock : List Unit -> UnloadingTruck -> Int -> Maybe Supply.CargoStock
+unloadingStock units truck index =
+    unloadingCargoStock units truck
+        |> List.drop index
+        |> List.head
+
+
+unloadingCargoStock : List Unit -> UnloadingTruck -> List Supply.CargoStock
+unloadingCargoStock units truck =
+    let
+        truckId : UnitId
+        truckId =
+            UnloadingTruck.unitId truck
+    in
+    units
+        |> ListUtil.find (\unit -> unit.id == truckId)
+        |> Maybe.andThen .resources
+        |> Maybe.map .supplyCargo
+        |> Maybe.withDefault []
 
 
 battlefieldSelectionView : Layout -> Model -> Html Msg
@@ -5472,11 +5597,8 @@ unloadChecklist model choice =
 
         crateChoices : List (Html Msg)
         crateChoices =
-            model.units
-                |> ListUtil.find (\unit -> unit.id == UnloadingTruck.unitId choice.truck)
-                |> Maybe.andThen .resources
-                |> Maybe.map (.supplyCargo >> List.indexedMap crateCheckbox)
-                |> Maybe.withDefault []
+            unloadingCargoStock model.units choice.truck
+                |> List.indexedMap crateCheckbox
 
         crateCheckbox : Int -> Supply.CargoStock -> Html Msg
         crateCheckbox index stock =
@@ -5491,17 +5613,30 @@ unloadChecklist model choice =
                 , onCheck = UnloadCrateToggled index
                 }
                 |> Checkbox.disabled (unavailable (UnloadCargo.Crate index))
-                |> Checkbox.toHtml
+                |> Checkbox.card
                     [ H.img
                         [ A.src (Supply.cargoImage stock.kind)
                         , A.alt ""
-                        , A.width 48
-                        , A.height 48
+                        , A.css
+                            [ S.w20
+                            , S.hAuto
+                            , S.shrink0
+                            ]
                         ]
                         []
                     , H.span
-                        []
-                        [ H.text (label ++ " · " ++ Supply.resourceLabel stock.kind ++ " " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum)
+                        [ A.css
+                            [ S.col
+                            , S.g2
+                            , S.minW0
+                            ]
+                        ]
+                        [ H.span
+                            [ A.css [ S.textGray5 ] ]
+                            [ H.text label ]
+                        , H.span
+                            []
+                            [ H.text (Supply.resourceLabel stock.kind ++ " " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum) ]
                         ]
                     ]
 
@@ -5514,18 +5649,6 @@ unloadChecklist model choice =
             else
                 Button.primary "choose unload squares" UnloadChoicesConfirmed
                     |> Button.toHtml
-
-        actions : Html Msg
-        actions =
-            H.form
-                [ A.attribute "method" "dialog"
-                ]
-                [ proceedButton
-                ]
-
-        content : List (Html Msg)
-        content =
-            choices ++ unavailableContent ++ actionContent
 
         unavailableContent : List (Html Msg)
         unavailableContent =
@@ -5553,12 +5676,46 @@ unloadChecklist model choice =
             else
                 []
 
-        actionContent : List (Html Msg)
-        actionContent =
-            [ actions
-            ]
+        cargoContent : List (Html Msg)
+        cargoContent =
+            cargoCards :: unavailableContent
+
+        cargoCards : Html Msg
+        cargoCards =
+            H.div
+                [ A.css
+                    [ S.grid
+                    , S.gridColumns "repeat(auto-fit, minmax(min(100%, 17rem), 1fr))"
+                    , S.g3
+                    , S.when mobile [ S.grow ]
+                    ]
+                ]
+                choices
+
+        mobile : Bool
+        mobile =
+            isMobileView model
     in
-    Dialog.make unloadDialogHtmlId "unload" EscapePressed content
+    Dialog.make unloadDialogHtmlId
+        "unload"
+        EscapePressed
+        [ H.div
+            [ A.css
+                [ S.col
+                , S.g3
+                , S.when mobile [ S.flex1 ]
+                , S.when mobile [ S.minH0 ]
+                , S.when mobile [ S.overflowAuto ]
+                ]
+            ]
+            cargoContent
+        , H.form
+            [ A.attribute "method" "dialog"
+            , A.css [ S.when mobile [ S.shrink0 ] ]
+            ]
+            [ proceedButton ]
+        ]
+        |> Dialog.reference
 
 
 freightHandlingSummary : PlannedOrder.SupplyHandling -> String
@@ -6161,9 +6318,49 @@ planningDialog model _ =
 submissionWarning : Model -> Dialog Msg
 submissionWarning model =
     let
+        missingUnits : List Unit
+        missingUnits =
+            unitsWithoutOrders model
+
         missingCount : Int
         missingCount =
-            List.length (unitsWithoutOrders model)
+            List.length missingUnits
+
+        mobile : Bool
+        mobile =
+            isMobileView model
+
+        mobileSizing : S.Style
+        mobileSizing =
+            if mobile then
+                S.batch
+                    [ S.flex1
+                    , S.minH0
+                    ]
+
+            else
+                S.none
+
+        listSizing : S.Style
+        listSizing =
+            if mobile then
+                mobileSizing
+
+            else
+                S.maxH35Viewport
+
+        unitRow : Unit -> Html Msg
+        unitRow unit =
+            H.li
+                [ A.css
+                    [ S.row
+                    , S.itemsCenter
+                    , S.g2
+                    ]
+                ]
+                [ unitThumbnail 2 unit
+                , H.text (Unit.name unit)
+                ]
 
         warning : String
         warning =
@@ -6177,37 +6374,54 @@ submissionWarning model =
     Dialog.make partialOrdersDialogHtmlId
         "units without orders"
         SubmissionCancelled
-        [ H.p
-            []
-            [ H.text warning
-            ]
-        , H.form
+        [ H.form
             [ A.attribute "method" "dialog"
-            , HtmlEvents.custom "keydown"
-                (HtmlEvent.enter
-                    { message = SubmissionEnterPressed
-                    , stopPropagation = True
-                    , preventDefault = True
-                    }
-                )
             , A.css
-                [ S.row
-                , S.flexWrap
-                , S.itemsCenter
+                [ S.col
                 , S.g3
+                , mobileSizing
                 ]
             ]
-            [ Button.secondary "keep planning" SubmissionCancelled
-                |> Button.toHtml
-            , Button.primary "submit anyway" SubmissionConfirmed
-                |> Button.toHtml
-            , Checkbox.new
-                { label = "skip this dialog"
-                , checked = model.skipUnplannedUnitsWarning
-                , onCheck = SkipUnplannedUnitsWarningChanged
-                }
-                |> Checkbox.toHtml
-                    [ H.text "skip this dialog" ]
+            [ H.p
+                [ A.css [ S.shrink0 ] ]
+                [ H.text warning ]
+            , H.ul
+                [ A.tabindex 0
+                , Aria.role Aria.List
+                , Aria.label "units that will hold position"
+                , A.css
+                    [ S.listNone
+                    , S.m0
+                    , S.p2
+                    , S.bgNightwood3
+                    , S.indentStrong
+                    , S.textGray5
+                    , S.overflowAuto
+                    , listSizing
+                    ]
+                ]
+                (List.map unitRow missingUnits)
+            , H.div
+                [ A.css
+                    [ S.row
+                    , S.flexWrap
+                    , S.itemsCenter
+                    , S.g3
+                    , S.shrink0
+                    ]
+                ]
+                [ Button.secondary "keep planning" SubmissionCancelled
+                    |> Button.toHtml
+                , Button.primary "submit anyway" SubmissionConfirmed
+                    |> Button.toHtml
+                , Checkbox.new
+                    { label = "skip this dialog"
+                    , checked = model.skipUnplannedUnitsWarning
+                    , onCheck = SkipUnplannedUnitsWarningChanged
+                    }
+                    |> Checkbox.toHtml
+                        [ H.text "skip this dialog" ]
+                ]
             ]
         ]
 

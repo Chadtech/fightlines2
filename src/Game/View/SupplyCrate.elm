@@ -6,7 +6,6 @@ module Game.View.SupplyCrate exposing
 import Api.Enum.ResourceKind exposing (ResourceKind)
 import Game.Supply as Supply
 import Game.View.StockGauge as StockGauge
-import Html.Attributes as A
 import Html.Lazy as Lazy
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as HA
@@ -31,7 +30,6 @@ crateView kind =
         , SA.width "12"
         , SA.height "12"
         , SA.xlinkHref (Supply.cargoImage kind)
-        , A.style "image-rendering" "auto"
         , SA.pointerEvents "none"
         , Aria.svgHidden True
         ]

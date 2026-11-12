@@ -15,17 +15,20 @@ test('game menu lets touch players switch mobile view on and off', interaction, 
   const panel = page.getByRole('dialog', { name: 'dev panel', exact: true });
   const mobileView = panel.getByRole('checkbox', { name: 'mobile view', exact: true });
   const openPanel = menu.getByRole('button', { name: 'dev panel', exact: true });
-  const closePanel = panel.getByRole('button', { name: 'close dev panel', exact: true });
+  const done = panel.getByRole('button', { name: 'done', exact: true });
   const mobileBattlefield = page.locator('[aria-label="mobile battlefield"]');
 
   await expect(mobileBattlefield).toBeHidden();
   await page.getByRole('button', { name: 'menu', exact: true }).tap();
   await openPanel.tap();
+  await expect(panel.getByRole('button', { name: 'close dev panel', exact: true })).toHaveCount(0);
   await panel.getByRole('tab', { name: 'features', exact: true }).tap();
   await expect(mobileView).not.toBeChecked();
   await mobileView.tap();
   await expect(mobileView).toBeChecked();
-  await closePanel.tap();
+  await page.setViewportSize({ width: 667, height: 260 });
+  await expect(done).toBeInViewport({ ratio: 1 });
+  await done.tap();
   await expect(menu).toBeVisible();
   await expect(mobileBattlefield).toBeVisible();
 
@@ -33,7 +36,7 @@ test('game menu lets touch players switch mobile view on and off', interaction, 
   await expect(mobileView).toBeChecked();
   await mobileView.tap();
   await expect(mobileView).not.toBeChecked();
-  await closePanel.tap();
+  await done.tap();
   await expect(menu).toBeVisible();
   await expect(mobileBattlefield).toBeHidden();
 });
@@ -191,7 +194,10 @@ for (const order of ['move', 'attack move']) {
   test(`touch drag traces and confirms ${order}`, interaction, async ({ page }) => {
     await openGame(page);
     const battlefield = page.getByRole('group', { name: 'battlefield', exact: true });
-    await battlefield.getByRole('button', { name: /tank 11$/ }).tap();
+    const tank = battlefield.getByRole('button', { name: /tank 11$/ });
+    const dimmedSprite = tank.locator('..').locator(':scope > g[filter="url(#battlefield-ordered-unit)"]');
+    await expect(dimmedSprite).toHaveCount(0);
+    await tank.tap();
     const orders = page.getByRole('region', { name: 'unit orders', exact: true });
     await orders.getByRole('button', { name: order, exact: true }).tap();
     await expect(page.getByText('drag to trace a route, or tap a destination.')).toBeVisible();
@@ -236,6 +242,10 @@ for (const order of ['move', 'attack move']) {
       await facing.getByRole('button', { name: 'face east', exact: true }).tap();
     }
     await expect(saved).toHaveAttribute('points', points);
+    await expect(dimmedSprite).toHaveCount(1);
+    await page.getByRole('button', { name: 'revoke order', exact: true }).tap();
+    await expect(saved).toHaveCount(0);
+    await expect(dimmedSprite).toHaveCount(0);
   });
 }
 
@@ -356,6 +366,31 @@ test('settings', async ({ page }) => {
   await expect(dialog).toHaveCount(0);
 });
 
+test('units without orders scroll above the submission actions', interaction, async ({ page }) => {
+  await page.setViewportSize({ width: 667, height: 260 });
+  await openGame(page);
+  await page.getByRole('button', { name: 'submit turn', exact: true }).tap();
+
+  const dialog = page.getByRole('dialog', { name: 'units without orders', exact: true });
+  const units = dialog.getByRole('list', { name: 'units that will hold position' });
+  const keepPlanning = dialog.getByRole('button', { name: 'keep planning', exact: true });
+  await expect(units.getByRole('listitem')).toHaveText([
+    'infantry', 'infantry', 'infantry', 'truck', 'truck', 'tank', 'field gun', 'field gun',
+  ]);
+  await expect(keepPlanning).toBeInViewport({ ratio: 1 });
+  await expect(dialog.getByRole('button', { name: 'submit anyway' })).toBeInViewport({ ratio: 1 });
+  await expect(dialog.getByRole('checkbox', { name: 'skip this dialog' })).toBeInViewport({ ratio: 1 });
+  const actionsBeforeScroll = await keepPlanning.boundingBox();
+  expect(page.viewportSize().height - actionsBeforeScroll.y - actionsBeforeScroll.height).toBeLessThanOrEqual(16);
+
+  await swipeUp(page, units);
+  await expect.poll(() => units.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  expect(await keepPlanning.boundingBox()).toEqual(actionsBeforeScroll);
+
+  await keepPlanning.tap();
+  await expect(dialog).toHaveCount(0);
+});
+
 test('resolved turn report on a short screen', async ({ page }) => {
   const dialog = await openResolvedTurnReport(page);
   await expectReportFits(page, dialog, { width: 852, height: 393 });
@@ -369,6 +404,36 @@ test('resolved turn report with spare height', async ({ page }) => {
   const dialog = await openResolvedTurnReport(page);
   await expectReportFits(page, dialog, { width: 828, height: 379 });
   await snapshot(page, 'resolved-turn-report-roomy');
+});
+
+test('game over opens with the result, report, and actions visible in landscape', interaction, async ({ page }) => {
+  await openResolvedTurnReport(page);
+  const id = JSON.stringify(page.url().split('/').pop());
+  await graphql(page, `mutation { resignGame(id: ${id}) { id } }`);
+  await page.setViewportSize({ width: 667, height: 260 });
+  await page.reload();
+
+  const dialog = page.getByRole('dialog', { name: 'game over', exact: true });
+  const result = dialog.getByRole('heading', { name: / wins$/ });
+  const report = dialog.getByRole('region', { name: 'previous turn report' });
+  const feedback = dialog.getByRole('button', { name: 'give feedback', exact: true });
+  const returnButton = dialog.getByRole('button', { name: 'return to battlefield', exact: true });
+  await expect(result).toBeFocused();
+  await expect.poll(() => dialog.locator(':scope > div').nth(1).evaluate(body =>
+    body.scrollHeight - body.clientHeight
+  )).toBeLessThanOrEqual(1);
+  await expect(result).toBeInViewport({ ratio: 1 });
+  await expect(report).toBeInViewport({ ratio: 1 });
+  await expect(feedback).toBeInViewport({ ratio: 1 });
+  await expect(returnButton).toBeInViewport({ ratio: 1 });
+  expect((await report.boundingBox()).x).toBeLessThan((await returnButton.boundingBox()).x);
+
+  await feedback.tap();
+  const feedbackDialog = page.getByRole('dialog', { name: 'feedback', exact: true });
+  await feedbackDialog.getByRole('button', { name: 'close', exact: true }).tap();
+  await expect(feedback).toBeFocused();
+  await returnButton.tap();
+  await expect(dialog).toHaveCount(0);
 });
 
 async function openMobileDetails(page) {

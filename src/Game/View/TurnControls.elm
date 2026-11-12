@@ -89,7 +89,7 @@ panelView kind children =
             , S.flexWrap
             , S.itemsCenter
             , S.when (kind == LiveControls)
-                (S.compactViewport
+                [ S.compactViewport
                     [ S.wFull
                     , S.grid
                     , S.gridColumns "minmax(0, 1fr) minmax(0, 1fr)"
@@ -102,13 +102,11 @@ panelView kind children =
                             ]
                         ]
                     ]
-                )
+                ]
             , S.when (kind == ReplayControls)
-                (S.batch
-                    [ S.maxH40Viewport
-                    , S.overflowAuto
-                    ]
-                )
+                [ S.maxH40Viewport
+                , S.overflowAuto
+                ]
             ]
         ]
         children

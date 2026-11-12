@@ -1,5 +1,6 @@
 module Style exposing
-    ( absolute
+    ( Style
+    , absolute
     , accentYellow5
     , active
     , after
@@ -100,6 +101,7 @@ module Style exposing
     , floatNone
     , focus
     , focusVisible
+    , font5
     , fontItalic
     , fontMonospace
     , fontSizeRem
@@ -169,6 +171,7 @@ module Style exposing
     , hyphensAuto
     , imageMask
     , imageRenderingAuto
+    , imageRenderingPixelated
     , importantIndent
     , importantOutdent
     , indent
@@ -302,6 +305,7 @@ module Style exposing
     , notAllowedCursor
     , objectContain
     , opacity
+    , opacity0p5
     , opaque
     , outdent
     , outdentDark
@@ -347,6 +351,7 @@ module Style exposing
     , pre
     , pt0
     , pt1
+    , pt10
     , pt12
     , pt16
     , pt20
@@ -404,8 +409,10 @@ module Style exposing
     , shortLandscape
     , shrink0
     , softEdgeMask
+    , square7
     , squareBL
     , squareBR
+    , squareRem
     , tableFixed
     , tabularNums
     , textAlignCenter
@@ -654,6 +661,10 @@ w120 =
     Css.width (Css.rem 30)
 
 
+type alias Style =
+    Css.Style
+
+
 global : List Css.Global.Snippet
 global =
     [ Css.Global.everything
@@ -669,7 +680,10 @@ global =
     , Css.Global.selector "html"
         [ Css.fontSize (Css.rem 1)
         , Css.lineHeight (Css.num 1.5)
+        , Css.property "-webkit-text-size-adjust" "100%"
+        , Css.property "text-size-adjust" "100%"
         , fontMonospace
+        , bgNightwood2
         ]
     , Css.Global.selector "h1, h2, h3, h4, h5, h6"
         [ textGray3 ]
@@ -1049,13 +1063,13 @@ batch =
     Css.batch
 
 
-when : Bool -> Css.Style -> Css.Style
-when condition style =
+when : Bool -> List Css.Style -> Css.Style
+when condition styles =
     if condition then
-        style
+        batch styles
 
     else
-        Css.batch []
+        none
 
 
 hover : List Css.Style -> Css.Style
@@ -1969,6 +1983,11 @@ pt1 =
 pt4 : Css.Style
 pt4 =
     Css.paddingTop s4
+
+
+pt10 : Css.Style
+pt10 =
+    Css.paddingTop (Css.rem 2.5)
 
 
 pt12 : Css.Style
@@ -3299,6 +3318,11 @@ imageRenderingAuto =
     Css.property "image-rendering" "auto"
 
 
+imageRenderingPixelated : Css.Style
+imageRenderingPixelated =
+    Css.property "image-rendering" "pixelated"
+
+
 mt2 : Css.Style
 mt2 =
     Css.marginTop (Css.rem 0.5)
@@ -3459,6 +3483,11 @@ opacity value =
     Css.opacity (Css.num value)
 
 
+opacity0p5 : Css.Style
+opacity0p5 =
+    opacity 0.5
+
+
 widthPct : Float -> Css.Style
 widthPct value =
     Css.width (Css.pct value)
@@ -3477,6 +3506,19 @@ maxWViewportInsetRem inset =
 widthMinRemVw : Float -> Float -> Css.Style
 widthMinRemVw width viewportWidth =
     Css.property "width" ("min(" ++ String.fromFloat width ++ "rem, " ++ String.fromFloat viewportWidth ++ "vw)")
+
+
+square7 : Css.Style
+square7 =
+    squareRem 1.75
+
+
+squareRem : Float -> Css.Style
+squareRem size =
+    batch
+        [ Css.width (Css.rem size)
+        , Css.height (Css.rem size)
+        ]
 
 
 widthValue : String -> Css.Style
@@ -3562,6 +3604,11 @@ letterSpacingEm value =
 paddingRightEm : Float -> Css.Style
 paddingRightEm value =
     Css.paddingRight (Css.em value)
+
+
+font5 : Css.Style
+font5 =
+    fontSizeRem 1.25
 
 
 fontSizeRem : Float -> Css.Style

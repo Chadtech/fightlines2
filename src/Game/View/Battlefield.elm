@@ -548,6 +548,7 @@ camera view =
             , S.widthValue Camera.boardWidth
             , S.shrink0
             , S.transform (Camera.transform view.camera)
+            , S.when (view.camera.zoom > 1) [ S.imageRenderingPixelated ]
             , cameraTransition
             , S.reducedMotion [ S.transformTransition 0 ]
             ]
@@ -1285,7 +1286,7 @@ toSvg args =
         , Ev.on "mouseleave" (Decode.succeed TargetPreviewLeft)
         ]
         (List.concat
-            [ [ terrain ]
+            [ [ orderedUnitFilter, terrain ]
             , [ interactionTileTargets args.map boardInteraction ]
             , List.map depotView args.depots
             , List.map crateView args.supplyCrates
@@ -1409,7 +1410,6 @@ boardDepot filter depot =
             , SA.height "16"
             , SA.xlinkHref (Depot.image depot)
             , HA.style "filter" filter
-            , HA.style "image-rendering" "auto"
             , SA.pointerEvents "none"
             , Aria.svgHidden True
             ]
@@ -1434,6 +1434,30 @@ boardDepot filter depot =
                 []
                 [ Svg.text (Depot.label depot)
                 ]
+            ]
+        ]
+
+
+orderedUnitFilterId : String
+orderedUnitFilterId =
+    "battlefield-ordered-unit"
+
+
+{-| WebKit can ignore CSS brightness on SVG groups. Scale RGB in sRGB
+and preserve alpha to darken the sprite without changing its silhouette.
+-}
+orderedUnitFilter : Svg Msg
+orderedUnitFilter =
+    Svg.defs []
+        [ Svg.filter
+            [ SA.id orderedUnitFilterId
+            , SA.colorInterpolationFilters "sRGB"
+            ]
+            [ Svg.feColorMatrix
+                [ SA.type_ "matrix"
+                , SA.values "0.6 0 0 0 0  0 0.6 0 0 0  0 0 0.6 0 0  0 0 0 1 0"
+                ]
+                []
             ]
         ]
 
@@ -1487,13 +1511,13 @@ boardUnit unit facing transform ordered passengerCount column =
             else
                 cargoLabel ++ ", " ++ warningLabel
 
-        spriteFilter : String
+        spriteFilter : List (Svg.Attribute Msg)
         spriteFilter =
             if ordered then
-                "brightness(0.6)"
+                [ SA.filter ("url(#" ++ orderedUnitFilterId ++ ")") ]
 
             else
-                "none"
+                []
 
         artwork : List (Svg Msg)
         artwork =
@@ -1504,8 +1528,7 @@ boardUnit unit facing transform ordered passengerCount column =
 
             else
                 [ Svg.g
-                    [ HA.style "filter" spriteFilter
-                    ]
+                    spriteFilter
                     [ unit
                         |> Unit.setSpriteFacing facing
                         |> UnitSprite.toSvg
@@ -1692,7 +1715,7 @@ and exit selection so these transitions never recreate terrain tiles.
 terrainLayer : Map -> List Coordinate -> List Coordinate -> Bool -> Maybe Coordinate -> Svg Msg
 terrainLayer map visibleTiles reachable choosingDestination selected =
     Svg.g
-        [ HA.style "image-rendering" "auto" ]
+        []
         [ SvgLazy.lazy2 terrainArtworkLayer map visibleTiles
         , destinationDimming map reachable choosingDestination selected
         ]

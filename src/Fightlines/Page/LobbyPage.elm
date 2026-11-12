@@ -2426,12 +2426,10 @@ playerSlotView model playerNumber =
             , S.g3
             , S.py1
             , S.when (playerNumber /= Player1)
-                (S.batch
-                    [ S.borderT
-                    , S.borderGray2
-                    , S.pt3
-                    ]
-                )
+                [ S.borderT
+                , S.borderGray2
+                , S.pt3
+                ]
             ]
         ]
         [ H.div
@@ -2441,8 +2439,8 @@ playerSlotView model playerNumber =
                 , S.flex1
                 , S.minW0
                 , S.wrapAnywhere
-                , S.when (playerNumber == Player1) S.textRed1Light
-                , S.when (playerNumber == Player2) S.textBlue0Light
+                , S.when (playerNumber == Player1) [ S.textRed1Light ]
+                , S.when (playerNumber == Player2) [ S.textBlue0Light ]
                 ]
             ]
             [ label

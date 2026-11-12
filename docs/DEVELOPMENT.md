@@ -377,9 +377,8 @@ and `public/audio/ambience/sources.json`.
 Press backtick (`) in either the Fightlines or DevTools app to toggle the dev panel.
 The left navigation selects the errors tab, which lists shared session errors
 newest first. Choose **test error** to add an error to that same history.
-Press Escape, press backtick again, or use the header’s × button to close the
-panel; its selected tab and error history are preserved
-when it opens again.
+Press Escape, press backtick again, or choose **done** to close the panel.
+The panel preserves its selected tab and error history when it opens again.
 Audio-manager failures also enter this history in both apps through the shared
 JavaScript port. Entries include the audio operation and error details (including
 a stack trace when available), and retain the browser console warning. Each

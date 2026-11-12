@@ -162,6 +162,7 @@ dialog config loss =
                     , S.flexWrap
                     , S.itemsCenter
                     , S.g3
+                    , S.shrink0
                     ]
                 ]
                 [ Button.primary "continue" (ContinueClicked loss.unit.id)
@@ -175,12 +176,23 @@ dialog config loss =
                         [ H.text "skip this dialog"
                         ]
                 ]
-
-        body : List (Html Msg)
-        body =
-            information ++ [ actions ]
     in
-    Dialog.make (dialogHtmlId loss) title (ContinueClicked loss.unit.id) body
+    Dialog.make
+        (dialogHtmlId loss)
+        title
+        (ContinueClicked loss.unit.id)
+        [ H.div
+            [ A.css
+                [ S.col
+                , S.g3
+                , S.flex1
+                , S.minH0
+                , S.overflowAuto
+                ]
+            ]
+            information
+        , actions
+        ]
         |> Dialog.atBottom
 
 

@@ -269,7 +269,7 @@ unitReference mobile stats unit =
         description : Html msg
         description =
             H.p
-                [ A.css [ S.when mobile S.m0 ] ]
+                [ A.css [ S.when mobile [ S.m0 ] ] ]
                 [ H.text (unitDescription unit.kind)
                 ]
 

@@ -1783,8 +1783,8 @@ workspace model =
                 , S.userSelectNone
                 , S.bgNightwood3
                 , S.indentStrong
-                , S.when (usesHand model) S.grabCursor
-                , S.when panning S.grabbingCursor
+                , S.when (usesHand model) [ S.grabCursor ]
+                , S.when panning [ S.grabbingCursor ]
                 ]
             , Ev.preventDefaultOn "mousedown" canvasPressDecoder
             , Ev.preventDefaultOn "wheel" canvasWheelDecoder

@@ -94,7 +94,7 @@ toHtml card content =
                 Just header ->
                     [ H.div
                         [ A.css
-                            [ S.when (card.variant == Panel) S.shrink0
+                            [ S.when (card.variant == Panel) [ S.shrink0 ]
                             , S.p2px
                             ]
                         ]
@@ -106,12 +106,10 @@ toHtml card content =
                             , S.g3
                             , S.p3
                             , S.when (card.variant == Panel)
-                                (S.batch
-                                    [ S.flex1
-                                    , S.minH0
-                                    , S.overflowAuto
-                                    ]
-                                )
+                                [ S.flex1
+                                , S.minH0
+                                , S.overflowAuto
+                                ]
                             ]
                         ]
                         content
@@ -123,19 +121,15 @@ toHtml card content =
             , S.col
             , S.outdent
             , S.when (card.variant == Panel)
-                (S.batch
-                    [ S.flex1
-                    , S.minH0
-                    , S.minW0
-                    , S.overflowHidden
-                    ]
-                )
+                [ S.flex1
+                , S.minH0
+                , S.minW0
+                , S.overflowHidden
+                ]
             , S.when (card.header == Nothing)
-                (S.batch
-                    [ S.g3
-                    , S.p3
-                    ]
-                )
+                [ S.g3
+                , S.p3
+                ]
             ]
         ]
         body

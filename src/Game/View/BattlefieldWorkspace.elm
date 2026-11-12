@@ -255,7 +255,7 @@ toHtml model =
                 , S.maxWFull
                 , S.pointerEventsNone
                 , S.when model.hasSelection
-                    (Css.property "max-width" ("calc(100% - " ++ inspectorWidth ++ ")"))
+                    [ Css.property "max-width" ("calc(100% - " ++ inspectorWidth ++ ")") ]
                 , S.compactViewport
                     [ S.relative
                     , S.wFull
@@ -319,7 +319,7 @@ toHtml model =
                         , S.outdentLeft
                         ]
                     ]
-                , S.when (not model.hasSelection) S.displayNone
+                , S.when (not model.hasSelection) [ S.displayNone ]
                 ]
             ]
             [ model.inspection

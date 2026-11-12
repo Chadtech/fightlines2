@@ -517,13 +517,13 @@ track before looping from the left; reduced-motion
 settings keep these effects steady.
 Press Cmd+Enter (Ctrl+Enter on other platforms) to submit while no order menu,
 move/direction selection, unload workflow, dialog, or pointer gesture is active.
-When the units-without-orders warning opens, Enter confirms **submit anyway**;
-Escape or **keep planning** returns to planning.
+In the units-without-orders warning, use Tab to reach an action and Enter to
+activate it. Escape or **keep planning** returns to planning.
 
 Give units a move, ambush, or **hold position** order. **submit turn**
 becomes primary when all units are ready. Submitting with unassigned units opens
-a warning: choose **keep planning** or **submit anyway**, which makes those
-units hold position. Check **skip this dialog** to remember the preference in this
+a warning listing the units that will hold position. Choose **keep planning**
+or **submit anyway**. Check **skip this dialog** to remember the preference in this
 browser; future submissions let unassigned units hold without showing the warning.
 Checking the box still leaves the current turn waiting for **submit anyway**.
 Submission locks your orders, and that

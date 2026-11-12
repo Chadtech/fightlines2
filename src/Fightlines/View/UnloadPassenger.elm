@@ -14,4 +14,4 @@ toHtml config unit =
         , onCheck = config.onCheck
         }
         |> Checkbox.disabled config.disabled
-        |> Checkbox.toHtml (CargoPassenger.contents unit)
+        |> Checkbox.card (CargoPassenger.cardContents unit)

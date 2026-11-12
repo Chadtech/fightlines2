@@ -294,7 +294,7 @@ toHtml button =
                         [ H.span
                             [ A.css
                                 [ Css.property "grid-area" "1 / 1"
-                                , S.when (button.feedback /= Nothing) (Css.visibility Css.hidden)
+                                , S.when (button.feedback /= Nothing) [ Css.visibility Css.hidden ]
                                 ]
                             ]
                             [ H.text button.label
@@ -373,13 +373,11 @@ toHtml button =
                             , S.wFull
                             , S.selfStretch
                             , S.when selected
-                                (S.batch
-                                    [ S.bgNightwood3
-                                    , S.textGray5
-                                    , S.indentStrong
-                                    ]
-                                )
-                            , S.when (not selected) S.outdentStrong
+                                [ S.bgNightwood3
+                                , S.textGray5
+                                , S.indentStrong
+                                ]
+                            , S.when (not selected) [ S.outdentStrong ]
                             , Css.hover
                                 [ S.textGray5
                                 ]
@@ -462,17 +460,17 @@ toHtml button =
             , A.css
                 [ S.batch shapeStyles
                 , S.batch iconStyles
-                , S.when button.fullWidth S.wFull
+                , S.when button.fullWidth [ S.wFull ]
                 , Css.maxWidth (Css.pct 100)
                 , S.pointerCursor
                 , S.touchActionManipulation
                 , S.coarsePointer
                     [ S.minH11
-                    , S.when (button.shape == IconOnly) S.minW11
+                    , S.when (button.shape == IconOnly) [ S.minW11 ]
                     ]
                 , S.belowWidth 767
                     [ S.minH11
-                    , S.when (button.shape == IconOnly) S.minW11
+                    , S.when (button.shape == IconOnly) [ S.minW11 ]
                     ]
                 , S.batch variantStyles
                 , emphasisStyles

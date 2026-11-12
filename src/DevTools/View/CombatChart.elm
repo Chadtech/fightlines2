@@ -376,8 +376,8 @@ hitCell config key =
                             , S.bgTransparent
                             , S.textGray5
                             , S.pointerCursor
-                            , S.when lethal S.bgRed0
-                            , S.when selected S.borderYellow5
+                            , S.when lethal [ S.bgRed0 ]
+                            , S.when selected [ S.borderYellow5 ]
                             , S.hover
                                 [ S.importantIndent
                                 ]
@@ -405,7 +405,7 @@ hitCell config key =
                                     , S.h3px
                                     , S.widthPct share
                                     , S.bgYellow4
-                                    , S.when lethal S.bgGray4
+                                    , S.when lethal [ S.bgGray4 ]
                                     ]
                                 ]
                                 []
@@ -447,8 +447,8 @@ legend variant =
             , A.css
                 [ S.w4
                 , S.h2
-                , S.when (variant == DamageShare) S.bgYellow4
-                , S.when (variant == LethalHit) S.bgRed0
+                , S.when (variant == DamageShare) [ S.bgYellow4 ]
+                , S.when (variant == LethalHit) [ S.bgRed0 ]
                 ]
             ]
             []

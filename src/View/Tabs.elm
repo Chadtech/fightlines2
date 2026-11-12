@@ -247,7 +247,7 @@ tabView ((Tabs config) as tabs) option =
                     , S.itemsStretch
                     , S.minW0
                     , S.flex1
-                    , S.when selected S.bgYellow2
+                    , S.when selected [ S.bgYellow2 ]
                     ]
                 ]
                 content
@@ -312,14 +312,12 @@ helpButton tabHtmlId selected help =
                 , S.textGray5
                 ]
             , S.when selected
-                (S.batch
-                    [ S.textYellow5
-                    , S.hover
-                        [ S.bgYellow2
-                        , S.textYellow6
-                        ]
+                [ S.textYellow5
+                , S.hover
+                    [ S.bgYellow2
+                    , S.textYellow6
                     ]
-                )
+                ]
             ]
         ]
         [ InfoMarker.toHtml ]
@@ -428,12 +426,10 @@ tabButton (Tabs config) option =
             , S.p3
             , S.textLeft
             , S.when (config.orientation == Horizontal)
-                (S.batch
-                    [ S.p2
-                    , S.textAlignCenter
-                    , S.flex1
-                    ]
-                )
+                [ S.p2
+                , S.textAlignCenter
+                , S.flex1
+                ]
             , S.pointerCursor
             , S.bgTransparent
             , S.textGray4
@@ -443,15 +439,13 @@ tabButton (Tabs config) option =
                 , S.textGray5
                 ]
             , S.when isSelected
-                (S.batch
+                [ S.bgYellow2
+                , S.textYellow5
+                , S.hover
                     [ S.bgYellow2
                     , S.textYellow5
-                    , S.hover
-                        [ S.bgYellow2
-                        , S.textYellow5
-                        ]
                     ]
-                )
+                ]
             ]
         ]
         [ H.text option.label
@@ -475,7 +469,7 @@ panel (Tabs config) value content =
         , A.hidden isHidden
         , A.css
             [ S.minW0
-            , S.when isHidden S.displayNone
+            , S.when isHidden [ S.displayNone ]
             ]
         ]
         content

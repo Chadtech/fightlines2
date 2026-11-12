@@ -60,15 +60,13 @@ toHtml args =
                 [ S.bgGray2
                 ]
             , S.when args.selected
-                (S.batch
+                [ S.bgGray2
+                , S.evenChildren
                     [ S.bgGray2
-                    , S.evenChildren
-                        [ S.bgGray2
-                        ]
-                    , S.outlineYellow5
-                    , S.outlineOffsetNeg1
                     ]
-                )
+                , S.outlineYellow5
+                , S.outlineOffsetNeg1
+                ]
             ]
         ]
         [ H.span

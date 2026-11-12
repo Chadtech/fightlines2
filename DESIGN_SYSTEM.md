@@ -609,8 +609,9 @@ behavior. Desktop dialogs keep their usual sizes.
   without requiring battlefield focus.
   Plus/minus zoom through game-page window commands without requiring battlefield
   focus. Home resets the view while the battlefield is focused.
-- Use smooth image rendering for illustrated terrain, building and unit sprites. SVG scales the
-  board to the camera width and handles selection events directly in Elm.
+- Use smooth image rendering for the battlefield overview and pixelated scaling
+  for map sprites above 100% camera zoom. SVG scales the board to the camera
+  width and handles selection events directly in Elm.
 - Use highly detailed 1980s anime OVA terrain with fine ink contours, richly
   layered painted shading, botanical detail and textured rock faces within
   broad readable shapes.
@@ -748,13 +749,15 @@ behavior. Desktop dialogs keep their usual sizes.
   Passenger selection shows inspection details. Choosing hold position on a loaded
   truck opens the unload checklist for its current square, including with zero fuel.
   Saving a loaded truck's move
-  destination opens a modal titled `unload`, with one styled native checkbox per
-  cargo item: passengers have a small unit portrait, the kind name alone, and
-  compact health and supply meters; crates have their illustrated box and
-  remaining stock. Use the usual red/yellow/green resource thresholds and include
-  numeric values plus a `low` label below 25%. `View.Checkbox` owns the inset
-  nightwood checkbox, light gray checked fill with a dark checkmark, and visible
-  keyboard focus. A single action
+  destination opens a modal titled `unload`. Arrange cargo cards side by side
+  when they fit and stack them at narrower widths. Passengers have a large
+  portrait beside their kind, health, and supply. Crates and drums show their
+  artwork and remaining stock. Use the usual red/yellow/green passenger resource
+  thresholds and include numeric values plus a `low` label below 25%.
+  The entire card toggles its native checkbox, which sits in the upper-right
+  corner and retains visible keyboard focus. Selected cards have a gold
+  border and checkmark background. On mobile, let the cards scroll above
+  the action at the bottom of the dialog. A single action
   says `proceed without unloading` when nothing is checked and becomes the gold
   `choose unload squares` action when cargo is checked. Canceling the checklist or
   leaving unload-square selection discards the truck plan and chosen exits;
@@ -768,8 +771,9 @@ behavior. Desktop dialogs keep their usual sizes.
   so it can be deselected. While choosing each exit, inspect the current passenger
   or show the current crate or drum's illustration and resource gauge, using the
   same freight details as ground selection. Advance the inspector with each cargo
-  item. Extend a solid gold branch from the truck's
-  destination dot to an outlined diamond on each saved unloading square. Keep
+  item. In mobile orders, show the current cargo's sprite, name, and unload count
+  in a green inset bevel above **cancel order**. Extend a solid gold branch from
+  the truck's destination dot to an outlined diamond on each saved unloading square. Keep
   these markers visible above unit artwork and preserve tile interaction.
   The selected passenger's exit uses a larger filled gold diamond with a bright
   ivory tile outline, following selection while issuing infantry orders.

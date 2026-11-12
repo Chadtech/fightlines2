@@ -723,8 +723,8 @@ effect using the static `DevPanel.htmlId`. Each entry point calls it directly,
 restores the pending page dialog when the panel closes. The player entry point
 also synchronizes the selected dialog when shared state changes. Shared has no knowledge of
 page dialogs. Page key commands are suspended while the dev panel is open;
-Escape uses the native dialog cancel event. The dev panel enables the dialog
-header’s optional close button, which emits the same cancellation event.
+Escape uses the native dialog cancel event. The dev panel's primary **done**
+button emits the same cancellation event.
 
 `Effect` owns the effect variants and interpreter. `After`, `Focus`, and `Measure`
 store operation data and callbacks; `toCmd` creates and runs their commands.

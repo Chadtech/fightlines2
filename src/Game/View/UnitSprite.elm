@@ -162,9 +162,6 @@ spriteView column kind playerNumber facingLeft =
     in
     Svg.g
         [ SA.transform sideProfile
-        , SA.css
-            [ Css.property "image-rendering" "auto"
-            ]
         ]
         [ Sprite.toSvg
             { path = atlasPath

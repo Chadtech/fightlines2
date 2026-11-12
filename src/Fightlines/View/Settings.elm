@@ -127,19 +127,17 @@ dialog config =
                 [ H.div
                     [ A.css
                         [ S.when config.mobile
-                            (S.batch
-                                [ S.hFull
-                                , S.overflowAuto
-                                , S.indentStrong
-                                , scrollEdge
-                                , Css.pseudoElement "-webkit-scrollbar"
-                                    [ Css.width (Css.rem 0.625) ]
-                                , Css.pseudoElement "-webkit-scrollbar-track"
-                                    [ S.bgGray1 ]
-                                , Css.pseudoElement "-webkit-scrollbar-thumb"
-                                    [ S.bgGray3 ]
-                                ]
-                            )
+                            [ S.hFull
+                            , S.overflowAuto
+                            , S.indentStrong
+                            , scrollEdge
+                            , Css.pseudoElement "-webkit-scrollbar"
+                                [ Css.width (Css.rem 0.625) ]
+                            , Css.pseudoElement "-webkit-scrollbar-track"
+                                [ S.bgGray1 ]
+                            , Css.pseudoElement "-webkit-scrollbar-thumb"
+                                [ S.bgGray3 ]
+                            ]
                         ]
                     ]
                     [ H.div
@@ -147,7 +145,7 @@ dialog config =
                             [ S.col
                             , gap
                             , S.textGray5
-                            , S.when config.mobile S.p3
+                            , S.when config.mobile [ S.p3 ]
                             ]
                         ]
                         content
@@ -163,7 +161,7 @@ dialog config =
                     , S.itemsCenter
                     , S.g3
                     , S.shrink0
-                    , S.when (not config.mobile) S.pt3
+                    , S.when (not config.mobile) [ S.pt3 ]
                     ]
                 ]
                 [ Button.primary "done" CloseClicked
@@ -184,12 +182,10 @@ dialog config =
             , H.div
                 [ A.css
                     [ S.when config.mobile
-                        (S.batch
-                            [ Css.property "grid-area" "1 / 2 / 3 / 3"
-                            , S.grid
-                            , S.gridRows "minmax(0, 1fr)"
-                            ]
-                        )
+                        [ Css.property "grid-area" "1 / 2 / 3 / 3"
+                        , S.grid
+                        , S.gridRows "minmax(0, 1fr)"
+                        ]
                     ]
                 ]
                 [ panel Dialogs (dialogPreferences config)
@@ -206,13 +202,11 @@ dialog config =
                     , S.gridColumns "8rem minmax(0, 1fr)"
                     , S.g4
                     , S.when config.mobile
-                        (S.batch
-                            [ S.flex1
-                            , S.minH0
-                            , S.gridRows "minmax(0, 1fr) auto"
-                            ]
-                        )
-                    , S.when (not config.mobile) S.minH88
+                        [ S.flex1
+                        , S.minH0
+                        , S.gridRows "minmax(0, 1fr) auto"
+                        ]
+                    , S.when (not config.mobile) [ S.minH88 ]
                     , S.belowWidth 480
                         [ S.gridColumns "6rem minmax(0, 1fr)"
                         , S.g3
@@ -273,7 +267,7 @@ dialogPreferences config =
     , H.p
         [ A.css
             [ S.textGray4
-            , S.when (not config.mobile) S.mt3
+            , S.when (not config.mobile) [ S.mt3 ]
             ]
         ]
         [ H.text "you can also change these using “skip this dialog” during a game." ]
@@ -341,7 +335,7 @@ audioPreferences config =
             , S.p0
             , S.m0
             , S.border0
-            , S.when (config.mute == Audio.Muted) (S.opacity 0.5)
+            , S.when (config.mute == Audio.Muted) [ S.opacity 0.5 ]
             ]
         ]
         [ volumeControl config.volumes Audio.Master "master volume"

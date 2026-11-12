@@ -8,6 +8,7 @@ module Fightlines.View.TurnIntroduction exposing
     )
 
 import Css
+import Css.Media
 import Game.Turn as Turn
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -75,7 +76,7 @@ dialog config =
                 , Aria.hidden True
                 ]
                 [ H.text (String.padLeft 2 '0' (String.fromInt config.turnNumber)) ]
-            , reportView config.previousTurn
+            , reportView TurnStartReport config.previousTurn
             ]
         , H.form
             [ A.attribute "method" "dialog"
@@ -108,62 +109,122 @@ conclusion config =
         finalReport : Html Msg
         finalReport =
             if hasReport config.previousTurn then
-                reportView config.previousTurn
+                reportView FinalReport config.previousTurn
 
             else
                 H.text ""
+
+        result : Html Msg
+        result =
+            H.div
+                [ A.css (emblemStyles config.previousTurn) ]
+                [ H.div
+                    [ A.css
+                        [ S.letterSpacingEm 0.16
+                        , S.textAlignCenter
+                        , compactConclusion [ S.displayNone ]
+                        ]
+                    ]
+                    [ H.text "the battle is over" ]
+                , H.h2
+                    [ A.autofocus True
+                    , A.tabindex -1
+                    , A.css
+                        [ S.fontSizeValue "clamp(2rem, 7vw, 4rem)"
+                        , S.lineHeight1
+                        , S.textAlignCenter
+                        , S.wrapAnywhere
+                        , S.textYellow5
+                        , S.outlineNone
+                        , compactConclusion [ S.fontSizeRem 2 ]
+                        ]
+                    ]
+                    [ H.text config.headline ]
+                , H.p
+                    [ A.css
+                        [ S.textGray4
+                        , S.textAlignCenter
+                        ]
+                    ]
+                    [ H.text config.caption ]
+                , finalReport
+                ]
+
+        followUp : Html Msg
+        followUp =
+            H.div
+                [ A.css
+                    [ S.col
+                    , S.justifyCenter
+                    , S.g3
+                    ]
+                ]
+                [ H.p
+                    [ A.css [ compactConclusion [ S.displayNone ] ] ]
+                    [ H.text "thanks for playing! fightlines is a new game in development. your feedback helps shape what comes next." ]
+                , H.p
+                    [ A.css
+                        [ S.displayNone
+                        , compactConclusion [ S.block ]
+                        ]
+                    ]
+                    [ H.text "thanks for playing! your feedback helps us improve fightlines." ]
+                , H.div
+                    [ A.css
+                        [ S.grid
+                        , S.gridCols2
+                        , S.g3
+                        , compactConclusion [ S.gridCols1 ]
+                        , S.belowWidth 480
+                            [ S.gridCols1 ]
+                        ]
+                    ]
+                    [ Button.primary
+                        "return to battlefield"
+                        BattlefieldViewClicked
+                        |> Button.large
+                        |> Button.fullWidth
+                        |> Button.toHtml
+                    , Button.secondary "give feedback" FeedbackClicked
+                        |> Button.large
+                        |> Button.fullWidth
+                        |> Button.withHtmlId feedbackButtonHtmlId
+                        |> Button.toHtml
+                    ]
+                ]
     in
     Dialog.make dialogHtmlId
         "game over"
         BattlefieldViewClicked
         [ H.div
-            [ A.css (emblemStyles config.previousTurn) ]
-            [ H.div
-                [ A.css
-                    [ S.letterSpacingEm 0.16
-                    , S.textAlignCenter
-                    ]
-                ]
-                [ H.text "the battle is over" ]
-            , H.div
-                [ A.css
-                    [ S.fontSizeValue "clamp(2rem, 7vw, 4rem)"
-                    , S.lineHeight1
-                    , S.textAlignCenter
-                    ]
-                ]
-                [ H.text config.headline ]
-            , H.div
-                [ A.css
-                    [ S.textGray4
-                    , S.textAlignCenter
-                    ]
-                ]
-                [ H.text config.caption ]
-            , finalReport
-            ]
-        , H.p
-            []
-            [ H.text "thanks for playing! fightlines is a new game in development. your feedback helps shape what comes next." ]
-        , H.div
             [ A.css
                 [ S.grid
-                , S.gridCols2
+                , S.gridCols1
+                , S.shrink0
                 , S.g3
+                , sideBySideConclusion
+                    [ S.gridColumns "minmax(0, 3fr) minmax(0, 2fr)"
+                    , Css.lineHeight (Css.num 1.2)
+                    ]
                 ]
             ]
-            [ Button.primary "return to battlefield" BattlefieldViewClicked
-                |> Button.large
-                |> Button.fullWidth
-                |> Button.toHtml
-            , Button.secondary "give feedback" FeedbackClicked
-                |> Button.large
-                |> Button.fullWidth
-                |> Button.withHtmlId feedbackButtonHtmlId
-                |> Button.toHtml
+            [ result
+            , followUp
             ]
         ]
         |> Dialog.announcement
+
+
+compactConclusion : List Css.Style -> Css.Style
+compactConclusion =
+    Css.Media.withMediaQuery
+        [ "(max-width: 1023px) and (max-height: 600px)" ]
+
+
+sideBySideConclusion : List Css.Style -> Css.Style
+sideBySideConclusion =
+    Css.Media.withMediaQuery
+        [ "(min-width: 560px) and (max-width: 1023px) and (max-height: 600px)" ]
 
 
 {-| Layout stays local to the styled elements; only keyframe definitions and
@@ -266,8 +327,13 @@ numberStyles previousTurn =
     ]
 
 
-reportView : Maybe Turn.Resolution -> Html msg
-reportView previousTurn =
+type ReportLayout
+    = TurnStartReport
+    | FinalReport
+
+
+reportView : ReportLayout -> Maybe Turn.Resolution -> Html msg
+reportView layout previousTurn =
     case
         Maybe.andThen
             (\resolution ->
@@ -303,16 +369,16 @@ reportView previousTurn =
                             [ S.g1 ]
                         ]
                     ]
-                    [ reportMetric
+                    [ reportMetric layout
                         "your units lost"
                         (String.fromInt report.unitsLost)
-                    , reportMetric
+                    , reportMetric layout
                         "confirmed enemy losses"
                         (String.fromInt report.enemyUnitsDestroyed)
-                    , reportMetric
+                    , reportMetric layout
                         "known damage inflicted"
                         (String.fromInt report.damageInflicted ++ " hp")
-                    , reportMetric
+                    , reportMetric layout
                         "your supplies consumed"
                         (String.fromInt report.suppliesConsumed)
                     ]
@@ -333,8 +399,13 @@ battlefieldCaption =
         [ H.text "the battlefield awaits" ]
 
 
-reportMetric : String -> String -> Html msg
-reportMetric label value =
+reportMetric : ReportLayout -> String -> String -> Html msg
+reportMetric layout label value =
+    let
+        finalReport : Bool
+        finalReport =
+            layout == FinalReport
+    in
     H.div
         [ A.css
             [ S.p2
@@ -344,6 +415,12 @@ reportMetric label value =
                 [ S.row
                 , S.justifySpaceBetween
                 , S.g2
+                ]
+            , S.when finalReport
+                [ sideBySideConclusion
+                    [ S.px1
+                    , Css.property "padding-block" "0.1875rem"
+                    ]
                 ]
             ]
         ]
@@ -360,6 +437,8 @@ reportMetric label value =
             [ A.css
                 [ S.m0
                 , S.textYellow5
+                , S.when finalReport
+                    [ sideBySideConclusion [ S.noWrap, S.shrink0 ] ]
                 ]
             ]
             [ H.text value ]

@@ -100,7 +100,7 @@ panel config =
     H.section
         [ Aria.label "game header"
         , A.css
-            [ S.when (not config.mobile) desktopPanel
+            [ S.when (not config.mobile) [ desktopPanel ]
             , S.grid
             , S.gridColumns "minmax(0, 4.5rem) minmax(0, 6rem) minmax(0, 4.5rem) minmax(0, 4.5rem)"
             , S.itemsCenter

@@ -993,12 +993,10 @@ theaterView calibrations options visibleTiles depots map panel =
                     , S.justifyCenter
                     , sceneColumns
                     , S.when options.mobile
-                        (S.batch
-                            [ S.flex1
-                            , S.minH0
-                            , Css.property "grid-auto-rows" "minmax(0, 1fr)"
-                            ]
-                        )
+                        [ S.flex1
+                        , S.minH0
+                        , Css.property "grid-auto-rows" "minmax(0, 1fr)"
+                        ]
                     ]
                 ]
                 sceneContent
@@ -1009,7 +1007,7 @@ theaterView calibrations options visibleTiles depots map panel =
                     , S.g3
                     , S.flexWrap
                     , S.itemsCenter
-                    , S.when options.mobile S.shrink0
+                    , S.when options.mobile [ S.shrink0 ]
                     ]
                 ]
                 [ H.div
@@ -1083,7 +1081,7 @@ theaterView calibrations options visibleTiles depots map panel =
             , S.col
             , S.itemsCenter
             , S.justifyCenter
-            , S.when (not options.mobile) S.p3
+            , S.when (not options.mobile) [ S.p3 ]
             ]
         ]
         [ H.div

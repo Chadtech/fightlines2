@@ -111,15 +111,13 @@ toHtml (CardHeader header) =
                 , S.wFull
                 , S.flex1
                 , S.minW0
-                , S.when header.focusOnOpen S.outlineNone
+                , S.when header.focusOnOpen [ S.outlineNone ]
                 , S.when (header.caption /= Nothing)
-                    (S.batch
-                        [ S.row
-                        , S.justifySpaceBetween
-                        , S.flexWrap
-                        , S.g2
-                        ]
-                    )
+                    [ S.row
+                    , S.justifySpaceBetween
+                    , S.flexWrap
+                    , S.g2
+                    ]
                 ]
             ]
                 ++ List.filterMap identity [ Maybe.map A.id header.htmlId ]
