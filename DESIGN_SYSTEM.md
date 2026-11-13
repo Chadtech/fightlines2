@@ -365,9 +365,8 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
 
 ## Game board
 
-The `MobileLandscape` feature switch selects a separate minimal phone layout.
-The dev panel's **features** section exposes it as a **mobile view** checkbox;
-changes apply immediately and are remembered on this device.
+Use the minimal phone layout on Android, iOS, and compact viewports with a
+short edge up to 600px and a long edge up to 1023px.
 Use a thin full-width header and a task rail over the battlefield's right edge.
 Opening or closing the rail preserves the map's size and position.
 Put **surrender** at the far left of the top bar and the gold,
@@ -457,27 +456,15 @@ behavior. Desktop dialogs keep their usual sizes.
   floating over the battlefield. Use a short horizontal strip
   sized to its content, capped by the available width, with a bevel on its top
   and right edges, 0.5rem vertical padding and 0.75rem horizontal padding.
-  Keep the large submit button on the left, list every player's name and status
-  in the middle, and place pan/zoom/reset alongside with 1.5rem between groups.
-  Put a regular-size red `surrender` button last, after the camera controls and
-  separated from submit by the other groups. Enable it during active planning
-  and after submitting orders; disable it during playback, dialogs, and finished
-  games. Show disabled `surrendering…` while its request is pending.
-  Use plain compact roster rows in a 16.5rem area, allowing four player rows
-  without a separate inset surface. Show names without an own-player suffix,
-  truncate long names with their full text available on hover, and reserve 14ch
-  for each status. Status text
-  is `planning` or `submitted plan`.
-  Omit bullets, put a red or blue team swatch to the left of each name, and omit
-  a separator before the camera controls.
-  Arrange pan arrows as a directional pad, with up and down above
-  and below left/right. Stack zoom and reset beside the pad.
-  Use 1.625rem square pan and zoom buttons with 2px gaps.
-  Center the pan label and zoom percentage in their middle cells; let reset
-  span the zoom group's full width. Wrap camera controls below when space is
-  limited; use natural
-  height rather than reserving empty space. Longer feedback scrolls within the
-  control strip, which is capped at half the viewport height.
+  Keep desktop controls within 45rem. Use regular-size buttons for submit and
+  surrender, with the map toolbar between them. Use the secondary style for
+  surrender and enable it during active planning and after submitting orders.
+  Disable it during playback, dialogs, and finished games. Show disabled
+  `surrendering…` while its request is pending.
+  Put the pan arrows in a row, followed by zoom out, a centered zoom percentage,
+  zoom in, and reset view. Use 2rem icon buttons for pan and zoom on desktop.
+  Allow groups to wrap when space is limited.
+  On compact viewports, the zoom percentage doubles as the reset button.
   After two minutes without meaningful input in a human game, show a private
   native **inactivity warning** dialog with a remaining-seconds timer and the
   gold **i’m still here** action. It takes priority over other dialogs without
@@ -498,9 +485,9 @@ behavior. Desktop dialogs keep their usual sizes.
   border, animation, or automatic dismissal of action failures.
   Submit stays gold with a gentle brightness pulse and sweeping highlight throughout
   planning, including while units still need orders. Keep it enabled while planning
-  and disable it while orders are locked. Submitted turns retain gold text. Always show a
-  1.25rem-high inset track beneath submit. Keep it empty while idle; while waiting
-  for the opponent, show a single solid gray bar moving smoothly left to right.
+  and disable it while orders are locked. Submitted turns retain gold text. While waiting
+  for the opponent, show a 1.25rem-high inset track beneath submit with a solid
+  gray bar moving smoothly left to right.
   It fully exits the right edge before
   looping from outside the left edge;
   this is an activity indicator, not a completion percentage. Reduced-motion
@@ -513,11 +500,11 @@ behavior. Desktop dialogs keep their usual sizes.
   confirmation; later submissions fill missing orders with holds directly.
 - Below 768px, reserve a full-width bottom row for turn controls and a bounded,
   internally scrolling selection panel immediately above it. Keep the map in
-  the remaining space. Arrange submit/status and zoom/surrender in two columns;
+  the remaining space. Arrange submit, zoom, and surrender in two columns;
   omit the directional pad, use finger dragging to pan, and let the zoom
   percentage reset the view. Keep camera insets based on actual overlap.
   On short landscape screens (at most 500px high and 1023px wide), put inspection
-  beside the map and reserve the full-width turn strip below both. Use four
+  beside the map and reserve the full-width turn strip below both. Use three
   control columns from 640px wide and two below it.
   In portrait, limit selection details to 28vh and controls to 35vh, preserving internal
   scrolling. Use a compact unit portrait so order actions are easy to reach.
@@ -602,16 +589,18 @@ behavior. Desktop dialogs keep their usual sizes.
 - Primary-button dragging pans after a 6px threshold. During move or attack move
   destination selection, dragging traces the route. Clicking otherwise inspects
   units, depots and terrain. Scroll zooms around the cursor,
-  bounded to 35–300% of the overview scale. Open at 100%, centered on the whole map.
+  with a minimum of 35% of the overview scale. Match maximum tile size across
+  maps using Supply Point at 300% on desktop and 600% on mobile as the reference.
+  Open at 100%, centered on the whole map.
   Reset restores that centered overview at 100%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
   arrows or WASD pan through game-page window commands while the order popup is closed
   and movement and ambush selection are inactive,
   without requiring battlefield focus.
   Plus/minus zoom through game-page window commands without requiring battlefield
   focus. Home resets the view while the battlefield is focused.
-- Use smooth image rendering for the battlefield overview and pixelated scaling
-  for map sprites above 100% camera zoom. SVG scales the board to the camera
-  width and handles selection events directly in Elm.
+- Use smooth image rendering for the battlefield at every zoom level so the
+  illustrated sprites remain readable. SVG scales the board to the camera width
+  and handles selection events directly in Elm.
 - Use highly detailed 1980s anime OVA terrain with fine ink contours, richly
   layered painted shading, botanical detail and textured rock faces within
   broad readable shapes.

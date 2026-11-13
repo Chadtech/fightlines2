@@ -2,7 +2,7 @@
 //! Integer ticks are the least common multiple of allowances, never float comparisons.
 use crate::{
     combat::Combat,
-    map::Coordinate,
+    map::{Coordinate, Terrain},
     movement,
     player_number::PlayerNumber,
     scenario::{Direction, Scenario, Unit, UnitId},
@@ -52,6 +52,7 @@ pub struct MovementResolution {
     pub combat: Combat,
     pub paths: BTreeMap<UnitId, Vec<Coordinate>>,
     pub stopped: BTreeSet<UnitId>,
+    pub contact_reveals: BTreeSet<UnitId>,
     pub frames: Vec<TurnFrame>,
 }
 
@@ -346,6 +347,7 @@ fn resolve_arrivals(
         None => Combat::prepare(&mut board, combat_orders),
     };
     let mut stopped = BTreeSet::new();
+    let mut contact_reveals = BTreeSet::new();
     let mut frames = vec![initial_frame];
     if orders.iter().any(|order| {
         order.kind == UnitOrderKind::DigIn
@@ -483,19 +485,26 @@ fn resolve_arrivals(
             })
             .map(|order| (order.unit_id, order.arrival_direction))
             .collect();
+        let mut blocked_forest_entries = Vec::new();
         for (id, destination) in intents {
-            if !blocked.contains(&id) {
-                let passenger_count = scenario.passenger_count(id);
-                let unit = board
-                    .units
-                    .iter_mut()
-                    .find(|unit| unit.unit_id() == id)
-                    .ok_or(ResolutionError::MissingUnit)?;
-                let path = paths.get_mut(&id).ok_or(ResolutionError::MissingPath)?;
-                let origin = *path.last().ok_or(ResolutionError::EmptyPath)?;
-                unit.follow_terrain_path(&board.map, &[origin, destination], passenger_count);
-                path.push(destination);
+            let unit = board
+                .units
+                .iter_mut()
+                .find(|unit| unit.unit_id() == id)
+                .ok_or(ResolutionError::MissingUnit)?;
+            if blocked.contains(&id) {
+                if unit.board_position().is_some()
+                    && board.map.tile_at(destination) == Some(Terrain::Forest)
+                {
+                    blocked_forest_entries.push((unit.player_number(), destination));
+                }
+                continue;
             }
+            let passenger_count = scenario.passenger_count(id);
+            let path = paths.get_mut(&id).ok_or(ResolutionError::MissingPath)?;
+            let origin = *path.last().ok_or(ResolutionError::EmptyPath)?;
+            unit.follow_terrain_path(&board.map, &[origin, destination], passenger_count);
+            path.push(destination);
         }
         stopped.extend(blocked);
         stopped.extend(stop_after_arrival);
@@ -591,6 +600,18 @@ fn resolve_arrivals(
                 unit.retract_movement(path, &board.map, &discarded_path, initial, passenger_count);
             }
         }
+        // Check settled positions so an opposing arrival can reveal the unit
+        // that won the square, and a departing unit leaves no sighting behind.
+        for (player, destination) in blocked_forest_entries {
+            for enemy in board.units.iter_mut().filter(|unit| {
+                unit.is_alive()
+                    && unit.player_number() == player.opponent()
+                    && unit.board_position() == Some(destination)
+            }) {
+                enemy.reveal_position();
+                contact_reveals.insert(enemy.unit_id());
+            }
+        }
         // Retain waiting time even after a route ends; timing is independent of its length.
         frames.push(frame(
             &board,
@@ -604,6 +625,7 @@ fn resolve_arrivals(
         combat,
         paths,
         stopped,
+        contact_reveals,
         frames,
     })
 }
@@ -613,7 +635,7 @@ mod tests {
     use super::*;
     use crate::{
         combat::CombatKind,
-        map::{Map, Terrain},
+        map::Map,
         map_definition::MapDefinition,
         scenario::{Direction, Entrenchment, ResourceKind, UnitKind},
         supplies::CargoStock,
@@ -1581,6 +1603,60 @@ mod tests {
                         .collect::<Vec<_>>()
                 );
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn forest_reveals_follow_settled_enemy_occupancy() -> TestResult<()> {
+        let initial = MapDefinition::parse(
+            r#"{
+                "width": 3, "height": 1, "theme": "GreenForest", "depots": [],
+                "features": [
+                    {"position": {"x": 0, "y": 0}, "terrain": "Forest"},
+                    {"position": {"x": 1, "y": 0}, "terrain": "Forest"},
+                    {"position": {"x": 2, "y": 0}, "terrain": "Forest"}
+                ],
+                "units": [
+                    {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                    {"id": 2, "position": {"x": 2, "y": 0}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+                ]
+            }"#,
+        )
+        .fixture()?
+        .scenario()
+        .fixture()?;
+        let friendly = UnitId::parse("1").fixture()?;
+        let enemy = UnitId::parse("2").fixture()?;
+        for (enemy_origin, enemy_destination, turn, revealed) in [
+            (1, 0, 1, &[friendly, enemy][..]), // Opposing swap.
+            (2, 1, 1, &[friendly][..]),        // Player 1 wins the forest tile.
+            (2, 1, 2, &[enemy][..]),           // Player 2 wins the forest tile.
+            (1, 2, 1, &[][..]),                // Enemy vacates the forest tile in time.
+        ] {
+            let mut scenario = initial.clone();
+            let origin = Coordinate::new(enemy_origin, 0);
+            let destination = Coordinate::new(enemy_destination, 0);
+            scenario
+                .units
+                .iter_mut()
+                .find(|unit| unit.unit_id() == enemy)
+                .fixture()?
+                .move_to(origin);
+            let orders = [
+                UnitOrder::movement(friendly, vec![Coordinate::new(0, 0), Coordinate::new(1, 0)])?,
+                UnitOrder::movement(enemy, vec![origin, destination])?,
+            ];
+            let result = resolve(&scenario, &orders, turn)?;
+            let revealed_units: Vec<_> = result
+                .board
+                .units
+                .iter()
+                .filter(|unit| unit.position_revealed())
+                .map(Unit::unit_id)
+                .collect();
+            assert_eq!(revealed_units, revealed);
+            assert!(result.frames.iter().all(|frame| frame.shots.is_empty()));
         }
         Ok(())
     }

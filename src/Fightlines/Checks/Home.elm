@@ -320,7 +320,7 @@ featureChecks shared =
             Shared.superUpdate
                 (Shared.devPanelMsg
                     (DevPanel.FeatureCheckboxChanged
-                        Features.MobileLandscape
+                        Features.Placeholder
                         isEnabled
                     )
                 )
@@ -351,13 +351,13 @@ featureChecks shared =
         passes : Bool
         passes =
             (on.devPanel.selectedTab == DevPanel.FeaturesTab)
-                && Features.enabled Features.MobileLandscape on.features
-                && not (Features.enabled Features.MobileLandscape off.features)
+                && Features.enabled Features.Placeholder on.features
+                && not (Features.enabled Features.Placeholder off.features)
                 && (off.devPanel.selectedTab == DevPanel.FeaturesTab)
                 && Shared.isMobileView compact
                 && Shared.isMobileView mobileDevice
                 && not (Shared.isMobileView on)
-                && not (Shared.isMobileView { compact | features = off.features })
+                && Shared.isMobileView { compact | features = off.features }
     in
     if passes then
         []

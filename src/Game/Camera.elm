@@ -7,6 +7,7 @@ module Game.Camera exposing
     , frame
     , setOffset
     , transform
+    , zoomAt
     )
 
 import Game.Coordinate exposing (Coordinate)
@@ -33,6 +34,23 @@ type alias Viewport =
 setOffset : Point -> Camera -> Camera
 setOffset offset model =
     { model | offset = offset }
+
+
+{-| Change the zoom while keeping the map point under the anchor fixed.
+-}
+zoomAt : Point -> Float -> Camera -> Camera
+zoomAt anchorPoint zoom camera =
+    let
+        ratio : Float
+        ratio =
+            zoom / camera.zoom
+    in
+    { zoom = zoom
+    , offset =
+        { x = anchorPoint.x - (anchorPoint.x - camera.offset.x) * ratio
+        , y = anchorPoint.y - (anchorPoint.y - camera.offset.y) * ratio
+        }
+    }
 
 
 {-| The initial whole-map overview, shared by the board and order anchors.

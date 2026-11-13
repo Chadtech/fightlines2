@@ -11,6 +11,7 @@ module View.Button exposing
     , iconOnly
     , large
     , onClick
+    , opensDialog
     , primary
     , secondary
     , small
@@ -51,8 +52,14 @@ type alias Button msg =
     , feedback : Maybe String
     , fullWidth : Bool
     , emphasis : Emphasis
+    , popup : Popup
     , disclosure : Maybe Disclosure
     }
+
+
+type Popup
+    = NoPopup
+    | OpensDialog
 
 
 type alias Disclosure =
@@ -110,6 +117,7 @@ setEmphasis emphasis model =
 fromLabelAndVariant : String -> Variant -> Button msg
 fromLabelAndVariant label variant =
     { accessibleLabel = Nothing
+    , popup = NoPopup
     , disclosure = Nothing
     , htmlId = Nothing
     , onClick = Nothing
@@ -134,6 +142,11 @@ secondary : String -> msg -> Button msg
 secondary label msg =
     fromLabelAndVariant label Variant__Secondary
         |> onClick msg
+
+
+opensDialog : Button msg -> Button msg
+opensDialog button =
+    { button | popup = OpensDialog }
 
 
 primary : String -> msg -> Button msg
@@ -253,12 +266,22 @@ toHtml button =
                 Nothing ->
                     []
 
+        popupAttr : Maybe (Attribute msg)
+        popupAttr =
+            case button.popup of
+                OpensDialog ->
+                    Just (A.attribute "aria-haspopup" "dialog")
+
+                NoPopup ->
+                    Nothing
+
         conditionalAttrs : List (Attribute msg)
         conditionalAttrs =
             [ Maybe.map Ev.onClick button.onClick
             , Maybe.map A.id button.htmlId
             , Maybe.map Aria.label button.accessibleLabel
             , Maybe.map A.title button.accessibleLabel
+            , popupAttr
             ]
                 |> List.filterMap identity
 
@@ -442,6 +465,11 @@ toHtml button =
                             , S.row
                             , S.itemsCenter
                             , S.justifyCenter
+                            , S.when (button.size == Large)
+                                [ S.w8
+                                , Css.minHeight (Css.rem 2)
+                                , S.fontSizeRem 1.125
+                                ]
                             ]
 
                 emphasisStyles : Css.Style

@@ -228,6 +228,27 @@ activityChecks =
                     )
                 , expect "activity reporting is throttled without discarding later interactions"
                     ((throttledRequest == Nothing) && (subsequentRequest /= Nothing))
+                , expect "a scheduled report waits only for the remaining throttle interval"
+                    (Inactivity.reportDelay
+                        (Time.millisToPosix 5000)
+                        Nothing
+                        throttled
+                        == Just 5000
+                    )
+                , expect "a pending report needs no wake-up"
+                    (Inactivity.reportDelay
+                        (Time.millisToPosix 10000)
+                        Nothing
+                        duplicate
+                        == Nothing
+                    )
+                , expect "a failed interaction report can retry during the warning"
+                    (Inactivity.reportDelay
+                        (Time.millisToPosix 1000)
+                        Nothing
+                        failed
+                        == Just 0
+                    )
                 , expect "passive clocks and exempt games do not report interaction"
                     ((disabledRequest == Nothing) && (passiveRequest == Nothing))
                 , expect "activity failures retain the countdown and expose the error"

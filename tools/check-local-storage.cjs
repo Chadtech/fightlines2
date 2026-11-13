@@ -117,7 +117,7 @@ async function checkInterop() {
     ], 'both apps forward audio errors to their shared Elm listener');
     await audioApp.send({ tag: 'audio', event: { muted: 'invalid' } });
     assert.equal(audioApp.messages.length, 2, 'repeated failures do not flood the dev panel');
-    audioApp.events.pointerdown({ isTrusted: true });
+    audioApp.events.pointerdown({ isTrusted: true, pointerType: 'mouse' });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(audioApp.messages.at(-1).payload.operation, 'initialization');
     assert.match(audioApp.messages.at(-1).payload.details, /AudioContext is not defined/,

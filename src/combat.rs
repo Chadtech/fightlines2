@@ -716,7 +716,7 @@ impl Combat {
         {
             unit.spend_supplies(rules(unit.kind()).shot_cost);
             if !self.indirect_targets.contains_key(&launch.shooter) {
-                unit.reveal_firing_position();
+                unit.reveal_position();
             }
             if let Some(direction) = Direction::between(launch.origin, launch.destination) {
                 unit.rotate(direction);
@@ -3487,7 +3487,7 @@ mod tests {
                         .units
                         .get_mut(1)
                         .fixture()?
-                        .finish_firing_reveal(revealed);
+                        .finish_position_reveal(revealed);
                     if attack_move {
                         let infantry = orders.get_mut(1).fixture()?;
                         infantry.action = CombatAction::AttackMove;
@@ -3535,7 +3535,7 @@ mod tests {
             .units
             .get_mut(1)
             .fixture()?
-            .finish_firing_reveal(true);
+            .finish_position_reveal(true);
         orders
             .get_mut(1)
             .fixture()?
@@ -3576,7 +3576,7 @@ mod tests {
                 .units
                 .get_mut(1)
                 .fixture()?
-                .finish_firing_reveal(true);
+                .finish_position_reveal(true);
             let result = resolve_completed_movement(&scenario, &orders, 1)?;
             assert_eq!(shots(&result).len(), 1);
         }

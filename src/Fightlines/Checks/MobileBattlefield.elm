@@ -10,7 +10,6 @@ import Api.Enum.UnitKind as Kind
 import Api.Scalar exposing (MapId(..))
 import Browser
 import Browser.Dom
-import Features
 import Fightlines.Page.GamePage as GamePage
 import Fightlines.View.MobileBattlefield as MobileBattlefield
 import Fightlines.View.OrderMenu as OrderMenu
@@ -21,6 +20,7 @@ import Game.OrderPlanning as OrderPlanning
 import Game.Selection exposing (Selection(..), UnitInteraction(..))
 import Game.Terrain as Terrain
 import Game.TurnLifecycle as TurnLifecycle
+import Game.TurnPlayback as TurnPlayback
 import Game.Unit exposing (Unit)
 import Game.Unit.Location as Location
 import Game.UnitId as UnitId exposing (UnitId)
@@ -70,7 +70,7 @@ main =
                                 checks lobbyId
                                     friendlyId
                                     enemyId
-                                    { shared | features = Features.setEnabled Features.MobileLandscape True shared.features }
+                                    shared
 
                             _ ->
                                 [ "invalid mobile battlefield fixture identifiers" ]
@@ -206,11 +206,83 @@ checks lobbyId friendlyId enemyId shared =
 
         desktop : GamePage.Model
         desktop =
-            GamePage.setShared desktopShared moving
+            moving
+                |> GamePage.setShared desktopShared
+                |> GamePage.resize { layoutChanged = True }
+                |> Tuple.first
 
         mobileAgain : GamePage.Model
         mobileAgain =
-            GamePage.setShared shared desktop
+            desktop
+                |> GamePage.setShared shared
+                |> GamePage.resize { layoutChanged = True }
+                |> Tuple.first
+
+        playbackFrame : TurnPlayback.Frame
+        playbackFrame =
+            { units = ready.units
+            , visibleTiles = ready.visibleTiles
+            , depots = []
+            , supplyCrates = []
+            , departures = []
+            , losses = []
+            , sabotages = []
+            , indirectImpacts = []
+            , shots = []
+            , durationMs = 180
+            }
+
+        mobileCamera : TurnLifecycle.PlaybackCamera
+        mobileCamera =
+            { camera =
+                { zoom = 1.25
+                , offset = { x = 50, y = -25 }
+                }
+            , remainingPanMs = 100
+            }
+
+        playbackResized : Bool
+        playbackResized =
+            case TurnLifecycle.startTurn False [ playbackFrame, playbackFrame ] of
+                TurnLifecycle.Playing playing ->
+                    let
+                        currentTurn : CurrentTurn.Model
+                        currentTurn =
+                            ready.currentTurn
+                                |> CurrentTurn.setPhase
+                                    (TurnLifecycle.Playing
+                                        (TurnLifecycle.setPlaybackCamera
+                                            (Just mobileCamera)
+                                            playing
+                                        )
+                                    )
+
+                        resized : GamePage.Model
+                        resized =
+                            { ready | currentTurn = currentTurn }
+                                |> GamePage.setShared desktopShared
+                                |> GamePage.resize { layoutChanged = True }
+                                |> Tuple.first
+
+                        desktopCamera : TurnLifecycle.PlaybackCamera
+                        desktopCamera =
+                            { camera =
+                                { zoom = 1
+                                , offset = { x = 40, y = -20 }
+                                }
+                            , remainingPanMs = mobileCamera.remainingPanMs
+                            }
+                    in
+                    case resized.currentTurn.phase of
+                        TurnLifecycle.Playing next ->
+                            (next.camera == Just desktopCamera)
+                                && (next.animation == playing.animation)
+
+                        _ ->
+                            False
+
+                _ ->
+                    False
 
         desktopPlanning : GamePage.Model
         desktopPlanning =
@@ -319,8 +391,12 @@ checks lobbyId friendlyId enemyId shared =
                     False
     in
     List.concat
-        [ expect "desktop stays on the desktop layout with mobile enabled"
+        [ expect "wide viewports use the desktop layout"
             (not (Shared.isMobileView desktop.shared))
+        , expect "switching to desktop updates the navigation zoom cap"
+            (desktop.navigation /= moving.navigation)
+        , expect "switching to desktop clamps the held playback camera"
+            playbackResized
         , expect "resizing to desktop and back preserves draft orders and navigation"
             ((desktop.currentTurn == moving.currentTurn)
                 && (mobileAgain.currentTurn == moving.currentTurn)
@@ -330,12 +406,6 @@ checks lobbyId friendlyId enemyId shared =
             (desktopPlanning.currentTurn == moving.currentTurn)
         , expect "desktop order help still opens its planning dialog"
             (GamePage.dialog desktopHelp /= Nothing)
-        , expect "disabled mobile feature keeps compact viewports on desktop"
-            (not
-                (Shared.isMobileView
-                    { shared | features = Features.setEnabled Features.MobileLandscape False shared.features }
-                )
-            )
         , expect "portrait uses an independent rotation dialog"
             (Maybe.map Dialog.htmlId (GamePage.dialog portrait)
                 == Just "mobile-rotation-notice"

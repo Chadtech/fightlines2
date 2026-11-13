@@ -338,7 +338,9 @@ pub struct Unit {
     #[serde(default, skip_serializing_if = "Exhaustion::is_supplied")]
     exhaustion: Exhaustion,
     resources_visible: bool,
-    firing_position_revealed: bool,
+    // Keep the field name used in recorded games.
+    #[serde(rename = "firing_position_revealed")]
+    position_revealed: bool,
     pub(crate) supply_cargo: Vec<CargoStock>,
 }
 
@@ -534,18 +536,18 @@ pub struct Scenario {
 }
 
 impl Unit {
-    pub(crate) fn firing_position_revealed(&self) -> bool {
-        self.firing_position_revealed
+    pub(crate) fn position_revealed(&self) -> bool {
+        self.position_revealed
     }
 
-    /// Direct fire reveals the occupied tile immediately, through the following turn.
-    pub(crate) fn reveal_firing_position(&mut self) {
-        self.firing_position_revealed = true;
+    /// Direct fire and blocked forest entry reveal the occupied tile immediately.
+    pub(crate) fn reveal_position(&mut self) {
+        self.position_revealed = true;
     }
 
-    /// Renew direct-fire reveals, or expire the previous turn's reveal.
-    pub(crate) fn finish_firing_reveal(&mut self, fired: bool) {
-        self.firing_position_revealed = fired;
+    /// Carry a new reveal into the following turn or expire the previous one.
+    pub(crate) fn finish_position_reveal(&mut self, renewed: bool) {
+        self.position_revealed = renewed;
     }
 
     #[cfg(test)]
@@ -772,7 +774,7 @@ impl Scenario {
                 ),
                 kind: starting.kind,
                 resources_visible: true,
-                firing_position_revealed: false,
+                position_revealed: false,
                 supply_cargo: Vec::new(),
                 hit_points: HitPoints::full(),
                 fuel: Fuel::for_kind(starting.kind),

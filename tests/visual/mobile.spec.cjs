@@ -2,43 +2,25 @@ const { test, expect, openGame, createGame, graphql, snapshot } = require('./hel
 
 const interaction = { tag: '@mobile-interaction' };
 
-test('game menu lets touch players switch mobile view on and off', interaction, async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => {
-    const key = 'fightlines.localStorage';
-    const preferences = JSON.parse(localStorage.getItem(key));
-    localStorage.setItem(key, JSON.stringify({ ...preferences, features: [] }));
-  });
+test('resize switches the battlefield between desktop and mobile layouts', interaction, async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await openGame(page);
 
-  const menu = page.getByRole('dialog', { name: 'menu', exact: true });
-  const panel = page.getByRole('dialog', { name: 'dev panel', exact: true });
-  const mobileView = panel.getByRole('checkbox', { name: 'mobile view', exact: true });
-  const openPanel = menu.getByRole('button', { name: 'dev panel', exact: true });
-  const done = panel.getByRole('button', { name: 'done', exact: true });
   const mobileBattlefield = page.locator('[aria-label="mobile battlefield"]');
-
   await expect(mobileBattlefield).toBeHidden();
-  await page.getByRole('button', { name: 'menu', exact: true }).tap();
-  await openPanel.tap();
-  await expect(panel.getByRole('button', { name: 'close dev panel', exact: true })).toHaveCount(0);
-  await panel.getByRole('tab', { name: 'features', exact: true }).tap();
-  await expect(mobileView).not.toBeChecked();
-  await mobileView.tap();
-  await expect(mobileView).toBeChecked();
-  await page.setViewportSize({ width: 667, height: 260 });
-  await expect(done).toBeInViewport({ ratio: 1 });
-  await done.tap();
-  await expect(menu).toBeVisible();
+
+  await page.setViewportSize({ width: 852, height: 393 });
   await expect(mobileBattlefield).toBeVisible();
 
-  await openPanel.tap();
-  await expect(mobileView).toBeChecked();
-  await mobileView.tap();
-  await expect(mobileView).not.toBeChecked();
-  await done.tap();
-  await expect(menu).toBeVisible();
+  const rotationNotice = page.locator('#mobile-rotation-notice');
+  await page.setViewportSize({ width: 393, height: 852 });
+  await expect(rotationNotice).toBeVisible();
+  await page.setViewportSize({ width: 852, height: 393 });
+  await expect(rotationNotice).toHaveCount(0);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
   await expect(mobileBattlefield).toBeHidden();
+  await expect(page.getByRole('button', { name: 'menu', exact: true })).toBeVisible();
 });
 
 async function swipeUp(page, scrollArea) {
@@ -442,16 +424,40 @@ async function openMobileDetails(page) {
   await page.getByRole('tab', { name: 'details', exact: true }).click();
 }
 
+async function submitReportTurn(page) {
+  const submit = page.getByRole('button', { name: 'submit turn', exact: true });
+  const retry = page.getByRole('alert', { name: 'couldn’t submit turn' })
+    .getByRole('button', { name: 'try again', exact: true });
+  const confirm = page.getByRole('button', { name: 'submit anyway', exact: true });
+
+  await submit.click();
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const response = page.waitForResponse(candidate =>
+      new URL(candidate.url()).pathname.endsWith('/graphql') &&
+      candidate.request().method() === 'POST' &&
+      /\bsubmitTurn\s*\(/.test(candidate.request().postDataJSON()?.query ?? '')
+    );
+    await confirm.click();
+    const result = await (await response).json();
+    const errors = result.errors ?? [];
+    const busy = errors.length === 1 && errors[0].extensions?.code === 'GAME_BUSY';
+    if (!busy || attempt === 3) {
+      expect(errors, 'turn submission errors').toEqual([]);
+      return;
+    }
+    await retry.click();
+  }
+}
+
 async function openResolvedTurnReport(page) {
   const url = await createGame(page);
   await page.addInitScript(() => localStorage.setItem('fightlines.localStorage', JSON.stringify({
     audioMuted: true, welcomeBriefingDismissed: true,
-    skipTurnIntroduction: false, features: ['mobileLandscape'],
+    skipTurnIntroduction: false,
   })));
   await page.goto(url);
   await page.getByRole('button', { name: 'begin turn', exact: true }).click();
-  await page.getByRole('button', { name: 'submit turn', exact: true }).click();
-  await page.getByRole('button', { name: 'submit anyway', exact: true }).click();
+  await submitReportTurn(page);
   const id = JSON.stringify(url.split('/').pop());
   await expect.poll(async () => {
     const { game } = await graphql(page, `{ game(id: ${id}) { turnNumber } }`);

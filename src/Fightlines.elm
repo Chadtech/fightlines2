@@ -679,43 +679,35 @@ update msg page =
                     let
                         ( newShared, effect ) =
                             Shared.superUpdate subMsg shared
+
+                        viewportChanged : Bool
+                        viewportChanged =
+                            shared.screenSize /= newShared.screenSize
                     in
-                    setShared newShared page
-                        |> afterSharedUpdate shared
-                        |> E.and (E.map GotSharedMsg effect)
+                    case ( page, viewportChanged ) of
+                        ( Game id model, True ) ->
+                            let
+                                layoutChanged : Bool
+                                layoutChanged =
+                                    Shared.isMobileView shared
+                                        /= Shared.isMobileView newShared
+                            in
+                            GamePage.setShared newShared model
+                                |> GamePage.resize
+                                    { layoutChanged = layoutChanged }
+                                |> Tuple.mapBoth
+                                    (Game id)
+                                    (E.map (GameMsg id))
+                                |> E.and (E.map GotSharedMsg effect)
+
+                        _ ->
+                            ( setShared newShared page
+                            , E.map GotSharedMsg effect
+                            )
 
                 Nothing ->
                     page
                         |> E.withOut
-
-
-afterSharedUpdate : Shared.Model -> Page -> ( Page, Eff Msg )
-afterSharedUpdate previous page =
-    case page of
-        MatchMaking model ->
-            if model.shared.now /= previous.now then
-                MatchMaking.enterGameWhenReady model
-                    |> Tuple.mapBoth MatchMaking (E.map (MatchMakingMsg (MatchMaking.visitId model)))
-
-            else
-                page |> E.withOut
-
-        Game id model ->
-            let
-                result : ( GamePage.Model, Eff GamePage.Msg )
-                result =
-                    if model.shared.now /= previous.now then
-                        GamePage.renewInactivityTimer id model
-
-                    else
-                        E.withOut model
-            in
-            result
-                |> E.and (GamePage.refreshLayout previous model)
-                |> Tuple.mapBoth (Game id) (E.map (GameMsg id))
-
-        _ ->
-            page |> E.withOut
 
 
 
@@ -905,8 +897,7 @@ subscriptions page =
         Just shared ->
             Sub.batch
                 [ Time.every 10000 DeploymentPollTimerElapsed
-                , Shared.subscriptions
-                    |> Sub.map GotSharedMsg
+                , Shared.subscriptions |> Sub.map GotSharedMsg
                 , Subscriptions.common
                     { operatingSystem = shared.operatingSystem
                     , keyCommands = keyCommands page

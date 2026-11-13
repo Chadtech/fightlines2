@@ -107,7 +107,7 @@ function boot({ loadFails = false, decodeFails = false, resumeFails = false, def
     advance(ms) { now += ms; },
     release() { releaseLoad(); },
     async gesture(name = 'pointerdown') {
-      events[name]({ isTrusted: true });
+      events[name]({ isTrusted: true, pointerType: 'mouse' });
       await new Promise(resolve => setImmediate(resolve));
     },
   };
@@ -193,7 +193,7 @@ async function main() {
   const app = boot();
   await app.audio.handleEvent(null);
   await app.audio.handleEvent({ play: 'affirm' });
-  app.events.pointerdown({ isTrusted: false });
+  app.events.pointerdown({ isTrusted: false, pointerType: 'mouse' });
   assert.equal(app.contexts.length, 0, 'no audio context or queued playback before a gesture');
   app.audio.setVolume(0.2);
   await app.gesture();
@@ -203,6 +203,21 @@ async function main() {
   await app.audio.handleEvent({ play: 'affirm' });
   assert.equal(app.voices.length, 1);
   assert.equal(app.voices[0].started, true);
+
+  for (const [pointerType, release] of [
+    ['touch', 'pointerup'],
+    ['pen', 'pointerup'],
+    ['touch', 'touchend'],
+  ]) {
+    const mobile = boot();
+    mobile.events.pointerdown({ isTrusted: true, pointerType });
+    mobile.events[release]({ isTrusted: false, pointerType });
+    assert.equal(mobile.contexts.length, 0, 'wait for a trusted release');
+    mobile.events[release]({ isTrusted: true, pointerType });
+    await mobile.audio.handleEvent({ play: 'affirm' });
+    assert.equal(mobile.voices.length, 1, `${pointerType} ${release} unlocks playback`);
+  }
+
   assert.deepEqual(app.requests, [
     'audio/ui-affirm-switch-v1.ogg',
     'audio/ui-cancel-switch-v1.ogg',
@@ -662,7 +677,7 @@ async function main() {
   vm.createContext(unavailable);
   vm.runInContext(source + '\nthis.audio = createAudioManager();', unavailable);
   await unavailable.audio.handleEvent({ play: 'affirm' });
-  unavailableEvents.pointerdown({ isTrusted: true });
+  unavailableEvents.pointerdown({ isTrusted: true, pointerType: 'mouse' });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(unavailableWarnings.length, 1, 'unsupported browsers keep working and report the missing API');
 

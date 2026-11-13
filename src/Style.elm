@@ -72,6 +72,7 @@ module Style exposing
     , col
     , colReverse
     , colorTransition2
+    , columnGap1p5
     , columnGap6
     , compactViewport
     , containerInlineSize
@@ -171,7 +172,6 @@ module Style exposing
     , hyphensAuto
     , imageMask
     , imageRenderingAuto
-    , imageRenderingPixelated
     , importantIndent
     , importantOutdent
     , indent
@@ -239,6 +239,7 @@ module Style exposing
     , maxW8
     , maxW96
     , maxWContainerInset4
+    , maxWContainerRem
     , maxWFull
     , maxWViewportInsetRem
     , mb1p4
@@ -409,10 +410,11 @@ module Style exposing
     , shortLandscape
     , shrink0
     , softEdgeMask
+    , square12
     , square7
+    , square8
     , squareBL
     , squareBR
-    , squareRem
     , tableFixed
     , tabularNums
     , textAlignCenter
@@ -1447,6 +1449,11 @@ maxW160 =
     Css.maxWidth (Css.rem 40)
 
 
+maxWContainerRem : Float -> Css.Style
+maxWContainerRem limit =
+    Css.property "max-width" ("min(100%, " ++ String.fromFloat limit ++ "rem)")
+
+
 maxW168 : Css.Style
 maxW168 =
     Css.maxWidth (Css.rem 42)
@@ -2169,6 +2176,11 @@ g4 =
 g8 : Css.Style
 g8 =
     Css.property "gap" "2rem"
+
+
+columnGap1p5 : Css.Style
+columnGap1p5 =
+    Css.property "column-gap" "0.375rem"
 
 
 columnGap6 : Css.Style
@@ -3318,11 +3330,6 @@ imageRenderingAuto =
     Css.property "image-rendering" "auto"
 
 
-imageRenderingPixelated : Css.Style
-imageRenderingPixelated =
-    Css.property "image-rendering" "pixelated"
-
-
 mt2 : Css.Style
 mt2 =
     Css.marginTop (Css.rem 0.5)
@@ -3511,6 +3518,16 @@ widthMinRemVw width viewportWidth =
 square7 : Css.Style
 square7 =
     squareRem 1.75
+
+
+square8 : Css.Style
+square8 =
+    squareRem 2
+
+
+square12 : Css.Style
+square12 =
+    squareRem 3
 
 
 squareRem : Float -> Css.Style

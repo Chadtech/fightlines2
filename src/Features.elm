@@ -23,7 +23,7 @@ import Preference
 
 
 type Feature
-    = MobileLandscape
+    = Placeholder
 
 
 type alias Model =
@@ -43,7 +43,7 @@ init storage =
         ( features, error ) =
             Preference.load
                 { key = "features"
-                , decoder = Decode.list decoder
+                , decoder = Decode.map (List.filterMap identity) (Decode.list decoder)
                 , defaultValue = []
                 }
                 storage
@@ -61,7 +61,7 @@ init storage =
 
 all : List Feature
 all =
-    [ MobileLandscape ]
+    [ Placeholder ]
 
 
 enabled : Feature -> Model -> Bool
@@ -90,8 +90,8 @@ setEnabled feature isEnabled model =
 label : Feature -> String
 label feature =
     case feature of
-        MobileLandscape ->
-            "mobile view"
+        Placeholder ->
+            "placeholder"
 
 
 encodePreference : Model -> { key : String, value : Encode.Value }
@@ -110,20 +110,23 @@ encodePreference model =
 toString : Feature -> String
 toString feature =
     case feature of
-        MobileLandscape ->
-            "mobileLandscape"
+        Placeholder ->
+            "placeholder"
 
 
-decoder : Decoder Feature
+decoder : Decoder (Maybe Feature)
 decoder =
     Decode.string |> Decode.andThen decodeFeature
 
 
-decodeFeature : String -> Decoder Feature
+decodeFeature : String -> Decoder (Maybe Feature)
 decodeFeature value =
     case value of
+        "placeholder" ->
+            Decode.succeed (Just Placeholder)
+
         "mobileLandscape" ->
-            Decode.succeed MobileLandscape
+            Decode.succeed Nothing
 
         _ ->
             Decode.fail ("unknown feature: " ++ value)

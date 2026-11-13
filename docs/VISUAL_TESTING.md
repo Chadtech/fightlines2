@@ -40,9 +40,9 @@ build commands still regenerate their usual ignored bundles and generated API.
 
 ## Coverage
 
-The desktop matrix runs with the mobile feature **enabled**, deliberately checking
-that the desktop branch stays intact. A second battlefield check disables the
-feature and compares against the **same** desktop reference.
+The desktop matrix uses default feature preferences. A second battlefield check
+enables the placeholder and compares against the same desktop reference.
+A mobile interaction check resizes the live game across both layouts.
 
 - Home screen, About dialog and dismissal, create-lobby form.
 - Actual UI lobby creation, lobby layout, map picker, map confirmation, AI slot

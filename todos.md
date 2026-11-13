@@ -6,9 +6,11 @@
 
 
 ## Immediately
+- Frontend AI engine
 - Tutorial missions
-- E2E snapshot testing
-- More pleasant rotate your phone screen
+- Lag between moving a loaded truck and unloading dialog on black forest
+- Was there a bug where my infantry just didnt move?
+- Bumping into a unit in the forest should reveal it so units dont mysteriously dont move through the woods
 
 ## Soon
 - Manufacturing and cities
@@ -17,7 +19,6 @@
 
 
 ## Later
-
 - Horse logistics unit
 - Spectators
 - Name units

@@ -151,25 +151,12 @@ init now seed operatingSystem screenSize localStorage url key =
 ----------------------------------------------------------------
 
 
-{-| The local mobile-view feature uses the same device/viewport rule in every app.
+{-| Use the same device and viewport rules for mobile layout in every app.
 -}
 isMobileView : Model -> Bool
 isMobileView model =
-    let
-        shortEdge : Float
-        shortEdge =
-            min model.screenSize.width model.screenSize.height
-
-        longEdge : Float
-        longEdge =
-            max model.screenSize.width model.screenSize.height
-
-        mobileSize : Bool
-        mobileSize =
-            (shortEdge <= 600) && (longEdge <= 1023)
-    in
-    Features.enabled Features.MobileLandscape model.features
-        && (OperatingSystem.isMobile model.operatingSystem || mobileSize)
+    OperatingSystem.isMobile model.operatingSystem
+        || ScreenSize.isMobileSize model.screenSize
 
 
 {-| Adapt every dialog, including shared dev tools, at the application boundary.
@@ -235,14 +222,6 @@ audioErrorDecoder =
         (\operation details -> Error.AudioFailed { operation = operation, details = details })
         (Decode.field "operation" Decode.string)
         (Decode.field "details" Decode.string)
-
-
-windowResized : Int -> Int -> Msg
-windowResized width height =
-    WindowResized
-        { width = toFloat width
-        , height = toFloat height
-        }
 
 
 setDevPanelOpen : Bool -> Model -> Model
@@ -559,7 +538,7 @@ handleDevPanelMsg msg model =
 subscriptions : Sub Msg
 subscriptions =
     Sub.batch
-        [ Browser.Events.onResize windowResized
+        [ ScreenSize.onResize WindowResized
         , Time.every 1000 CurrentTimeReceived
         , Browser.Events.onVisibilityChange WindowVisibilityChanged
         ]

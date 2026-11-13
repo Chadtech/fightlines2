@@ -17,6 +17,7 @@ module Game.BattlefieldNavigation exposing
     , resetViewport
     , returning
     , scroll
+    , setMaxZoom
     , setOffset
     , setZoom
     , startReturn
@@ -45,6 +46,7 @@ import PointerGesture exposing (PointerGesture)
 type alias Model =
     { offset : Point
     , zoom : Float
+    , maxZoom : Float
     , gesture : Gesture
     , returnMotion : ReturnMotion
     }
@@ -120,6 +122,7 @@ init : Model
 init =
     { offset = { x = 0, y = 0 }
     , zoom = 1
+    , maxZoom = 3
     , gesture = MouseGesture PointerGesture.idle
     , returnMotion = Settled
     }
@@ -134,6 +137,15 @@ init =
 camera : Model -> Camera
 camera model =
     { offset = model.offset, zoom = model.zoom }
+
+
+setMaxZoom : Float -> Model -> Model
+setMaxZoom maxZoom model =
+    if model.zoom > maxZoom then
+        zoomAt { x = 0, y = 0 } 1 { model | maxZoom = maxZoom }
+
+    else
+        { model | maxZoom = maxZoom }
 
 
 startReturn : Model -> Model
@@ -375,18 +387,15 @@ zoomAt anchor factor model =
     let
         zoom : Float
         zoom =
-            clamp 0.35 3 (model.zoom * factor)
+            clamp 0.35 model.maxZoom (model.zoom * factor)
 
-        ratio : Float
-        ratio =
-            zoom / model.zoom
+        next : Camera
+        next =
+            Camera.zoomAt anchor zoom (camera model)
     in
     model
-        |> setZoom zoom
-        |> setOffset
-            { x = anchor.x - (anchor.x - model.offset.x) * ratio
-            , y = anchor.y - (anchor.y - model.offset.y) * ratio
-            }
+        |> setZoom next.zoom
+        |> setOffset next.offset
         |> finish
 
 

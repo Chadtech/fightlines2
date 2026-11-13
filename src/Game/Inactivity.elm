@@ -11,6 +11,8 @@ module Game.Inactivity exposing
     , observe
     , pending
     , recordInteraction
+    , reportDelay
+    , reportingContextChanged
     , selection
     , sequence
     , succeeded
@@ -116,15 +118,40 @@ receive now inactivity model =
                 }
 
 
-reportDue : Time.Posix -> EnabledState -> Bool
-reportDue now state =
+reportIntervalMilliseconds : Int
+reportIntervalMilliseconds =
+    10000
+
+
+reportWaitMilliseconds : Time.Posix -> EnabledState -> Int
+reportWaitMilliseconds now state =
     case state.lastSent of
         Nothing ->
-            True
+            0
 
         Just sent ->
-            (Time.posixToMillis now - Time.posixToMillis sent >= 10000)
-                || (state.dirty && (state.countdown /= Nothing))
+            if state.dirty && (state.countdown /= Nothing) then
+                0
+
+            else
+                let
+                    elapsedMilliseconds : Int
+                    elapsedMilliseconds =
+                        Time.posixToMillis now - Time.posixToMillis sent
+                in
+                max 0 (reportIntervalMilliseconds - elapsedMilliseconds)
+
+
+reportReason :
+    Maybe InactivityRenewalReason
+    -> EnabledState
+    -> Maybe InactivityRenewalReason
+reportReason presentation state =
+    if state.dirty then
+        Just UserInteraction
+
+    else
+        presentation
 
 
 
@@ -211,6 +238,43 @@ observe now responseSequence inactivity model =
         model
 
 
+{-| Server observations affect report timing when they enable reporting or
+open or close a warning. Updating the displayed seconds has no such effect.
+-}
+reportingContextChanged : Model -> Model -> Bool
+reportingContextChanged previous current =
+    case ( previous, current ) of
+        ( DisabledActivity, DisabledActivity ) ->
+            False
+
+        ( EnabledActivity before, EnabledActivity after ) ->
+            (before.countdown == Nothing) /= (after.countdown == Nothing)
+
+        _ ->
+            True
+
+
+{-| Milliseconds until a pending interaction or presentation can be reported.
+-}
+reportDelay :
+    Time.Posix
+    -> Maybe InactivityRenewalReason
+    -> Model
+    -> Maybe Int
+reportDelay now presentation model =
+    case model of
+        EnabledActivity state ->
+            case ( state.request, reportReason presentation state ) of
+                ( Ready, Just _ ) ->
+                    Just (reportWaitMilliseconds now state)
+
+                _ ->
+                    Nothing
+
+        DisabledActivity ->
+            Nothing
+
+
 beginReport :
     Time.Posix
     ->
@@ -225,18 +289,9 @@ beginReport now context model =
             ( model, Nothing )
 
         EnabledActivity state ->
-            let
-                reason : Maybe InactivityRenewalReason
-                reason =
-                    if state.dirty then
-                        Just UserInteraction
-
-                    else
-                        context.presentation
-            in
-            case ( reason, state.request ) of
+            case ( reportReason context.presentation state, state.request ) of
                 ( Just kind, Ready ) ->
-                    if reportDue now state then
+                    if reportWaitMilliseconds now state == 0 then
                         let
                             report : Report
                             report =

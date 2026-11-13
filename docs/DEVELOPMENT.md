@@ -172,13 +172,12 @@ starts with no enabled features; malformed values also record a diagnostic.
 
 Open the dev panel with backtick and select **features** to toggle local features.
 Changes apply immediately and persist on this device, including across reloads
-and other open tabs. `MobileLandscape` is stored as `"mobileLandscape"` and shown
-as **mobile view**. No backend feature flags are loaded yet.
+and other open tabs. The **placeholder** flag exercises the switch and storage
+flow. The retired `"mobileLandscape"` value is ignored when reading preferences.
 
-`MobileLandscape` gates the minimal landscape battlefield. When enabled, the view
-branches early for Android/iOS or a viewport with a short edge up to 600px and a
-long edge up to 1023px. `Shared.Model.screenSize` comes from required startup flags
-and the shared resize subscription; resize and rotation update that choice.
+The minimal battlefield layout is automatic on Android/iOS or a viewport with
+a short edge up to 600px and a long edge up to 1023px. The viewport dimensions
+come from the startup flags and update on resize and rotation.
 Portrait shows a rotate prompt;
 landscape uses a thin header and a selection rail over the map's right edge.
 The battlefield retains its full width when the rail opens or closes. Surrender

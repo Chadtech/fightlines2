@@ -96,14 +96,13 @@ and entry operations release their locks before queue cleanup.
 matchmaking module supplies the stateless failure view. `Fightlines` correlates
 every page message with a fresh visit ID. Poll responses also carry the queue ticket;
 responses overtaken by cancellation are ignored. Successful pairing shows the
-map and opponent during a get-ready countdown. Elm anchors the server's remaining
-duration to `Shared.Model.now` and derives the displayed seconds from that deadline.
-Shared clock updates enter the game when the deadline is reached; there is no
-page-specific clock subscription or asynchronous clock initialization. The recent
-match label also derives elapsed time from the shared clock, so delayed ticks do
-not stretch either duration. At the deadline it replaces the queue URL with
-`/game/:id`,
-so browser back does not reopen a consumed queue visit. In-app departure attempts
+map and opponent during a get-ready countdown. The page samples the browser
+clock when it receives a match and schedules a one-shot effect for the server's
+remaining duration. The countdown and recent match label render from the shared
+clock. When the tab becomes visible, the page checks the deadline in case the
+browser delayed the timer. Either completion path replaces the queue URL with
+`/game/:id` and moves the page out of its ready stage, so navigation happens once
+and browser back does not reopen a consumed queue visit. In-app departure attempts
 cancellation; closed documents rely on expiry.
 
 Starting a game consumes its lobby and moves the host and players into a game.
@@ -154,9 +153,12 @@ browser time between server observations. JavaScript supplies the required `now`
 startup flag to both apps. `Shared.Model.now` owns the latest browser timestamp;
 `Shared.subscriptions` updates it every second and refreshes it when the document
 becomes visible. Inactivity receives this clock explicitly rather than storing
-another clock or optional observation timestamps. Shared ticks drive due renewals
-in the live game; user interaction can request a renewal immediately. Inactivity interrupts playback and opens
-the ordinary victory conclusion, with a viewer-specific inactivity caption.
+another clock or optional observation timestamps. GamePage schedules one wake-up
+when a pending interaction or presentation allowance can next renew. It checks
+eligibility when the timer fires, when a renewal finishes, and when an incoming
+snapshot changes the game state. User interaction can renew immediately during
+a warning. Inactivity interrupts playback and opens the ordinary victory
+conclusion, with a viewer-specific inactivity caption.
 
 The store's registry maps each lobby ID to one shared, individually locked
 `GameRegistry`.
@@ -709,7 +711,7 @@ The features tab lists `Features.all` with checkboxes. `Shared` handles feature
 changes by updating `Shared.Model.features` immediately and saving the enabled
 list through `Effect.setLocalStorage`. `Features.Model` contains `List Feature`;
 `Feature` remains a custom type and availability checks use list membership.
-The `features` storage key contains string names (currently `mobileLandscape`).
+The `features` storage key contains string names (currently `placeholder`).
 Initialization and storage notifications reload this model, defaulting to an empty
 list and recording malformed values in shared diagnostics. Backend flags are not
 loaded. The panel receives the feature model without importing `Shared`.
@@ -781,8 +783,9 @@ does not block it. The audio manager silences master gain, stops all voices,
 and invalidates pending playback on mute, while retaining the previous volume.
 Shared interop dispatches on `tag`, passing audio's `event` to the manager alongside
 clipboard, dialog, storage, and thumbnail messages. New audio event kinds do not
-change this routing. Elm updates remain the only source of playback requests; pointer and
-keyboard listeners only unlock the browser audio context and preload its clips.
+change this routing. Elm updates remain the only source of playback requests.
+Mouse presses, touch and pen releases, and key presses unlock the browser
+audio context and preload its clips.
 The manager caches decoded buffers, preloading all twenty-six clips on unlock. UI
 playback allows four voices and coalesces identical requests within 40ms. Combat
 playback allows eight independent voices, cycles five variants per weapon or impact cue, and
@@ -1036,17 +1039,15 @@ move the camera. Subscription events use the navigation module's `Msg` and `upda
 
 ### Touch navigation and narrow layouts
 
-The local `MobileLandscape` feature flag branches `GamePage.view` into
-its own `MobileBattlefield` composition before desktop workspace rendering.
-`Shared.Model.screenSize` is required at initialization from each app's flags;
-`ScreenSize` owns its type and decoder. The shared `WindowResized` message updates
-it through a shared browser resize subscription. Battlefield and editor pages
-also subscribe directly to resize events and measure their own rendered workspace.
-App entry points do not forward shared size changes into page measurements.
-`GamePage` derives layout directly from the feature model, operating system, and shared screen
-size. Shared updates that change layout request a workspace measurement, retaining
-all existing planning/navigation state. `Shared.isMobileView` owns the feature-gated
-device/viewport classification. `MobileBattlefield` owns portrait presentation and
+`GamePage.view` selects the `MobileBattlefield` composition automatically.
+`Shared.isMobileView` classifies the device and viewport, using the operating
+system and `Shared.Model.screenSize` from the startup flags and resize events.
+The shared subscription updates the viewport size on every Fightlines page.
+When the size changes, Fightlines gives the game page the updated shared model
+and tells it whether the layout switched. The game page measures its workspace
+on size changes and updates the zoom cap and scrolls chat history on layout
+switches.
+The map editor and replay viewer measure their own workspaces. `MobileBattlefield` owns portrait presentation and
 the fixed header/task-rail structure. `GamePage.dialog` checks the rotation notice
 first in its ordinary dialog list for portrait mobile games. The dev panel retains
 its usual precedence over page dialogs. Returning to landscape restores the pending
@@ -1340,7 +1341,7 @@ the full-viewport navigation surface. Notifications stack above the controls;
 uncovered map space remains interactive. Its full-height right inspector
 appears only with a selection and overlays the map without changing its horizontal
 coordinate system. `GamePage.turnPanel` supplies compact horizontal game controls
-at the bottom-left edge, with submit, player statuses, and camera controls side by side.
+at the bottom-left edge, with submit, camera controls, and surrender side by side.
 `Game.View.TurnControls` owns the responsive surface and maps lifecycle activity
 to the button's size and emphasis modifiers. `View.Button` owns button styling
 and animations; `View.AppShell` mounts its keyframes once.
@@ -1726,16 +1727,18 @@ their tile interior; terrain
 touched only at a corner does not obstruct open diagonals. Forest tiles also
 conceal their contents. Own occupied squares remain known, while
 enemies in forests remain concealed even on a known occupied square.
-Units set their internal firing reveal flag immediately when firing directly,
-so the firing frame and later frames include the shooter. After all
-combat resolves, `Turns` renews it only for units that actually fired directly,
-including attack moves, ambushes, and return fire. Indirect fire consumes a shot
-but does not create or renew a reveal. Visibility
-includes each revealed unit and its occupied tile regardless of sight or forest
+Direct fire immediately reveals the shooter. A unit already on the board that
+tries to enter a forest tile reveals its opposing blocker after simultaneous
+movement and allied retreats settle. Movement resolution records those unit IDs
+and includes the revealed units from the arrival frame onward. After combat,
+`Turns` carries reveals from both movement phases and from direct fire into
+the following turn. Indirect fire consumes a shot without creating or renewing
+a reveal. Visibility includes each revealed unit and its occupied tile
+regardless of sight or forest
 cover, without granting surrounding sight or exposing resources or cargo. The
 previous reveal remains in playback frames until the final turn boundary.
 `visibility::unit_observable` shares unit sightings between projection and ambush
-targeting, including firing reveals in forests. Ambushes require shared visibility
+targeting, including reveals in forests. Ambushes require shared visibility
 and directional range, with no separate firing-line check through terrain;
 initial targets may escape before the final combat check.
 

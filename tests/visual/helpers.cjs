@@ -21,13 +21,11 @@ const test = base.extend({
       const setInterval = window.setInterval.bind(window);
       window.setInterval = (callback, delay, ...args) =>
         setInterval(delay === 400 ? () => {} : callback, delay, ...args);
-      // Exercise the mobile feature on desktop too: it must not change that layout.
       if (!localStorage.getItem('fightlines.localStorage')) {
         localStorage.setItem('fightlines.localStorage', JSON.stringify({
           audioMuted: true,
           welcomeBriefingDismissed: true,
           skipTurnIntroduction: true,
-          features: ['mobileLandscape'],
         }));
       }
     });

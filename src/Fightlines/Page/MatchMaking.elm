@@ -3,7 +3,6 @@ module Fightlines.Page.MatchMaking exposing
     , Flags
     , Model
     , Msg
-    , enterGameWhenReady
     , fromLoadError
     , init
     , leave
@@ -27,6 +26,7 @@ import Api.Union
 import Api.Union.MatchMakingSnapshot as SnapshotApi
 import ApiRequest exposing (Response)
 import Audio
+import Browser.Events
 import EditableMap exposing (NamedMap)
 import Effect as E exposing (Eff)
 import Fightlines.MatchMaking.VisitId as VisitId exposing (VisitId)
@@ -84,6 +84,7 @@ type Stage
     = Entry
     | Joining
     | Waiting Ticket Activity
+    | PreparingReady ReadyMatch
     | GettingReady ReadyMatch Time.Posix
     | EnteringGame
 
@@ -123,6 +124,10 @@ type Msg
     = NameInputChanged String
     | FindGameRequested
     | JoinResponseReceived String (Response Snapshot)
+    | ReadyTimeReceived Time.Posix
+    | ReadyTimerElapsed
+    | WindowVisibilityChanged Browser.Events.Visibility
+    | VisibleTimeReceived Time.Posix
     | PollTick
     | PollResponseReceived Ticket (Response Snapshot)
     | CancelButtonClicked
@@ -270,13 +275,8 @@ receive snapshot model =
                         enterGame found
 
                     else
-                        setStage
-                            (GettingReady found
-                                (Time.millisToPosix
-                                    (Time.posixToMillis model.shared.now + found.remainingMilliseconds)
-                                )
-                            )
-                            >> E.with (E.audio Audio.matchMakingReady)
+                        setStage (PreparingReady found)
+                            >> E.with (E.now ReadyTimeReceived)
     in
     { model
         | lastGameStartedAt =
@@ -288,20 +288,6 @@ receive snapshot model =
         , error = Nothing
     }
         |> f
-
-
-enterGameWhenReady : Model -> ( Model, Eff Msg )
-enterGameWhenReady model =
-    case model.stage of
-        GettingReady found endsAt ->
-            if Time.posixToMillis model.shared.now >= Time.posixToMillis endsAt then
-                enterGame found model
-
-            else
-                model |> E.withOut
-
-        _ ->
-            model |> E.withOut
 
 
 recentMatchSecondsAgo : Model -> Maybe Int
@@ -424,6 +410,55 @@ update msg model =
 
                 _ ->
                     ( model, E.none )
+
+        ReadyTimeReceived now ->
+            case model.stage of
+                PreparingReady found ->
+                    let
+                        endsAt : Time.Posix
+                        endsAt =
+                            Time.millisToPosix
+                                (Time.posixToMillis now + found.remainingMilliseconds)
+                    in
+                    ( setStage (GettingReady found endsAt) model
+                    , E.batch
+                        [ E.audio Audio.matchMakingReady
+                        , E.after
+                            (toFloat found.remainingMilliseconds)
+                            ReadyTimerElapsed
+                        ]
+                    )
+
+                _ ->
+                    E.withOut model
+
+        ReadyTimerElapsed ->
+            case model.stage of
+                GettingReady found _ ->
+                    enterGame found model
+
+                _ ->
+                    E.withOut model
+
+        WindowVisibilityChanged visibility ->
+            case visibility of
+                Browser.Events.Visible ->
+                    ( model, E.now VisibleTimeReceived )
+
+                Browser.Events.Hidden ->
+                    E.withOut model
+
+        VisibleTimeReceived now ->
+            case model.stage of
+                GettingReady found endsAt ->
+                    if Time.posixToMillis now >= Time.posixToMillis endsAt then
+                        enterGame found model
+
+                    else
+                        E.withOut model
+
+                _ ->
+                    E.withOut model
 
         PollTick ->
             case model.stage of
@@ -551,8 +586,12 @@ view model =
                 Waiting _ _ ->
                     waitingContent (recentMatchSecondsAgo model) (Button.secondary "cancel" CancelButtonClicked)
 
+                PreparingReady found ->
+                    readyContent found found.remainingMilliseconds
+
                 GettingReady found endsAt ->
-                    readyContent found { now = model.shared.now, endsAt = endsAt }
+                    readyContent found
+                        (Time.posixToMillis endsAt - Time.posixToMillis model.shared.now)
 
                 EnteringGame ->
                     [ waitingStatus "starting game…" ]
@@ -677,12 +716,16 @@ waitingContent lastGameSecondsAgo cancel =
     ]
 
 
-readyContent : ReadyMatch -> { now : Time.Posix, endsAt : Time.Posix } -> List (Html Msg)
-readyContent found clock =
+readyContent : ReadyMatch -> Int -> List (Html Msg)
+readyContent found millisecondsUntilReady =
     let
+        remainingMilliseconds : Int
+        remainingMilliseconds =
+            clamp 0 found.remainingMilliseconds millisecondsUntilReady
+
         seconds : Int
         seconds =
-            max 0 (ceiling (toFloat (Time.posixToMillis clock.endsAt - Time.posixToMillis clock.now) / 1000))
+            ceiling (toFloat remainingMilliseconds / 1000)
     in
     [ H.p
         [ A.css
@@ -744,6 +787,9 @@ subscriptions model =
     case model.stage of
         Waiting _ _ ->
             Time.every 2000 (\_ -> PollTick)
+
+        GettingReady _ _ ->
+            Browser.Events.onVisibilityChange WindowVisibilityChanged
 
         _ ->
             Sub.none

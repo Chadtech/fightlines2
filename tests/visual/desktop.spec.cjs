@@ -48,6 +48,20 @@ test('battlefield, selected tank, orders, and settings', async ({ page }) => {
   await snapshot(page, 'settings-audio');
   await page.keyboard.press('Escape');
   await expect(page.locator('#settings')).toHaveCount(0);
+
+  const viewControls = page.getByRole('region', { name: 'view controls' });
+  const overview = viewControls.getByText('100%', { exact: true }).filter({ visible: true });
+  await viewControls.getByRole('button', { name: 'zoom in' }).click();
+  await expect(overview).toHaveCount(0);
+  await viewControls.getByRole('button', { name: 'reset view', exact: true }).press('Enter');
+  await expect(overview).toBeVisible();
+
+  const surrender = page.getByRole('button', { name: 'surrender', exact: true });
+  await surrender.press('Enter');
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(surrender).toBeFocused();
 });
 
 test('units without orders excludes units with a saved order', async ({ page }) => {
@@ -70,7 +84,7 @@ test('units without orders excludes units with a saved order', async ({ page }) 
 test('first-game briefing and turn introduction', async ({ page }) => {
   const url = await createGame(page);
   await page.addInitScript(() => localStorage.setItem('fightlines.localStorage', JSON.stringify({
-    audioMuted: true, features: ['mobileLandscape'],
+    audioMuted: true,
   })));
   await page.goto(url);
   await expect(page.locator('#welcome-briefing')).toBeVisible();
@@ -82,11 +96,10 @@ test('first-game briefing and turn introduction', async ({ page }) => {
   await expect(page.locator('#turn-introduction')).toHaveCount(0);
 });
 
-// Both flag values deliberately compare with the same approved desktop image.
-test('mobile flag leaves desktop battlefield unchanged', async ({ page }) => {
+test('placeholder flag leaves desktop battlefield unchanged', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('fightlines.localStorage', JSON.stringify({
     audioMuted: true, welcomeBriefingDismissed: true,
-    skipTurnIntroduction: true, features: [],
+    skipTurnIntroduction: true, features: ['placeholder'],
   })));
   await openGame(page);
   await snapshot(page, 'battlefield');

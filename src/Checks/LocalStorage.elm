@@ -390,7 +390,7 @@ featureChecks =
 
         on : Features.Model
         on =
-            Features.setEnabled Features.MobileLandscape True off
+            Features.setEnabled Features.Placeholder True off
 
         entry : { key : String, value : Encode.Value }
         entry =
@@ -422,17 +422,21 @@ featureChecks =
     in
     List.concat
         [ check "features default to disabled" (load "{}" == Ok ( off, Nothing ))
-        , check "saved mobile feature is restored"
-            (load "{\"features\":[\"mobileLandscape\"]}" == Ok ( on, Nothing ))
-        , check "empty feature list disables mobile view"
+        , check "saved placeholder feature is restored"
+            (load "{\"features\":[\"placeholder\"]}" == Ok ( on, Nothing ))
+        , check "empty feature list disables the placeholder"
             (load "{\"features\":[]}" == Ok ( off, Nothing ))
+        , check "retired mobile feature is ignored"
+            (load "{\"features\":[\"mobileLandscape\"]}" == Ok ( off, Nothing ))
+        , check "retired mobile feature preserves other features"
+            (load "{\"features\":[\"mobileLandscape\",\"placeholder\"]}" == Ok ( on, Nothing ))
         , check "feature storage round trips" roundTrip
         , check "feature enabling checks list membership"
-            (Features.enabled Features.MobileLandscape on)
+            (Features.enabled Features.Placeholder on)
         , check "enabling a feature twice adds no duplicate"
-            (Features.setEnabled Features.MobileLandscape True on == on)
+            (Features.setEnabled Features.Placeholder True on == on)
         , check "disabling removes the feature"
-            (Features.setEnabled Features.MobileLandscape False on == off)
+            (Features.setEnabled Features.Placeholder False on == off)
         , check "invalid feature lists retain a diagnostic"
             (List.all invalid
                 [ "{\"features\":true}"

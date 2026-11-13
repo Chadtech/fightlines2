@@ -529,7 +529,15 @@ function createAudioManager(reportError = () => {}, assets = createAssetLoader()
     if (event.isTrusted) void unlock();
   }
 
-  addEventListener("pointerdown", gesture, { capture: true });
+  // Mouse presses activate Web Audio immediately. Touch and pen activate on
+  // release; calling resume on their press can leave it waiting for activation.
+  addEventListener("pointerdown", event => {
+    if (event.pointerType === "mouse") gesture(event);
+  }, { capture: true });
+  addEventListener("pointerup", event => {
+    if (event.pointerType !== "mouse") gesture(event);
+  }, { capture: true });
+  addEventListener("touchend", gesture, { capture: true, passive: true });
   addEventListener("keydown", gesture, { capture: true });
   addEventListener("pagehide", stopAll);
   document.addEventListener("visibilitychange", () => {

@@ -9,8 +9,7 @@ module Fightlines.Page.GamePage exposing
     , keyCommands
     , load
     , movingUnits
-    , refreshLayout
-    , renewInactivityTimer
+    , resize
     , setDepots
     , setShared
     , setUnits
@@ -38,6 +37,7 @@ import ApiRequest
 import Audio
 import Browser.Dom
 import Browser.Events
+import Css exposing (Style)
 import Effect as E
     exposing
         ( Eff
@@ -176,6 +176,7 @@ type alias BattlefieldViewport =
 
 type alias Model =
     { inactivity : Inactivity.Model
+    , inactivityWakeAt : Maybe Time.Posix
     , currentTurn : CurrentTurn.Model
     , feedback : Feedback.Draft
     , chat : Chat.Model
@@ -247,6 +248,11 @@ type alias RotationSelection =
     }
 
 
+type ThumbnailUse
+    = UnloadPortrait
+    | SubmissionPortrait
+
+
 type alias RequestErrorDetails =
     { title : String
     , message : String
@@ -257,6 +263,8 @@ type alias RequestErrorDetails =
 
 type Msg
     = StillHereClicked
+    | InactivityWakeElapsed Time.Posix
+    | InactivityWakeTimeReceived Time.Posix Time.Posix
     | InactivityRenewalResponseReceived Inactivity.Report (ApiRequest.Response PollStatus)
     | BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
     | FeedbackMsg FeedbackView.Msg
@@ -271,7 +279,6 @@ type Msg
     | InspectorSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
     | ControlsSizeReceived { battlefield : Browser.Dom.Element, inspector : Browser.Dom.Element } (Result Browser.Dom.Error Browser.Dom.Element)
     | CameraReturnFinished
-    | WindowResized
     | BattlefieldMsg Battlefield.Msg
     | BattlefieldNavigationMsg BattlefieldNavigation.Msg
     | OrderMenuMsg OrderMenu.Msg
@@ -380,6 +387,7 @@ init shared flags =
         model : Model
         model =
             { inactivity = Inactivity.init shared.now flags.snapshot.inactivity
+            , inactivityWakeAt = Nothing
             , currentTurn = CurrentTurn.init (turnObservation flags.snapshot)
             , chat = Chat.initGame flags.messages
             , shared =
@@ -405,7 +413,13 @@ init shared flags =
             , visibleTiles = flags.snapshot.battlefield.visibleTiles
             , movementRules = flags.snapshot.movementRules
             , unitStats = flags.snapshot.battlefield.unitStats
-            , navigation = BattlefieldNavigation.init
+            , navigation =
+                BattlefieldNavigation.init
+                    |> BattlefieldNavigation.setMaxZoom
+                        (maxBattlefieldZoom
+                            shared
+                            flags.snapshot.battlefield.map
+                        )
             , battlefieldViewport = Nothing
             , frame = AnimationFrame.first
             , resigning = False
@@ -431,6 +445,7 @@ init shared flags =
         , E.toJs (ToJs.PreloadImages (Assets.imagePaths model.map.theme))
         ]
     )
+        |> E.andThen (scheduleInactivity shared.now 0)
 
 
 load : LobbyId -> Graphql.Http.Request Flags
@@ -452,18 +467,20 @@ isMobileView model =
     Shared.isMobileView model.shared
 
 
-{-| Feature changes can replace the workspace without a browser resize.
+{-| Match the tile size at maximum zoom on the 17-tile-wide Supply Point map.
 -}
-refreshLayout : Shared.Model -> Model -> Eff Msg
-refreshLayout previous model =
-    if Shared.isMobileView previous /= Shared.isMobileView model.shared then
-        E.batch
-            [ measureWorkspace
-            , scrollChatHistory model.chat model.shared
-            ]
+maxBattlefieldZoom : Shared.Model -> Map -> Float
+maxBattlefieldZoom shared map =
+    let
+        supplyPointMaxZoom : Float
+        supplyPointMaxZoom =
+            if Shared.isMobileView shared then
+                6
 
-    else
-        E.none
+            else
+                3
+    in
+    max 1 (supplyPointMaxZoom * toFloat map.width / 17)
 
 
 setShared : Shared.Model -> Model -> Model
@@ -475,6 +492,61 @@ setShared shared model =
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
+
+
+resize : { layoutChanged : Bool } -> Model -> ( Model, Eff Msg )
+resize { layoutChanged } model =
+    if layoutChanged then
+        let
+            maxZoom : Float
+            maxZoom =
+                maxBattlefieldZoom model.shared model.map
+
+            navigation : BattlefieldNavigation.Model
+            navigation =
+                BattlefieldNavigation.setMaxZoom maxZoom model.navigation
+
+            currentTurn : CurrentTurn.Model
+            currentTurn =
+                model.currentTurn
+                    |> CurrentTurn.setPhase
+                        (limitPlaybackZoom maxZoom model.currentTurn.phase)
+        in
+        ( model
+            |> setNavigation navigation
+            |> setCurrentTurn currentTurn
+        , E.batch
+            [ measureWorkspace
+            , scrollChatHistory model.chat model.shared
+            ]
+        )
+
+    else
+        ( model, measureWorkspace )
+
+
+limitPlaybackZoom : Float -> Phase -> Phase
+limitPlaybackZoom maxZoom phase =
+    let
+        limit : PlaybackPresentation.PlaybackCamera -> PlaybackPresentation.PlaybackCamera
+        limit held =
+            if held.camera.zoom > maxZoom then
+                { held
+                    | camera =
+                        Camera.zoomAt { x = 0, y = 0 } maxZoom held.camera
+                }
+
+            else
+                held
+    in
+    case phase of
+        TurnLifecycle.Playing playing ->
+            playing
+                |> TurnLifecycle.setPlaybackCamera (Maybe.map limit playing.camera)
+                |> TurnLifecycle.Playing
+
+        _ ->
+            phase
 
 
 setChat : Chat.Model -> Model -> Model
@@ -1018,8 +1090,13 @@ turnObservation snapshot =
     }
 
 
-applyTurnSnapshot : Snapshot -> CurrentTurn.Model -> Model -> ( Model, Eff Msg )
-applyTurnSnapshot snapshot currentTurn model =
+applyTurnSnapshot :
+    LobbyId
+    -> Snapshot
+    -> CurrentTurn.Model
+    -> Model
+    -> ( Model, Eff Msg )
+applyTurnSnapshot lobbyId snapshot currentTurn model =
     let
         next : Model
         next =
@@ -1027,18 +1104,23 @@ applyTurnSnapshot snapshot currentTurn model =
                 |> setCurrentTurn currentTurn
                 |> reconcileActivityTurn model.currentTurn.number
                 |> reconcileTurnSnapshot snapshot model.currentTurn
+
+        transition : ( Model, Eff Msg )
+        transition =
+            case ( playback model, playback next ) of
+                ( Nothing, Just _ ) ->
+                    startPlayback next
+
+                ( Just _, Nothing ) ->
+                    finishPlayback model next
+
+                _ ->
+                    next
+                        |> closeMenuForTurnIntroduction
+                        |> E.withOut
     in
-    case ( playback model, playback next ) of
-        ( Nothing, Just _ ) ->
-            startPlayback next
-
-        ( Just _, Nothing ) ->
-            finishPlayback model next
-
-        _ ->
-            next
-                |> closeMenuForTurnIntroduction
-                |> E.withOut
+    transition
+        |> E.andThen (renewInactivityTimer lobbyId model.shared.now)
 
 
 reconcileActivityTurn : Int -> Model -> Model
@@ -2102,7 +2184,7 @@ recordUserInteraction : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 recordUserInteraction lobbyId msg model =
     if isUserInteraction msg && (model.currentTurn.outcome == Nothing) then
         { model | inactivity = Inactivity.recordInteraction model.inactivity }
-            |> renewInactivityTimer lobbyId
+            |> renewInactivityTimer lobbyId model.shared.now
 
     else
         model |> E.withOut
@@ -2118,26 +2200,60 @@ inactivityTimerNeeded model =
             True
 
 
-renewInactivityTimer : LobbyId -> Model -> ( Model, Eff Msg )
-renewInactivityTimer lobbyId model =
-    let
-        presentation : Maybe InactivityRenewalReason
-        presentation =
-            if playback model /= Nothing then
-                Just RenewalReason.PlaybackAllowance
+inactivityPresentation : Model -> Maybe InactivityRenewalReason
+inactivityPresentation model =
+    if playback model /= Nothing then
+        Just RenewalReason.PlaybackAllowance
 
-            else if model.welcomeBriefingPending && (model.currentTurn.number == 1) then
-                Just RenewalReason.BriefingAllowance
+    else if model.welcomeBriefingPending && (model.currentTurn.number == 1) then
+        Just RenewalReason.BriefingAllowance
 
-            else
-                Nothing
-    in
-    if (model.currentTurn.outcome == Nothing) && inactivityTimerNeeded model then
+    else
+        Nothing
+
+
+canRenewInactivity : Model -> Bool
+canRenewInactivity model =
+    (model.currentTurn.outcome == Nothing) && inactivityTimerNeeded model
+
+
+scheduleInactivity : Time.Posix -> Int -> Model -> ( Model, Eff Msg )
+scheduleInactivity now minimumDelay model =
+    if (model.inactivityWakeAt == Nothing) && canRenewInactivity model then
+        case Inactivity.reportDelay now (inactivityPresentation model) model.inactivity of
+            Just reportDelay ->
+                let
+                    delay : Int
+                    delay =
+                        max minimumDelay reportDelay
+
+                    wakeAt : Time.Posix
+                    wakeAt =
+                        Time.millisToPosix (Time.posixToMillis now + delay)
+                in
+                ( { model | inactivityWakeAt = Just wakeAt }
+                , E.after (toFloat delay) (InactivityWakeElapsed wakeAt)
+                )
+
+            Nothing ->
+                E.withOut model
+
+    else
+        E.withOut model
+
+
+renewInactivityTimer :
+    LobbyId
+    -> Time.Posix
+    -> Model
+    -> ( Model, Eff Msg )
+renewInactivityTimer lobbyId now model =
+    if canRenewInactivity model then
         let
             ( activity, report ) =
-                Inactivity.beginReport model.shared.now
+                Inactivity.beginReport now
                     { turnNumber = model.currentTurn.number
-                    , presentation = presentation
+                    , presentation = inactivityPresentation model
                     }
                     model.inactivity
 
@@ -2147,7 +2263,7 @@ renewInactivityTimer lobbyId model =
         in
         case report of
             Just request ->
-                ( next
+                ( { next | inactivityWakeAt = Nothing }
                 , Api.Mutation.renewInactivityTimer
                     { id = LobbyId.toString lobbyId
                     , turnNumber = request.turnNumber
@@ -2159,7 +2275,7 @@ renewInactivityTimer lobbyId model =
                 )
 
             Nothing ->
-                next |> E.withOut
+                scheduleInactivity now 0 next
 
     else
         model |> E.withOut
@@ -2177,10 +2293,13 @@ isUserInteraction msg =
         StillHereClicked ->
             True
 
-        InactivityRenewalResponseReceived _ _ ->
+        InactivityWakeElapsed _ ->
             False
 
-        WindowResized ->
+        InactivityWakeTimeReceived _ _ ->
+            False
+
+        InactivityRenewalResponseReceived _ _ ->
             False
 
         BattlefieldSizeReceived _ ->
@@ -2516,6 +2635,21 @@ update lobbyId msg model =
         StillHereClicked ->
             model |> E.withOut
 
+        InactivityWakeElapsed wakeAt ->
+            if model.inactivityWakeAt == Just wakeAt then
+                ( model, E.now (InactivityWakeTimeReceived wakeAt) )
+
+            else
+                E.withOut model
+
+        InactivityWakeTimeReceived wakeAt now ->
+            if model.inactivityWakeAt == Just wakeAt then
+                { model | inactivityWakeAt = Nothing }
+                    |> renewInactivityTimer lobbyId now
+
+            else
+                E.withOut model
+
         InactivityRenewalResponseReceived report result ->
             case result of
                 Ok status ->
@@ -2528,14 +2662,14 @@ update lobbyId msg model =
                                     status.inactivity
                                     model.inactivity
                         }
-                            |> E.withOut
+                            |> renewInactivityTimer lobbyId model.shared.now
 
                     else
                         model |> E.withOut
 
                 Err error ->
                     { model | inactivity = Inactivity.failed report (ApiRequest.errorMessage error) model.inactivity }
-                        |> E.withOut
+                        |> scheduleInactivity model.shared.now 1000
 
         ChatMsg chatMsg ->
             handleChatMsg lobbyId chatMsg model
@@ -2730,7 +2864,8 @@ update lobbyId msg model =
                     (model
                         |> setResigning False
                     )
-                        |> applyTurnSnapshot snapshot
+                        |> applyTurnSnapshot lobbyId
+                            snapshot
                             (CurrentTurn.pollSucceeded (turnObservation snapshot) model.currentTurn)
                         |> E.and effect
 
@@ -2761,11 +2896,6 @@ update lobbyId msg model =
             )
                 |> updatePlaybackCamera
                 |> E.withOut
-
-        WindowResized ->
-            ( model
-            , measureWorkspace
-            )
 
         BattlefieldSizeReceived result ->
             case result of
@@ -3159,6 +3289,7 @@ update lobbyId msg model =
                 Ok snapshot ->
                     model
                         |> applyTurnSnapshot
+                            lobbyId
                             snapshot
                             (CurrentTurn.submissionSucceeded
                                 turnNumber
@@ -3219,10 +3350,22 @@ update lobbyId msg model =
                         ( observed, E.request PollResponseReceived (loadSnapshot lobbyId) )
 
                     else
-                        (observed
-                            |> setCurrentTurn (CurrentTurn.pollSucceeded observation currentTurn)
-                        )
-                            |> E.withOut
+                        let
+                            next : Model
+                            next =
+                                observed
+                                    |> setCurrentTurn (CurrentTurn.pollSucceeded observation currentTurn)
+
+                            reportingChanged : Bool
+                            reportingChanged =
+                                (canRenewInactivity model /= canRenewInactivity next)
+                                    || Inactivity.reportingContextChanged model.inactivity next.inactivity
+                        in
+                        if reportingChanged then
+                            renewInactivityTimer lobbyId model.shared.now next
+
+                        else
+                            E.withOut next
 
                 Err error ->
                     (model
@@ -3235,6 +3378,7 @@ update lobbyId msg model =
                 Ok snapshot ->
                     model
                         |> applyTurnSnapshot
+                            lobbyId
                             snapshot
                             (CurrentTurn.pollSucceeded
                                 (turnObservation snapshot)
@@ -3368,6 +3512,12 @@ playAudio msg model =
         StillHereClicked ->
             Audio.confirm
 
+        InactivityWakeElapsed _ ->
+            Audio.none
+
+        InactivityWakeTimeReceived _ _ ->
+            Audio.none
+
         InactivityRenewalResponseReceived _ _ ->
             Audio.none
 
@@ -3387,9 +3537,6 @@ playAudio msg model =
             Audio.none
 
         ChatOverlayExpired _ ->
-            Audio.none
-
-        WindowResized ->
             Audio.none
 
         BattlefieldSizeReceived _ ->
@@ -4889,7 +5036,7 @@ mobileUnloadPreview units planning =
         passengerPortrait : Unit -> { image : Html Msg, name : String }
         passengerPortrait unit =
             { image =
-                unitThumbnail 3 unit
+                unitThumbnail UnloadPortrait unit
             , name = Unit.name unit
             }
 
@@ -4960,13 +5107,23 @@ mobileUnloadPreview units planning =
             H.text ""
 
 
-unitThumbnail : Float -> Unit -> Html msg
-unitThumbnail sizeRem unit =
+unitThumbnail : ThumbnailUse -> Unit -> Html msg
+unitThumbnail use unit =
+    let
+        size : Style
+        size =
+            case use of
+                UnloadPortrait ->
+                    S.square12
+
+                SubmissionPortrait ->
+                    S.square8
+    in
     Svg.svg
         [ SA.viewBox "0 0 16 16"
         , Aria.hidden True
         , SA.css
-            [ S.squareRem sizeRem
+            [ size
             , S.shrink0
             ]
         ]
@@ -6358,7 +6515,7 @@ submissionWarning model =
                     , S.g2
                     ]
                 ]
-                [ unitThumbnail 2 unit
+                [ unitThumbnail SubmissionPortrait unit
                 , H.text (Unit.name unit)
                 ]
 
@@ -6450,43 +6607,12 @@ turnSubmitLabel model =
 turnPanel : Model -> Html Msg
 turnPanel model =
     let
-        ownStatus : String
-        ownStatus =
-            case model.currentTurn.phase of
-                TurnLifecycle.Playing _ ->
-                    "submitted plan"
-
-                TurnLifecycle.WaitingForOpponent _ ->
-                    "submitted plan"
-
-                _ ->
-                    "planning"
-
-        opponentStatus : String
-        opponentStatus =
-            case model.currentTurn.phase of
-                TurnLifecycle.Playing _ ->
-                    "submitted plan"
-
-                _ ->
-                    if model.currentTurn.opponentSubmitted then
-                        "submitted plan"
-
-                    else
-                        "planning"
-
         zoomPercent : Int
         zoomPercent =
             round ((BattlefieldNavigation.camera model.navigation).zoom * 100)
     in
     TurnControls.panel
         [ Lazy.lazy2 turnSubmit (turnActivity model) (turnSubmitLabel model)
-        , Lazy.lazy4
-            turnFeedback
-            model.players
-            ownStatus
-            opponentStatus
-            model.currentTurn.outcome
         , Lazy.lazy viewControls zoomPercent
         , TurnControls.surrender (surrenderState model)
             |> H.map TurnControlsMsg
@@ -6509,79 +6635,6 @@ turnSubmit : TurnControls.Activity -> String -> Html Msg
 turnSubmit activity submitLabel =
     TurnControls.submit activity submitLabel
         |> H.map TurnControlsMsg
-
-
-turnFeedback :
-    List Player
-    -> String
-    -> String
-    -> Maybe GameOutcome
-    -> Html Msg
-turnFeedback players ownStatus opponentStatus outcome =
-    let
-        playerRow : Player -> Html Msg
-        playerRow player =
-            let
-                status : String
-                status =
-                    case outcome of
-                        Just (GameOutcome.Victory winner) ->
-                            if player.playerNumber == winner then
-                                "won"
-
-                            else
-                                "lost"
-
-                        Just (GameOutcome.Resignation winner) ->
-                            if player.playerNumber == winner then
-                                "won"
-
-                            else
-                                "surrendered"
-
-                        Just (GameOutcome.Inactivity (Just winner)) ->
-                            if player.playerNumber == winner then
-                                "won"
-
-                            else
-                                "lost due to inactivity"
-
-                        Just (GameOutcome.Inactivity Nothing) ->
-                            "draw"
-
-                        Just GameOutcome.Draw ->
-                            "draw"
-
-                        Nothing ->
-                            if player.isYou then
-                                ownStatus
-
-                            else
-                                opponentStatus
-            in
-            TurnControls.playerRow
-                { name = player.name
-                , playerNumber = player.playerNumber
-                , status = status
-                }
-
-        content : List (Html Msg)
-        content =
-            [ H.div
-                [ Aria.role Aria.Status ]
-                [ H.ul
-                    [ Aria.label "player statuses"
-                    , Aria.role Aria.List
-                    , A.css
-                        [ S.col
-                        , S.listNone
-                        ]
-                    ]
-                    (List.map playerRow players)
-                ]
-            ]
-    in
-    TurnControls.feedback content
 
 
 requestErrorCard : Model -> Maybe (Html Msg)
@@ -6756,25 +6809,25 @@ chatShortcut model =
 -}
 combatEnterShortcut : Model -> Sub Msg
 combatEnterShortcut model =
-    let
-        firstPress : Bool -> Decode.Decoder Msg
-        firstPress repeated =
-            if repeated then
-                Decode.fail "held enter key"
-
-            else
-                Decode.at [ "target", "tagName" ] Decode.string
-                    |> Decode.andThen outsideControl
-
-        outsideControl : String -> Decode.Decoder Msg
-        outsideControl tag =
-            if List.member tag [ "INPUT", "TEXTAREA", "SELECT", "BUTTON" ] then
-                Decode.fail "control handles its own enter key"
-
-            else
-                HtmlEvent.enter CombatEnterPressed
-    in
     if not (hasDialog model) && (combatEncounter model /= Nothing) then
+        let
+            firstPress : Bool -> Decode.Decoder Msg
+            firstPress repeated =
+                if repeated then
+                    Decode.fail "held enter key"
+
+                else
+                    Decode.at [ "target", "tagName" ] Decode.string
+                        |> Decode.andThen outsideControl
+
+            outsideControl : String -> Decode.Decoder Msg
+            outsideControl tag =
+                if List.member tag [ "INPUT", "TEXTAREA", "SELECT", "BUTTON" ] then
+                    Decode.fail "control handles its own enter key"
+
+                else
+                    HtmlEvent.enter CombatEnterPressed
+        in
         Browser.Events.onKeyDown
             (Decode.field "repeat" Decode.bool
                 |> Decode.andThen firstPress
@@ -6787,8 +6840,7 @@ combatEnterShortcut model =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Browser.Events.onResize (\_ _ -> WindowResized)
-        , chatShortcut model
+        [ chatShortcut model
         , combatEnterShortcut model
         , Time.every 1000 ChatPollElapsed
         , Time.every 400 AnimationTimerElapsed

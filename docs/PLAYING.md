@@ -215,7 +215,11 @@ and depots can also be selected with Tab and Enter/Space. Drag the battlefield
 with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
 panel has selection details and unit actions; the bottom-left control panel has
 pan arrows, zoom and reset controls. Games open at 100%, centered on the whole-map overview.
-Reset restores this centered overview; zoom ranges from 35% to 300%. Arrow keys or WASD pan the map while the order popup is closed and no move or ambush direction is being chosen.
+Reset restores this centered overview. You can zoom out to 35%. At maximum
+zoom, tiles reach the size they have on Supply Point at 300% on desktop or
+600% on mobile, with at least the overview available on every map.
+Arrow keys or WASD pan the map while the order popup is closed and no move or
+ambush direction is being chosen.
 Plus/minus zoom without requiring battlefield focus; Home resets the view while the battlefield is focused.
 On a phone, drag with one finger to pan or use two fingers to pan and zoom.
 After choosing **move** or **attack move**, drag one finger along the route and
@@ -375,14 +379,16 @@ terrain, intervening hills, mountains, and forests block
 sight beyond them when the sight line crosses their tile. Merely touching a
 corner does not block sight, so open diagonal tiles remain visible; the blocking
 hill itself remains visible. Forests
-conceal all enemy units inside, even adjacent to an observer or an allied unit
+normally conceal enemy units inside, even adjacent to an observer or an allied unit
 in the same forest. Your own units and their occupied tiles are always visible. Unseen tiles are darker and desaturated, preserving terrain detail;
 the terrain and fixed depot locations remain known. Hidden enemies and their
 paths are withheld from game responses.
 Any unit that fires directly immediately reveals itself and its occupied tile
 to the enemy, remaining visible through the following turn, even in forests or
-beyond normal sight. Direct fire again renews the reveal;
-otherwise it expires at the next turn boundary. Ambushes can hit revealed units
+beyond normal sight. When an enemy stops your moving unit from entering a forest tile,
+the blocking unit and its tile become visible for the same duration. Another
+blocked forest entry or direct shot renews the reveal. Otherwise it expires
+at the next turn boundary. Ambushes can hit revealed units
 in forests if they remain in the firing area, even through intervening terrain.
 Enemy resources stay concealed.
 After the game ends, the fog lifts across the whole battlefield, revealing all
@@ -502,19 +508,13 @@ The centered top header contains a small FightLines logo between the raised
 button. The inspector stays hidden until an object is selected, then opens over
 the right edge at full height. Closing it
 or pressing Escape clears selection without shifting the map sideways.
-The compact bottom-left control strip keeps a large **submit turn** button,
-plain rows of player names and statuses, and 26-pixel pan/zoom/reset controls.
-The roster can accommodate four rows; current games still have two players.
-Statuses say **planning** or **submitted plan**, and long names truncate with
-their full text available on hover. Controls wrap on narrower screens.
+The compact bottom-left control strip contains **submit turn**, pan/zoom/reset
+controls, and **surrender**. Controls wrap on narrower screens.
 The header and bottom controls float over the map, which continues behind them
 and remains visible and interactive beside the control panel.
-The submit button
-pulses gold when every unit has an order. An inset activity track stays
-beneath submit at all times, empty while idle, with a solid gray bar while waiting
-for the other player. It sweeps smoothly left to right, fully exiting the
-track before looping from the left; reduced-motion
-settings keep these effects steady.
+The submit button pulses gold during planning. While waiting for the other
+player, the button reads **turn submitted** and a gray bar sweeps through the
+track beneath it. Reduced-motion settings keep these effects steady.
 Press Cmd+Enter (Ctrl+Enter on other platforms) to submit while no order menu,
 move/direction selection, unload workflow, dialog, or pointer gesture is active.
 In the units-without-orders warning, use Tab to reach an action and Enter to

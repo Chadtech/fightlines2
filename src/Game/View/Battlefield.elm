@@ -548,7 +548,6 @@ camera view =
             , S.widthValue Camera.boardWidth
             , S.shrink0
             , S.transform (Camera.transform view.camera)
-            , S.when (view.camera.zoom > 1) [ S.imageRenderingPixelated ]
             , cameraTransition
             , S.reducedMotion [ S.transformTransition 0 ]
             ]
@@ -557,6 +556,11 @@ camera view =
 
 navigationControls : Int -> Html Msg
 navigationControls zoomPercent =
+    let
+        zoomLabel : String
+        zoomLabel =
+            String.fromInt zoomPercent ++ "%"
+    in
     H.section
         [ Aria.label "view controls"
         , A.css
@@ -566,7 +570,7 @@ navigationControls zoomPercent =
             , S.maxWFull
             , S.flexWrap
             , S.itemsCenter
-            , S.g3
+            , S.g1
             , S.compactViewport
                 [ S.g1
                 , S.wFull
@@ -577,97 +581,66 @@ navigationControls zoomPercent =
             [ Aria.role Aria.Group
             , Aria.label "pan map"
             , A.css
-                [ S.grid
-                , S.itemsCenter
-                , S.justifyItemsCenter
+                [ S.row
                 , S.g0p5
-                , S.compactViewport
-                    [ S.displayNone
-                    ]
+                , S.compactViewport [ S.displayNone ]
                 ]
             ]
-            [ panButton "↑" "pan up" PanUpClicked
-            , H.div
-                [ A.css
-                    [ S.grid
-                    , S.gridColumnsRem 3 1.625
-                    , S.coarsePointer
-                        [ S.gridColumnsRem 3 2.75
-                        ]
-                    , S.itemsCenter
-                    , S.justifyItemsCenter
-                    , S.g0p5
-                    ]
-                ]
-                [ panButton "←" "pan left" PanLeftClicked
-                , H.span
-                    []
-                    [ H.text "pan" ]
-                , panButton "→" "pan right" PanRightClicked
-                ]
-            , panButton "↓" "pan down" PanDownClicked
+            [ navigationIconButton "←" "pan left" PanLeftClicked
+            , navigationIconButton "↑" "pan up" PanUpClicked
+            , navigationIconButton "↓" "pan down" PanDownClicked
+            , navigationIconButton "→" "pan right" PanRightClicked
             ]
         , H.div
             [ Aria.role Aria.Group
             , Aria.label "zoom map"
             , A.css
                 [ S.grid
+                , S.gridColumns "auto minmax(4ch, auto) auto"
                 , S.itemsCenter
-                , S.justifyItemsCenter
-                , S.g1
+                , S.g0p5
                 , S.compactViewport
-                    [ S.wFull
+                    [ S.gridColumns "2.75rem minmax(0, 1fr) 2.75rem"
+                    , S.wFull
                     ]
                 ]
             ]
-            [ H.div
+            [ navigationIconButton "−" "zoom out" ZoomOutClicked
+            , H.span
                 [ A.css
-                    [ S.grid
-                    , S.gridColumns "1.625rem 4ch 1.625rem"
-                    , S.itemsCenter
-                    , S.justifyItemsCenter
-                    , S.g0p5
-                    , S.coarsePointer
-                        [ S.gridColumns "2.75rem 3rem 2.75rem"
-                        ]
-                    , S.compactViewport
-                        [ S.gridColumns "2.75rem minmax(0, 1fr) 2.75rem"
-                        , S.wFull
-                        ]
+                    [ S.textAlignCenter
+                    , S.compactViewport [ S.displayNone ]
                     ]
                 ]
-                [ Button.secondary "−" ZoomOutClicked
-                    |> Button.iconOnly "zoom out"
-                    |> Button.toHtml
-                , Button.secondary (String.fromInt zoomPercent ++ "%") ResetViewClicked
-                    |> Button.small
-                    |> Button.accessibleLabel ("reset view (" ++ String.fromInt zoomPercent ++ "%)")
-                    |> Button.fullWidth
-                    |> Button.toHtml
-                , Button.secondary "+" ZoomInClicked
-                    |> Button.iconOnly "zoom in"
-                    |> Button.toHtml
-                ]
+                [ H.text zoomLabel ]
             , H.div
                 [ A.css
-                    [ S.wFull
-                    , S.compactViewport
-                        [ S.displayNone
-                        ]
+                    [ S.displayNone
+                    , S.compactViewport [ S.block ]
                     ]
                 ]
-                [ Button.secondary "reset view" ResetViewClicked
-                    |> Button.small
+                [ Button.secondary zoomLabel ResetViewClicked
+                    |> Button.accessibleLabel
+                        ("reset view (" ++ zoomLabel ++ ")")
                     |> Button.fullWidth
                     |> Button.toHtml
                 ]
+            , navigationIconButton "+" "zoom in" ZoomInClicked
+            ]
+        , H.div
+            [ A.css
+                [ S.compactViewport [ S.displayNone ] ]
+            ]
+            [ Button.secondary "reset view" ResetViewClicked
+                |> Button.toHtml
             ]
         ]
 
 
-panButton : String -> String -> Msg -> Html Msg
-panButton arrow label msg =
-    Button.secondary arrow msg
+navigationIconButton : String -> String -> Msg -> Html Msg
+navigationIconButton glyph label msg =
+    Button.secondary glyph msg
+        |> Button.large
         |> Button.iconOnly label
         |> Button.toHtml
 

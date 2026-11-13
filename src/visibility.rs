@@ -136,12 +136,12 @@ pub fn visible_tiles(scenario: &Scenario, player_number: PlayerNumber) -> BTreeS
             }
         }
     }
-    // Firing reveals only the unit's occupied tile, without granting it sight.
+    // Revealed positions contribute only their occupied tile.
     visible.extend(
         scenario
             .units
             .iter()
-            .filter(|unit| unit.player_number() != player_number && unit.firing_position_revealed())
+            .filter(|unit| unit.player_number() != player_number && unit.position_revealed())
             .filter_map(Unit::board_position),
     );
     visible
@@ -212,11 +212,10 @@ pub(crate) fn observable(map: &Map, visible: &BTreeSet<Coordinate>, position: Co
     visible.contains(&position) && map.tile_at(position) != Some(Terrain::Forest)
 }
 
-/// Unit sightings include firing reveals, even when forest terrain conceals the tile's contents.
+/// Revealed units are visible even when forest terrain conceals the tile's contents.
 pub(crate) fn unit_observable(map: &Map, visible: &BTreeSet<Coordinate>, unit: &Unit) -> bool {
-    unit.board_position().is_some_and(|position| {
-        unit.firing_position_revealed() || observable(map, visible, position)
-    })
+    unit.board_position()
+        .is_some_and(|position| unit.position_revealed() || observable(map, visible, position))
 }
 
 pub fn observed_scenario(
@@ -743,7 +742,11 @@ mod tests {
             ));
             frames.push(death_frame);
             if firing_reveal {
-                board.units.get_mut(1).fixture()?.finish_firing_reveal(true);
+                board
+                    .units
+                    .get_mut(1)
+                    .fixture()?
+                    .finish_position_reveal(true);
             } else {
                 board
                     .units
