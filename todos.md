@@ -11,6 +11,7 @@
 - Review button module and feedback thing
 - Frontend AI engine
 - Tutorial missions
+- Key commands section in settings
 
 
 ## Soon

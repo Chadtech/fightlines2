@@ -1503,6 +1503,7 @@ view model =
             PlaybackPresentation.combatOverlay
                 { calibrations = CombatTheaterCalibrations.catalog
                 , automaticallyClose = model.automaticallyCloseCombatTheater
+                , armyStyle = Nothing
                 , mobile = Shared.isMobileView model.shared
                 }
                 model.battlefield.map

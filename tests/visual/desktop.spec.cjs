@@ -38,7 +38,8 @@ test('battlefield, selected tank, orders, and settings', async ({ page }) => {
   await snapshot(page, 'battlefield');
   await page.getByRole('button', { name: /tank 11$/ }).click();
   await snapshot(page, 'selected-tank');
-  await page.getByRole('button', { name: /^move \(m\)$/ }).click();
+  // Keep the pointer off the map when the order menu disappears.
+  await page.getByRole('button', { name: /^move \(m\)$/ }).press('Enter');
   await snapshot(page, 'movement-planning');
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'menu', exact: true }).click();

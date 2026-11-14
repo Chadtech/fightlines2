@@ -57,6 +57,7 @@ import Fightlines.View.TurnIntroduction as TurnIntroduction
 import Fightlines.View.UnloadPassenger as UnloadPassenger
 import Fightlines.View.WelcomeBriefing as WelcomeBriefing
 import Game.AnimationFrame as AnimationFrame
+import Game.ArmyStyle exposing (ArmyStyle)
 import Game.Assets as Assets
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot exposing (Player)
@@ -90,7 +91,7 @@ import Game.PlannedOrder as PlannedOrder
 import Game.PlannedTransport as PlannedTransport exposing (DismountedInfantry)
 import Game.PlaybackPresentation as PlaybackPresentation
 import Game.PlayerNumber as PlayerNumber
-import Game.Selection as Selection
+import Game.Selection
     exposing
         ( Selection(..)
         , UnitInteraction(..)
@@ -374,16 +375,16 @@ type Msg
     | PollResponseReceived (ApiRequest.Response Snapshot)
 
 
-
-----------------------------------------------------------------
--- INIT --
-----------------------------------------------------------------
-
-
 type alias Flags =
     { snapshot : Snapshot
     , messages : List Chat.Message
     }
+
+
+
+----------------------------------------------------------------
+-- INIT --
+----------------------------------------------------------------
 
 
 init : Shared.Model -> Flags -> ( Model, Eff Msg )
@@ -498,7 +499,7 @@ load id =
 
 
 ----------------------------------------------------------------
--- API --
+-- HELPERS --
 ----------------------------------------------------------------
 
 
@@ -528,24 +529,9 @@ setShared shared model =
     { model | shared = shared }
 
 
-{-| Clear the active voices when the player app leaves this game page.
--}
-stopPlaybackAudio : Model -> Eff msg
-stopPlaybackAudio model =
-    syncPlaybackAudio
-        { before = playbackAudio model
-        , after =
-            { movement = []
-            , ambience = []
-            , infantryFire = []
-            }
-        }
-
-
-
-----------------------------------------------------------------
--- HELPERS --
-----------------------------------------------------------------
+mapShared : (Shared.Model -> Shared.Model) -> Model -> Model
+mapShared change model =
+    setShared (change model.shared) model
 
 
 limitPlaybackZoom : Float -> Phase -> Phase
@@ -577,57 +563,40 @@ setChat chat model =
     { model | chat = chat }
 
 
+mapChat : (Chat.Model -> Chat.Model) -> Model -> Model
+mapChat change model =
+    setChat (change model.chat) model
+
+
 setFeedback : Feedback.Draft -> Model -> Model
 setFeedback feedback model =
     { model | feedback = feedback }
 
 
+mapFeedback : (Feedback.Draft -> Feedback.Draft) -> Model -> Model
+mapFeedback change model =
+    setFeedback (change model.feedback) model
+
+
 setCurrentTurn : CurrentTurn.Model -> Model -> Model
 setCurrentTurn currentTurn model =
-    let
-        reports : PlanningReports
-        reports =
-            model.planningReports
+    { model | currentTurn = currentTurn }
 
-        planningReports : PlanningReports
-        planningReports =
-            if currentTurn.number == model.currentTurn.number then
-                reports
 
-            else
-                { reports | seen = [] }
-
-        next : Model
-        next =
-            { model
-                | currentTurn = currentTurn
-                , planningReports = planningReports
-            }
-
-        previousInspection : Maybe Inspection
-        previousInspection =
-            Maybe.map Selection.toInspection (currentSelection model)
-
-        nextInspection : Maybe Inspection
-        nextInspection =
-            Maybe.map Selection.toInspection (currentSelection next)
-    in
-    if previousInspection == nextInspection then
-        next
-
-    else
-        next
-            |> resetMobileTab (selectedUnitId model)
-            |> centerDismountOrder
+mapCurrentTurn :
+    (CurrentTurn.Model -> CurrentTurn.Model)
+    -> Model
+    -> Model
+mapCurrentTurn change model =
+    setCurrentTurn (change model.currentTurn) model
 
 
 setCombatEnterHeld : Bool -> Model -> Model
 setCombatEnterHeld held model =
     model
-        |> setCurrentTurn
-            (CurrentTurn.setPhase
-                (TurnLifecycle.setCombatEnterHeld held model.currentTurn.phase)
-                model.currentTurn
+        |> mapCurrentTurn
+            (CurrentTurn.mapPhase
+                (TurnLifecycle.setCombatEnterHeld held)
             )
 
 
@@ -670,6 +639,14 @@ setVisibleTiles visibleTiles model =
 setNavigation : BattlefieldNavigation.Model -> Model -> Model
 setNavigation navigation model =
     { model | navigation = navigation }
+
+
+mapNavigation :
+    (BattlefieldNavigation.Model -> BattlefieldNavigation.Model)
+    -> Model
+    -> Model
+mapNavigation change model =
+    setNavigation (change model.navigation) model
 
 
 setResigning : Bool -> Model -> Model
@@ -725,7 +702,7 @@ showTurnIntroduction model =
 acknowledgeTurnIntroduction : Model -> ( Model, Eff Msg )
 acknowledgeTurnIntroduction model =
     model
-        |> setCurrentTurn (CurrentTurn.acknowledgeIntroduction model.currentTurn)
+        |> mapCurrentTurn CurrentTurn.acknowledgeIntroduction
         |> resumeChatOverlay (showTurnIntroduction model)
 
 
@@ -885,10 +862,9 @@ recordPlanningViolation violation model =
                             , pending = pending
                         }
                 }
-                    |> setShared
+                    |> mapShared
                         (Shared.addError
                             (Just (Error.OrderPlanningInvariantViolated failure))
-                            model.shared
                         )
 
         Nothing ->
@@ -986,6 +962,8 @@ dismissDialog model =
                 (OrderPlanning.dismissDialog
                     >> OrderPlanning.promptDismountedOrders model.map model.units
                 )
+            |> resetMobileTab (selectedUnitId model)
+            |> centerDismountOrder (selectedUnitId model)
             |> E.withOut
 
 
@@ -1034,77 +1012,9 @@ playback model =
     TurnLifecycle.playback model.currentTurn.phase
 
 
-playbackAudio : Model -> PlaybackAudio
-playbackAudio model =
-    let
-        animation : Maybe TurnPlayback.Playback
-        animation =
-            playback model
-
-        camera : Maybe TurnLifecycle.PlaybackCamera
-        camera =
-            playbackCamera model
-    in
-    { movement =
-        PlaybackPresentation.movingUnits
-            { playback = animation
-            , paused = False
-            , camera = camera
-            , skipLossDialogs = model.skipUnitLossDialogs
-            }
-    , ambience =
-        PlaybackPresentation.ambience
-            { map = model.map
-            , playback = animation
-            , paused = False
-            }
-    , infantryFire =
-        PlaybackPresentation.firingInfantry
-            { playback = animation
-            , paused = False
-            , camera = camera
-            }
-    }
-
-
-syncPlaybackAudio :
-    { before : PlaybackAudio, after : PlaybackAudio }
-    -> Eff msg
-syncPlaybackAudio { before, after } =
-    E.batch
-        [ E.audio
-            (Audio.syncMovement
-                { before = before.movement, after = after.movement }
-            )
-        , E.audio
-            (Audio.syncAmbience
-                { before = before.ambience, after = after.ambience }
-            )
-        , E.audio
-            (Audio.syncInfantryFire
-                { before = before.infantryFire
-                , after = after.infantryFire
-                }
-            )
-        ]
-
-
-withPlaybackAudio : PlaybackAudio -> Model -> ( Model, Eff Msg )
-withPlaybackAudio before model =
-    ( model
-    , syncPlaybackAudio
-        { before = before, after = playbackAudio model }
-    )
-
-
 unitLoss : Model -> Maybe TurnPlayback.Loss
 unitLoss model =
     PlaybackPresentation.loss model.skipUnitLossDialogs (playback model)
-
-
-ownerName : Model -> Unit -> Maybe String
-ownerName model =
-    PlaybackPresentation.ownerName model.players
 
 
 combatEncounter : Model -> Maybe TurnPlayback.Encounter
@@ -1176,6 +1086,57 @@ submitTurn lobbyId model =
             ( model, E.none )
 
 
+canSubmitWithKeyboard : Model -> Bool
+canSubmitWithKeyboard model =
+    case ( hasDialog model, model.currentTurn.phase ) of
+        ( False, TurnLifecycle.Planning (OrderPlanning.OrdinaryPlanning { selection }) ) ->
+            let
+                idleSelection : Bool
+                idleSelection =
+                    case selection of
+                        Just (UnitSelection _) ->
+                            False
+
+                        _ ->
+                            True
+            in
+            idleSelection && not (BattlefieldNavigation.active model.navigation)
+
+        _ ->
+            False
+
+
+requestSubmission : LobbyId -> Model -> ( Model, Eff Msg )
+requestSubmission lobbyId model =
+    if
+        planningLocked model
+            || isChoosingUnload model
+            || (unloadChoice model.currentTurn.phase /= Nothing)
+    then
+        model
+            |> E.withOut
+
+    else if model.skipUnplannedUnitsWarning || List.isEmpty (unitsWithoutOrders model) then
+        model
+            |> submitTurn lobbyId
+
+    else
+        model
+            |> mapPlanning OrderPlanning.showSubmissionWarning
+            |> E.withOut
+
+
+confirmSubmission : LobbyId -> Model -> ( Model, Eff Msg )
+confirmSubmission lobbyId model =
+    case model.currentTurn.phase of
+        TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
+            submitTurn lobbyId model
+
+        _ ->
+            model
+                |> E.withOut
+
+
 setSubmissionPreparationError : OrderPlanning.InvariantViolation -> Model -> Model
 setSubmissionPreparationError failure model =
     let
@@ -1184,8 +1145,10 @@ setSubmissionPreparationError failure model =
             "an order could not be prepared for one of your units."
     in
     model
-        |> setCurrentTurn
-            (CurrentTurn.setError (Just (CurrentTurn.SubmissionError message)) model.currentTurn)
+        |> mapCurrentTurn
+            (CurrentTurn.setError
+                (Just (CurrentTurn.SubmissionError message))
+            )
         |> recordPlanningViolation (Just failure)
 
 
@@ -1206,7 +1169,8 @@ selectedUnit model =
 
 selectedUnitId : Model -> Maybe UnitId
 selectedUnitId model =
-    selectedBattlefieldUnit model |> Maybe.map .id
+    selectedBattlefieldUnit model
+        |> Maybe.map .id
 
 
 selectedBattlefieldUnit : Model -> Maybe Unit
@@ -1260,6 +1224,8 @@ applyOrder order model =
                 model.depots
                 order
             )
+        |> resetMobileTab (selectedUnitId model)
+        |> centerDismountOrder (selectedUnitId model)
 
 
 plannedUnloadRoutes : Model -> List UnloadRoute
@@ -1307,52 +1273,47 @@ dismountOrderProgress model =
         |> Maybe.andThen (OrderPlanning.dismountOrderProgress model.units)
 
 
-dismountOrderTitle : Model -> Maybe String
-dismountOrderTitle model =
-    let
-        title : OrderPlanning.DismountOrderProgress -> String
-        title progress =
-            if progress.total == 1 then
-                "unloaded infantry"
+centerDismountOrder : Maybe UnitId -> Model -> Model
+centerDismountOrder previousUnitId model =
+    if previousUnitId == selectedUnitId model then
+        model
 
-            else
-                "unloaded infantry · "
-                    ++ String.fromInt progress.current
-                    ++ " of "
-                    ++ String.fromInt progress.total
-    in
-    dismountOrderProgress model |> Maybe.map title
+    else
+        case ( dismountOrderProgress model, inspectionPosition model, model.battlefieldViewport ) of
+            ( Just _, Just position, Just viewport ) ->
+                let
+                    camera : Camera.Camera
+                    camera =
+                        Camera.centerOn
+                            viewport.camera
+                            model.map
+                            position
+                            (BattlefieldNavigation.camera model.navigation)
+                in
+                model
+                    |> setNavigation
+                        (model.navigation
+                            |> BattlefieldNavigation.setOffset camera.offset
+                            |> BattlefieldNavigation.finishReturn
+                        )
 
-
-centerDismountOrder : Model -> Model
-centerDismountOrder model =
-    case ( dismountOrderProgress model, inspectionPosition model, model.battlefieldViewport ) of
-        ( Just _, Just position, Just viewport ) ->
-            let
-                camera : Camera.Camera
-                camera =
-                    Camera.centerOn
-                        viewport.camera
-                        model.map
-                        position
-                        (BattlefieldNavigation.camera model.navigation)
-            in
-            mapNavigation (BattlefieldNavigation.setOffset camera.offset) model
-
-        _ ->
-            model
+            _ ->
+                model
 
 
 holdRemainingInfantry : Model -> Model
 holdRemainingInfantry model =
     model
         |> mapCheckedPlanning (OrderPlanning.holdRemainingInfantry model.units)
+        |> resetMobileTab (selectedUnitId model)
 
 
-cancelTruckOrder : Model -> Model
-cancelTruckOrder model =
+cancelPlanningInteraction : Model -> Model
+cancelPlanningInteraction model =
     model
         |> mapCheckedPlanning (OrderPlanning.cancelInteraction model.map model.units)
+        |> resetMobileTab (selectedUnitId model)
+        |> centerDismountOrder (selectedUnitId model)
 
 
 submitRequest : LobbyId -> Int -> List PlannedOrder -> Graphql.Http.Request Snapshot
@@ -1381,10 +1342,23 @@ applyTurnSnapshot :
     -> ( Model, Eff Msg )
 applyTurnSnapshot lobbyId snapshot currentTurn model =
     let
+        reports : PlanningReports
+        reports =
+            model.planningReports
+
+        planningReports : PlanningReports
+        planningReports =
+            if currentTurn.number /= model.currentTurn.number then
+                { reports | seen = [] }
+
+            else
+                reports
+
         next : Model
         next =
-            model
+            { model | planningReports = planningReports }
                 |> setCurrentTurn currentTurn
+                |> resetMobileTab (selectedUnitId model)
                 |> reconcileActivityTurn model.currentTurn.number
                 |> reconcileTurnSnapshot snapshot model.currentTurn
 
@@ -1427,14 +1401,14 @@ reconcileTurnSnapshot snapshot previousTurn model =
             | welcomeBriefingPending = False
             , inspectionHelp = Nothing
         }
-            |> setChat (Chat.close model.chat)
+            |> mapChat Chat.close
             |> setMap snapshot.battlefield.map
             |> setDepots snapshot.battlefield.depots
             |> setSupplyCrates snapshot.battlefield.supplyCrates
             |> setUnits snapshot.battlefield.units
             |> setVisibleTiles snapshot.battlefield.visibleTiles
             |> setMenu MenuClosed
-            |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
+            |> mapNavigation BattlefieldNavigation.finishReturn
 
     else if model.currentTurn.number > previousTurn.number then
         let
@@ -1446,7 +1420,10 @@ reconcileTurnSnapshot snapshot previousTurn model =
                     |> setSupplyCrates frame.supplyCrates
                     |> setUnits frame.units
                     |> setVisibleTiles frame.visibleTiles
-                    |> setShared (Shared.addError (Maybe.map Error.TurnPlaybackInvariantViolated violation) model.shared)
+                    |> mapShared
+                        (Shared.addError
+                            (Maybe.map Error.TurnPlaybackInvariantViolated violation)
+                        )
         in
         TurnPlayback.initial
             { resolvedTurn = snapshot.turn.number - 1
@@ -1469,33 +1446,6 @@ reconcileTurnSnapshot snapshot previousTurn model =
         model
 
 
-plannedAction : Model -> Unit -> Movement.Option -> String
-plannedAction model unit move =
-    if Unit.carrierId unit /= Nothing && List.length move.path > 1 then
-        "unload at"
-
-    else if
-        PlannedTransport.loadingTarget
-            model.units
-            unit
-            move.destination
-            (plannedOrders model)
-            /= Nothing
-    then
-        "load at"
-
-    else
-        "move to"
-
-
-receivingLoad : Unit -> Model -> Bool
-receivingLoad unit model =
-    PlannedTransport.receivingLoad
-        model.units
-        unit
-        (plannedOrders model)
-
-
 currentSelection : Model -> Maybe Selection
 currentSelection model =
     TurnLifecycle.selection model.currentTurn.phase
@@ -1504,7 +1454,8 @@ currentSelection model =
 setSelection : Maybe Selection -> Model -> Model
 setSelection selected model =
     model
-        |> setCurrentTurn (CurrentTurn.setSelection selected model.currentTurn)
+        |> mapCurrentTurn (CurrentTurn.setSelection selected)
+        |> resetMobileTab (selectedUnitId model)
 
 
 focusOrder : UnitOrder.MenuOption -> Model -> Model
@@ -1533,6 +1484,8 @@ saveDirection direction model =
     model
         |> mapCheckedPlanning
             (OrderPlanning.saveDirection model.map model.units (ownPlayerNumbers model) direction)
+        |> resetMobileTab (selectedUnitId model)
+        |> centerDismountOrder (selectedUnitId model)
 
 
 rotationSelection : Model -> Maybe RotationSelection
@@ -1590,6 +1543,19 @@ pollRequest : LobbyId -> Graphql.Http.Request PollStatus
 pollRequest id =
     Api.Query.game { id = LobbyId.toString id } pollStatusSelection
         |> ApiRequest.queryRequest
+
+
+refreshTurn : LobbyId -> Model -> ( Model, Eff Msg )
+refreshTurn lobbyId model =
+    if model.currentTurn.outcome /= Nothing || model.currentTurn.refreshing then
+        model
+            |> E.withOut
+
+    else
+        ( model
+            |> mapCurrentTurn (CurrentTurn.setRefreshing True)
+        , E.request (PollStatusResponseReceived (Inactivity.sequence model.inactivity)) (pollRequest lobbyId)
+        )
 
 
 pollStatusSelection : SelectionSet PollStatus Api.Object.GameSnapshot
@@ -1657,6 +1623,8 @@ selectUnit id model =
                     model.depots
                     id
                 )
+            |> resetMobileTab (selectedUnitId model)
+            |> centerDismountOrder (selectedUnitId model)
 
 
 selectTile : Coordinate -> Model -> Model
@@ -1676,6 +1644,8 @@ selectTile position model =
                     model.depots
                     position
                 )
+            |> resetMobileTab (selectedUnitId model)
+            |> centerDismountOrder (selectedUnitId model)
 
 
 inspectDepot : Coordinate -> Model -> Model
@@ -1746,6 +1716,8 @@ confirmPath model =
                 (visibleSupplyCrates model.visibleTiles model.supplyCrates)
                 model.depots
             )
+        |> resetMobileTab (selectedUnitId model)
+        |> centerDismountOrder (selectedUnitId model)
 
 
 focusAdjacentOrder :
@@ -1798,64 +1770,14 @@ focusAdjacentOrder arrangeOptions current model =
             E.none
 
 
-mapNavigation : (BattlefieldNavigation.Model -> BattlefieldNavigation.Model) -> Model -> Model
-mapNavigation change model =
-    (model
-        |> setNavigation (change model.navigation |> BattlefieldNavigation.finishReturn)
-    )
+navigateBattlefield :
+    (BattlefieldNavigation.Model -> BattlefieldNavigation.Model)
+    -> Model
+    -> Model
+navigateBattlefield change model =
+    model
+        |> mapNavigation (change >> BattlefieldNavigation.finishReturn)
         |> updatePlaybackCamera
-
-
-handleBattlefieldTouch : BattlefieldNavigation.TouchInput -> Model -> Model
-handleBattlefieldTouch input model =
-    let
-        mode : BattlefieldNavigation.DragMode
-        mode =
-            if pathPreview model /= Nothing then
-                BattlefieldNavigation.TraceRoute
-
-            else
-                BattlefieldNavigation.PanCamera
-
-        touched : BattlefieldNavigation.TouchUpdate
-        touched =
-            BattlefieldNavigation.touchWithRoute mode input model.navigation
-
-        next : Model
-        next =
-            mapNavigation (always touched.navigation) model
-
-        routeAt :
-            (Coordinate -> Model -> Model)
-            -> Point
-            -> Model
-            -> Model
-        routeAt action point state =
-            case ( pathPreview state, state.battlefieldViewport ) of
-                ( Just _, Just viewport ) ->
-                    Camera.coordinateAt
-                        viewport.camera.size
-                        state.map
-                        (BattlefieldNavigation.camera state.navigation)
-                        { x = point.x - viewport.origin.x
-                        , y = point.y - viewport.origin.y
-                        }
-                        |> Maybe.map (\position -> action position state)
-                        |> Maybe.withDefault state
-
-                _ ->
-                    state
-
-        traceContact : BattlefieldNavigation.TouchRoute -> Model -> Model
-        traceContact contact =
-            case contact of
-                BattlefieldNavigation.TraceAt point ->
-                    routeAt previewTile point
-
-                BattlefieldNavigation.ReleaseAt point ->
-                    routeAt selectTile point
-    in
-    List.foldl traceContact next touched.route
 
 
 groundPickupDialogHtmlId : String
@@ -1881,133 +1803,1543 @@ choosingIndirectFire model =
         |> Maybe.withDefault False
 
 
-indirectFireDetails : Unit -> List (Html Msg)
-indirectFireDetails unit =
+canRevokeOrder : Model -> Unit -> Bool
+canRevokeOrder model unit =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map (OrderPlanning.canRevokeOrder model.map model.units (ownPlayerNumbers model) unit.id)
+        |> Maybe.withDefault False
+
+
+mobileOrdersAvailable : Model -> Bool
+mobileOrdersAvailable model =
+    case selectedUnit model of
+        Just unit ->
+            isOwnUnit model unit && not (planningLocked model)
+
+        Nothing ->
+            False
+
+
+choosingAmbush : Model -> Bool
+choosingAmbush model =
+    case currentSelection model of
+        Just (UnitSelection { interaction }) ->
+            case interaction of
+                ChoosingDirection (DirectionPlanning.Stationary DirectionPlanning.AmbushPurpose _) ->
+                    True
+
+                _ ->
+                    False
+
+        _ ->
+            False
+
+
+choosingStandGround : Model -> Bool
+choosingStandGround model =
+    case currentSelection model of
+        Just (UnitSelection { interaction }) ->
+            case interaction of
+                ChoosingDirection (DirectionPlanning.Stationary DirectionPlanning.StandGroundPurpose _) ->
+                    True
+
+                _ ->
+                    False
+
+        _ ->
+            False
+
+
+canSurrender : Model -> Bool
+canSurrender model =
+    canOpenDialog model
+        && not model.resigning
+        && (model.currentTurn.outcome == Nothing)
+
+
+requestResignation : ResignationDestination -> Model -> ( Model, Eff Msg )
+requestResignation destination model =
     let
-        costs : String
-        costs =
-            "range: "
-                ++ String.fromInt unit.combatRules.indirectRange
-                ++ " tiles · supplies: upkeep + "
-                ++ String.fromInt unit.combatRules.readinessCost
-                ++ " readiness + "
-                ++ String.fromInt unit.combatRules.shotCost
-                ++ " per shot"
+        canRequestResignation : Bool
+        canRequestResignation =
+            case destination of
+                RemainInGame ->
+                    canSurrender model
+
+                GoHome ->
+                    (model.menu == MainMenu)
+                        && not model.resigning
+                        && (model.currentTurn.outcome == Nothing)
     in
-    [ H.p
-        []
-        [ H.text "choose any tile in range, including fog. fires after movement and unloading at whoever remains there; friendly units can be hit. empty tiles waste the shot. unseen hits stay unconfirmed."
-        ]
-    , H.p
-        []
-        [ H.text costs
-        ]
-    ]
+    if canRequestResignation then
+        ( model
+            |> setMenu (ConfirmingResignation destination)
+        , E.focus
+            { htmlId = GameMenu.resignationCancelButtonHtmlId }
+            (GameMenu.FocusReturned >> GameMenuMsg)
+        )
+
+    else
+        model
+            |> E.withOut
 
 
-battlefieldMsgCountsAsInteraction : Battlefield.Msg -> Bool
-battlefieldMsgCountsAsInteraction msg =
+resignGame : LobbyId -> ResignationDestination -> Model -> ( Model, Eff Msg )
+resignGame lobbyId destination model =
+    let
+        canResign : Bool
+        canResign =
+            (model.menu == ConfirmingResignation destination)
+                && not model.resigning
+                && (model.currentTurn.outcome == Nothing)
+    in
+    if canResign then
+        ( model
+            |> setResigning True
+            |> setMenu MenuClosed
+        , Api.Mutation.resignGame { id = LobbyId.toString lobbyId } snapshotSelection
+            |> ApiRequest.mutationRequest
+            |> E.request (ResignResponseReceived destination)
+        )
+
+    else
+        model
+            |> E.withOut
+
+
+recordFocusResult : Result Browser.Dom.Error () -> Model -> Model
+recordFocusResult result model =
+    case result of
+        Ok () ->
+            model
+
+        Err error ->
+            model
+                |> mapShared
+                    (Shared.addError
+                        (Just (Error.ElementFocusFailed error))
+                    )
+
+
+{-| Retain playback framing across subject changes. Only projected positions
+can request a pan, and the saved planning navigation remains independent.
+-}
+updatePlaybackCamera : Model -> Model
+updatePlaybackCamera model =
+    case ( model.currentTurn.phase, model.battlefieldViewport ) of
+        ( TurnLifecycle.Playing playing, Just viewport ) ->
+            let
+                held : PlaybackPresentation.PlaybackCamera
+                held =
+                    PlaybackPresentation.frameCamera
+                        viewport.camera
+                        model.map
+                        (BattlefieldNavigation.camera model.navigation)
+                        playing.animation
+                        playing.camera
+
+                phase : Phase
+                phase =
+                    playing
+                        |> TurnLifecycle.setPlaybackCamera (Just held)
+                        |> TurnLifecycle.Playing
+            in
+            model
+                |> mapCurrentTurn (CurrentTurn.setPhase phase)
+
+        _ ->
+            model
+
+
+playbackCamera : Model -> Maybe TurnLifecycle.PlaybackCamera
+playbackCamera model =
+    phasePlaybackCamera model.currentTurn.phase
+
+
+phasePlaybackCamera : Phase -> Maybe TurnLifecycle.PlaybackCamera
+phasePlaybackCamera phase =
+    case phase of
+        TurnLifecycle.Playing playing ->
+            playing.camera
+
+        _ ->
+            Nothing
+
+
+measureWorkspace : Eff Msg
+measureWorkspace =
+    E.measure Battlefield.htmlId BattlefieldSizeReceived
+
+
+remeasureWorkspace : Model -> ( Model, Eff Msg )
+remeasureWorkspace model =
+    ( model
+        |> setBattlefieldViewport Nothing
+    , measureWorkspace
+    )
+
+
+resetMobileTab : Maybe UnitId -> Model -> Model
+resetMobileTab previousUnitId model =
+    let
+        selectionChanged : Bool
+        selectionChanged =
+            previousUnitId /= selectedUnitId model
+    in
+    if selectionChanged then
+        let
+            tab : MobileBattlefield.Tab
+            tab =
+                if mobileOrdersAvailable model then
+                    MobileBattlefield.Orders
+
+                else
+                    MobileBattlefield.Details
+        in
+        { model | mobileTab = tab }
+
+    else
+        model
+
+
+workspaceLayout : Model -> WorkspaceLayout
+workspaceLayout model =
+    { inspectorOpen = currentSelection model /= Nothing
+    , activity = turnActivity model
+    , outcome = model.currentTurn.outcome
+    , playing = playback model /= Nothing
+    }
+
+
+{-| Selection changes the inspector inset; turn controls can change
+the height available to the battlefield. Playback start requests its own fresh
+measurement, so this check does not request a second one for that transition.
+-}
+withLayoutMeasurement : WorkspaceLayout -> Model -> ( Model, Eff Msg )
+withLayoutMeasurement previousLayout model =
+    let
+        layout : WorkspaceLayout
+        layout =
+            workspaceLayout model
+
+        playbackStarted : Bool
+        playbackStarted =
+            not previousLayout.playing && layout.playing
+
+        layoutChanged : Bool
+        layoutChanged =
+            (previousLayout.inspectorOpen /= layout.inspectorOpen)
+                || (previousLayout.activity /= layout.activity)
+                || (previousLayout.outcome /= layout.outcome)
+    in
+    if layoutChanged && not playbackStarted then
+        remeasureWorkspace model
+
+    else
+        model
+            |> E.withOut
+
+
+closeMenuForTurnIntroduction : Model -> Model
+closeMenuForTurnIntroduction model =
+    if showTurnIntroduction model then
+        { model | inspectionHelp = Nothing }
+            |> setMenu MenuClosed
+
+    else
+        model
+
+
+startPlayback : Model -> ( Model, Eff Msg )
+startPlayback model =
+    remeasureWorkspace
+        ({ model | inspectionHelp = Nothing }
+            |> setMenu MenuClosed
+            |> mapChat Chat.hide
+        )
+
+
+finishPlayback : Maybe TurnLifecycle.PlaybackCamera -> Model -> ( Model, Eff Msg )
+finishPlayback previousCamera next =
+    let
+        ( returned, cameraEffect ) =
+            if previousCamera /= Nothing then
+                ( next
+                    |> mapNavigation BattlefieldNavigation.startReturn
+                , E.after PlaybackPresentation.cameraPanDurationMs CameraReturnFinished
+                )
+
+            else
+                next
+                    |> E.withOut
+    in
+    returned
+        |> closeMenuForTurnIntroduction
+        |> E.with cameraEffect
+
+
+presentPlaybackTransition : Phase -> Model -> ( Model, Eff Msg )
+presentPlaybackTransition previous next =
+    case ( TurnLifecycle.playback previous, playback next ) of
+        ( Just _, Nothing ) ->
+            finishPlayback (phasePlaybackCamera previous) next
+
+        _ ->
+            next
+                |> updatePlaybackCamera
+                |> E.withOut
+
+
+advanceCurrentPlayback : Float -> Model -> ( Model, Eff Msg )
+advanceCurrentPlayback delta model =
+    case model.currentTurn.phase of
+        TurnLifecycle.Playing playing ->
+            case playing.camera of
+                Just held ->
+                    if held.remainingPanMs > 0 then
+                        let
+                            camera : TurnLifecycle.PlaybackCamera
+                            camera =
+                                held
+                                    |> PlaybackPresentation.setRemainingPanMs
+                                        (max 0 (held.remainingPanMs - delta))
+
+                            phase : Phase
+                            phase =
+                                playing
+                                    |> TurnLifecycle.setPlaybackCamera (Just camera)
+                                    |> TurnLifecycle.Playing
+                        in
+                        model
+                            |> mapCurrentTurn (CurrentTurn.setPhase phase)
+                            |> E.withOut
+
+                    else
+                        advancePlayback delta model
+
+                Nothing ->
+                    advancePlayback delta model
+
+        _ ->
+            model
+                |> E.withOut
+
+
+{-| Keep the action at its current frame while the camera settles.
+-}
+advancePlayback : Float -> Model -> ( Model, Eff Msg )
+advancePlayback delta model =
+    let
+        advance : Float -> Phase -> Maybe { phase : Phase, frame : TurnPlayback.Frame }
+        advance =
+            if model.skipUnitLossDialogs then
+                TurnLifecycle.tick
+
+            else
+                TurnLifecycle.tickUntilLoss
+    in
+    case advance delta model.currentTurn.phase of
+        Just next ->
+            let
+                ( advanced, effect ) =
+                    applyPlaybackFrame next model
+                        |> automaticallyContinueCombat
+                        |> presentPlaybackTransition model.currentTurn.phase
+
+                sounds : List (Eff Msg)
+                sounds =
+                    PlaybackPresentation.audioBetween
+                        { before = playback model
+                        , after = playback advanced
+                        }
+                        |> List.map E.audio
+            in
+            ( advanced
+            , E.batch (effect :: sounds)
+            )
+
+        Nothing ->
+            model
+                |> E.withOut
+
+
+automaticallyContinueCombat : Model -> Model
+automaticallyContinueCombat model =
+    let
+        ready : Bool
+        ready =
+            playback model
+                |> Maybe.map (PlaybackPresentation.readyToAutomaticallyClose model.automaticallyCloseCombatTheater)
+                |> Maybe.withDefault False
+    in
+    if ready then
+        continueCombat model
+
+    else
+        model
+
+
+continueCombat : Model -> Model
+continueCombat model =
+    case TurnLifecycle.continueCombat model.currentTurn.phase of
+        Just next ->
+            applyPlaybackFrame next model
+
+        Nothing ->
+            model
+
+
+setCombatMapView : TurnPlayback.MapView -> Model -> Model
+setCombatMapView mapView model =
+    model
+        |> mapCurrentTurn
+            (CurrentTurn.mapPhase
+                (TurnLifecycle.setCombatMapView mapView)
+            )
+        |> updatePlaybackCamera
+
+
+applyPlaybackFrame :
+    { phase : Phase
+    , frame : TurnPlayback.Frame
+    }
+    -> Model
+    -> Model
+applyPlaybackFrame next model =
+    model
+        |> mapCurrentTurn (CurrentTurn.setPhase next.phase)
+        |> setDepots next.frame.depots
+        |> setSupplyCrates next.frame.supplyCrates
+        |> setUnits next.frame.units
+        |> setVisibleTiles next.frame.visibleTiles
+
+
+turnActivity : Model -> TurnControls.Activity
+turnActivity model =
+    let
+        submitLocked : Bool
+        submitLocked =
+            planningLocked model || isChoosingUnload model || choosingDirection model
+    in
+    case model.currentTurn.phase of
+        TurnLifecycle.Submitting _ ->
+            TurnControls.Submitting
+
+        TurnLifecycle.WaitingForOpponent _ ->
+            TurnControls.Waiting
+
+        TurnLifecycle.Playing _ ->
+            TurnControls.Playing
+
+        TurnLifecycle.Planning _ ->
+            if submitLocked then
+                TurnControls.Locked
+
+            else if readyToSubmit model then
+                TurnControls.Ready
+
+            else
+                TurnControls.Planning
+
+
+applyChatUpdate : Chat.Model -> Model -> ( Model, Eff Msg )
+applyChatUpdate chat model =
+    let
+        next : Model
+        next =
+            setChat chat model
+
+        effects : Eff Msg
+        effects =
+            if chat.overlayVersion /= model.chat.overlayVersion then
+                E.batch
+                    [ chatExpiration next
+                    , scrollChatHistory
+                        { mobile = isMobileView model
+                        , devPanelOpen = model.shared.devPanelOpen
+                        }
+                        chat
+                    ]
+
+            else
+                E.none
+    in
+    ( next, effects )
+
+
+chatHistoryVisible : Bool -> Chat.Model -> Bool
+chatHistoryVisible mobile chat =
+    if mobile then
+        Chat.isOpen chat
+
+    else
+        Chat.historyVisible chat
+
+
+scrollChatHistory :
+    { mobile : Bool, devPanelOpen : Bool }
+    -> Chat.Model
+    -> Eff Msg
+scrollChatHistory { mobile, devPanelOpen } chat =
+    let
+        canFollow : Bool
+        canFollow =
+            chatHistoryVisible mobile chat
+                && Chat.followsHistory chat
+                && not devPanelOpen
+    in
+    if canFollow then
+        E.scrollToBottom { htmlId = ChatView.messagesHtmlId } ChatScrollCompleted
+
+    else
+        E.none
+
+
+chatExpiration : Model -> Eff Msg
+chatExpiration model =
+    if chatOverlayPaused model || List.isEmpty model.chat.recent then
+        E.none
+
+    else
+        E.after 8000 (ChatOverlayExpired model.chat.overlayVersion)
+
+
+chatOverlayPaused : Model -> Bool
+chatOverlayPaused model =
+    model.welcomeBriefingPending || showTurnIntroduction model
+
+
+resumeChatOverlay : Bool -> Model -> ( Model, Eff Msg )
+resumeChatOverlay wasPaused model =
+    if wasPaused then
+        ( model, chatExpiration model )
+
+    else
+        E.withOut model
+
+
+openChat : Model -> ( Model, Eff Msg )
+openChat model =
+    if canOpenDialog model then
+        ( model
+            |> setCombatEnterHeld False
+            |> mapChat Chat.open
+        , E.focus { htmlId = ChatView.inputHtmlId } FocusCompleted
+        )
+
+    else
+        model
+            |> E.withOut
+
+
+sendChat : LobbyId -> Model -> ( Model, Eff Msg )
+sendChat lobbyId model =
+    case Chat.prepareSend model.shared.seed model.chat of
+        Just ( chat, seed, submission ) ->
+            ( model
+                |> setChat (Chat.close chat)
+                |> mapShared (Shared.setSeed seed)
+            , E.batch
+                [ E.request (ChatSendReceived submission) (Chat.sendRequest lobbyId submission)
+                , E.audio Audio.chatSent
+                , E.focus { htmlId = Battlefield.htmlId } FocusCompleted
+                ]
+            )
+
+        Nothing ->
+            model
+                |> E.withOut
+
+
+pollChat : LobbyId -> Model -> ( Model, Eff Msg )
+pollChat lobbyId model =
+    case Chat.beginPoll model.chat of
+        Nothing ->
+            model
+                |> E.withOut
+
+        Just chat ->
+            ( model
+                |> setChat chat
+            , Chat.query lobbyId chat.cursor
+                |> ApiRequest.queryRequest
+                |> E.request ChatPollReceived
+            )
+
+
+inactivityTimerNeeded : Model -> Bool
+inactivityTimerNeeded model =
+    case model.currentTurn.phase of
+        TurnLifecycle.WaitingForOpponent _ ->
+            False
+
+        _ ->
+            True
+
+
+inactivityPresentation : Model -> Maybe InactivityRenewalReason
+inactivityPresentation model =
+    if playback model /= Nothing then
+        Just RenewalReason.PlaybackAllowance
+
+    else if model.welcomeBriefingPending && (model.currentTurn.number == 1) then
+        Just RenewalReason.BriefingAllowance
+
+    else
+        Nothing
+
+
+canRenewInactivity : Model -> Bool
+canRenewInactivity model =
+    (model.currentTurn.outcome == Nothing) && inactivityTimerNeeded model
+
+
+scheduleInactivity : Time.Posix -> Int -> Model -> ( Model, Eff Msg )
+scheduleInactivity now minimumDelay model =
+    if (model.inactivityWakeAt == Nothing) && canRenewInactivity model then
+        case Inactivity.reportDelay now (inactivityPresentation model) model.inactivity of
+            Just reportDelay ->
+                let
+                    delay : Int
+                    delay =
+                        max minimumDelay reportDelay
+
+                    wakeAt : Time.Posix
+                    wakeAt =
+                        Time.millisToPosix (Time.posixToMillis now + delay)
+                in
+                ( { model | inactivityWakeAt = Just wakeAt }
+                , E.after (toFloat delay) (InactivityWakeElapsed wakeAt)
+                )
+
+            Nothing ->
+                E.withOut model
+
+    else
+        E.withOut model
+
+
+renewInactivityTimer :
+    LobbyId
+    -> Time.Posix
+    -> Model
+    -> ( Model, Eff Msg )
+renewInactivityTimer lobbyId now model =
+    if canRenewInactivity model then
+        let
+            ( activity, report ) =
+                Inactivity.beginReport now
+                    { turnNumber = model.currentTurn.number
+                    , presentation = inactivityPresentation model
+                    }
+                    model.inactivity
+
+            next : Model
+            next =
+                { model | inactivity = activity }
+        in
+        case report of
+            Just request ->
+                ( { next | inactivityWakeAt = Nothing }
+                , Api.Mutation.renewInactivityTimer
+                    { id = LobbyId.toString lobbyId
+                    , turnNumber = request.turnNumber
+                    , reason = request.reason
+                    }
+                    pollStatusSelection
+                    |> ApiRequest.mutationRequest
+                    |> E.request (InactivityRenewalResponseReceived request)
+                )
+
+            Nothing ->
+                scheduleInactivity now 0 next
+
+    else
+        model |> E.withOut
+
+
+
+----------------------------------------------------------------
+-- UPDATE --
+----------------------------------------------------------------
+
+
+{-| Record player activity, synchronize playback audio, play UI cues, and
+remeasure the workspace when the rendered layout changes.
+-}
+superUpdate : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
+superUpdate lobbyId msg model =
+    model
+        |> update lobbyId msg
+        |> E.andThen (recordUserInteraction lobbyId msg)
+        |> E.andThen (withLayoutMeasurement (workspaceLayout model))
+        |> E.and (E.audio (playAudio msg model))
+        |> E.andThen (withPlaybackAudio (playbackAudio model))
+
+
+update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
+update lobbyId msg model =
     case msg of
-        Battlefield.PanLeftClicked ->
-            True
+        CombatEnterPressed ->
+            model
+                |> setCombatEnterHeld (not (hasDialog model))
+                |> E.withOut
 
-        Battlefield.PanRightClicked ->
-            True
+        StillHereClicked ->
+            E.withOut model
 
-        Battlefield.PanUpClicked ->
-            True
+        InactivityWakeElapsed wakeAt ->
+            if model.inactivityWakeAt == Just wakeAt then
+                ( model, E.now (InactivityWakeTimeReceived wakeAt) )
 
-        Battlefield.PanDownClicked ->
-            True
+            else
+                E.withOut model
 
-        Battlefield.ZoomInClicked ->
-            True
+        InactivityWakeTimeReceived wakeAt now ->
+            if model.inactivityWakeAt == Just wakeAt then
+                { model | inactivityWakeAt = Nothing }
+                    |> renewInactivityTimer lobbyId now
 
-        Battlefield.ZoomOutClicked ->
-            True
+            else
+                E.withOut model
 
-        Battlefield.ResetViewClicked ->
-            True
+        InactivityRenewalResponseReceived report result ->
+            case result of
+                Ok status ->
+                    if report.turnNumber == model.currentTurn.number then
+                        { model
+                            | inactivity =
+                                Inactivity.succeeded
+                                    model.shared.now
+                                    report
+                                    status.inactivity
+                                    model.inactivity
+                        }
+                            |> renewInactivityTimer lobbyId model.shared.now
 
-        Battlefield.RotationChoicesMsg rotationMsg ->
-            case rotationMsg of
-                RotationChoices.MouseMovedOverDirection _ ->
-                    False
+                    else
+                        model |> E.withOut
 
-                RotationChoices.FocusedDirection _ ->
-                    False
+                Err error ->
+                    { model | inactivity = Inactivity.failed report (ApiRequest.errorMessage error) model.inactivity }
+                        |> scheduleInactivity model.shared.now 1000
 
-                RotationChoices.ClickedDirection _ ->
-                    True
+        ChatMsg chatMsg ->
+            handleChatMsg lobbyId chatMsg model
 
-                RotationChoices.DirectionActivationKeyPressed _ ->
-                    True
+        ChatPollElapsed _ ->
+            pollChat lobbyId model
 
-        Battlefield.ClickedUnit _ _ ->
-            True
+        ChatPollReceived result ->
+            case result of
+                Ok messages ->
+                    let
+                        notification : Eff Msg
+                        notification =
+                            if
+                                Chat.hasNewIncoming
+                                    { known = model.chat.messages
+                                    , received = messages
+                                    , ownNames =
+                                        model.players
+                                            |> List.filter .isYou
+                                            |> List.map .name
+                                    }
+                            then
+                                E.audio Audio.chatReceived
 
-        Battlefield.PressedEnterOnUnit _ ->
-            True
+                            else
+                                E.none
+                    in
+                    model
+                        |> applyChatUpdate (Chat.receive messages model.chat)
+                        |> E.and notification
 
-        Battlefield.PressedSpaceOnUnit _ ->
-            True
+                Err error ->
+                    model
+                        |> mapChat
+                            (Chat.pollFailed (ApiRequest.errorMessage error))
+                        |> E.withOut
 
-        Battlefield.MouseOverUnit _ ->
-            False
+        ChatSendReceived submission result ->
+            let
+                chat : Chat.Model
+                chat =
+                    Chat.sent
+                        submission
+                        (Result.mapError ApiRequest.errorMessage result)
+                        model.chat
 
-        Battlefield.ClickedDepot _ _ ->
-            True
+                visibleSubmission : Bool
+                visibleSubmission =
+                    case model.chat.panel of
+                        Chat.Composing composer ->
+                            composer.delivery == Chat.Sending submission
 
-        Battlefield.PressedEnterOnDepot _ ->
-            True
+                        _ ->
+                            False
 
-        Battlefield.PressedSpaceOnDepot _ ->
-            True
+                focus : Eff Msg
+                focus =
+                    if Chat.isOpen model.chat && not (Chat.isOpen chat) then
+                        E.focus { htmlId = Battlefield.htmlId } FocusCompleted
 
-        Battlefield.MouseOverDepot _ ->
-            False
+                    else if visibleSubmission && Chat.isOpen chat then
+                        E.focus { htmlId = ChatView.inputHtmlId } FocusCompleted
 
-        Battlefield.ClickedDepotStock _ _ ->
-            True
+                    else
+                        E.none
+            in
+            model
+                |> applyChatUpdate chat
+                |> E.and focus
 
-        Battlefield.PressedEnterOnDepotStock _ ->
-            True
+        ChatScrollCompleted result ->
+            case result of
+                Err error ->
+                    let
+                        shouldReportError : Bool
+                        shouldReportError =
+                            chatHistoryVisible (isMobileView model) model.chat
+                                && not model.shared.devPanelOpen
+                    in
+                    if shouldReportError then
+                        model
+                            |> mapShared
+                                (Shared.addError
+                                    (Just (Error.ElementScrollFailed error))
+                                )
+                            |> E.withOut
 
-        Battlefield.PressedSpaceOnDepotStock _ ->
-            True
+                    else
+                        model
+                            |> E.withOut
 
-        Battlefield.ClickedTile _ _ ->
-            True
+                Ok () ->
+                    model
+                        |> E.withOut
 
-        Battlefield.PressedEnterOnTile _ ->
-            True
+        ChatOverlayExpired version ->
+            if showTurnIntroduction model then
+                model
+                    |> E.withOut
 
-        Battlefield.PressedSpaceOnTile _ ->
-            True
+            else
+                model
+                    |> mapChat (Chat.expire version)
+                    |> E.withOut
 
-        Battlefield.FocusedBoardUnit _ ->
-            False
+        FeedbackMsg feedbackMsg ->
+            case feedbackMsg of
+                FeedbackView.TextChanged text ->
+                    model
+                        |> mapFeedback (Feedback.edit text)
+                        |> E.withOut
 
-        Battlefield.FocusedBoardTile _ ->
-            False
+                FeedbackView.CloseClicked ->
+                    let
+                        focusHtmlId : String
+                        focusHtmlId =
+                            if showTurnIntroduction model then
+                                TurnIntroduction.feedbackButtonHtmlId
 
-        Battlefield.TargetPreviewLeft ->
-            False
+                            else
+                                GameMenu.buttonHtmlId
+                    in
+                    ( model |> setMenu MenuClosed
+                    , E.focus { htmlId = focusHtmlId } FocusCompleted
+                    )
 
-        Battlefield.MouseOverTile _ ->
-            False
+                FeedbackView.SubmitClicked ->
+                    let
+                        ( id, seed ) =
+                            Random.step Feedback.requestId model.shared.seed
+                    in
+                    case Feedback.beginSubmission id model.feedback of
+                        Just pending ->
+                            ( model
+                                |> mapShared (Shared.setSeed seed)
+                                |> setFeedback pending
+                            , E.request (FeedbackResponseReceived id) (Feedback.request pending)
+                            )
 
-        Battlefield.PointerPressed _ ->
-            True
+                        Nothing ->
+                            ( model, E.none )
 
-        Battlefield.TouchInputReceived _ ->
-            True
+        FeedbackResponseReceived id response ->
+            model
+                |> mapFeedback (Feedback.receive id response)
+                |> E.withOut
 
-        Battlefield.WheelScrolled _ _ ->
-            True
+        PlanningErrorReportTick now ->
+            reportPlanningViolations lobbyId now model
 
-        Battlefield.HomePressed ->
-            True
+        PlanningErrorReportReceived result ->
+            case result of
+                Ok _ ->
+                    model |> E.withOut
+
+                Err error ->
+                    model
+                        |> mapShared
+                            (Shared.addError
+                                (Just (Error.PlanningErrorReportFailed (ApiRequest.errorMessage error)))
+                            )
+                        |> E.withOut
+
+        GameMenuMsg menuMsg ->
+            handleGameMenuMsg lobbyId menuMsg model
+
+        SettingsMsg settingsMsg ->
+            case model.menu of
+                SettingsMenu _ ->
+                    handleSettingsMsg settingsMsg model
+
+                _ ->
+                    model
+                        |> E.withOut
+
+        RequestRetryClicked ->
+            case model.currentTurn.error of
+                Just (CurrentTurn.SubmissionError _) ->
+                    requestSubmission lobbyId model
+
+                Just (CurrentTurn.PollError _) ->
+                    refreshTurn lobbyId model
+
+                Just (CurrentTurn.ResignationError _) ->
+                    requestResignation RemainInGame model
+
+                _ ->
+                    model
+                        |> E.withOut
+
+        RequestErrorDismissed ->
+            ( model
+                |> mapCurrentTurn CurrentTurn.dismissError
+            , E.focus { htmlId = Battlefield.htmlId } FocusCompleted
+            )
+
+        RotationNoticeCanceled ->
+            E.withOut model
+
+        FocusCompleted result ->
+            recordFocusResult result model
+                |> E.withOut
+
+        ResignResponseReceived destination result ->
+            case result of
+                Ok snapshot ->
+                    let
+                        effect : Eff Msg
+                        effect =
+                            case destination of
+                                RemainInGame ->
+                                    E.none
+
+                                GoHome ->
+                                    Route.navigate model.shared.deployment
+                                        Route.Home
+                    in
+                    (model
+                        |> setResigning False
+                    )
+                        |> applyTurnSnapshot lobbyId
+                            snapshot
+                            (CurrentTurn.pollSucceeded (turnObservation snapshot) model.currentTurn)
+                        |> E.and effect
+
+                Err error ->
+                    let
+                        requestError : CurrentTurn.RequestError
+                        requestError =
+                            CurrentTurn.ResignationError
+                                (ApiRequest.errorMessage error)
+                    in
+                    model
+                        |> setResigning False
+                        |> setMenu MenuClosed
+                        |> mapCurrentTurn
+                            (CurrentTurn.setError (Just requestError))
+                        |> E.withOut
+
+        BattlefieldMsg boardMsg ->
+            handleBattlefieldMsg boardMsg model
+                |> E.withOut
+
+        CameraReturnFinished ->
+            model
+                |> mapNavigation BattlefieldNavigation.finishReturn
+                |> updatePlaybackCamera
+                |> E.withOut
+
+        WindowResized screenSize ->
+            handleScreenSize screenSize model
+
+        GotWindowSizeMeasurement screenSize ->
+            handleScreenSize screenSize model
+
+        BattlefieldSizeReceived result ->
+            case result of
+                Ok battlefield ->
+                    if (battlefield.element.width <= 0) || (battlefield.element.height <= 0) then
+                        E.withOut model
+
+                    else if isMobileView model then
+                        let
+                            viewport : Camera.Viewport
+                            viewport =
+                                { size =
+                                    { x = battlefield.element.width
+                                    , y = battlefield.element.height
+                                    }
+                                , bottomInset = 0
+                                , rightInset = 0
+                                }
+                        in
+                        model
+                            |> setBattlefieldViewport
+                                (Just
+                                    { origin = { x = battlefield.element.x, y = battlefield.element.y }
+                                    , camera = viewport
+                                    }
+                                )
+                            |> updatePlaybackCamera
+                            |> E.withOut
+
+                    else
+                        ( model
+                        , E.measure
+                            BattlefieldWorkspace.inspectorHtmlId
+                            (InspectorSizeReceived battlefield)
+                        )
+
+                Err error ->
+                    model
+                        |> mapShared
+                            (Shared.addError
+                                (Just (Error.BattlefieldMeasurementFailed error))
+                            )
+                        |> E.withOut
+
+        InspectorSizeReceived battlefield result ->
+            case result of
+                Ok inspector ->
+                    ( model
+                    , E.measure BattlefieldWorkspace.controlsHtmlId
+                        (ControlsSizeReceived { battlefield = battlefield, inspector = inspector })
+                    )
+
+                Err error ->
+                    model
+                        |> mapShared
+                            (Shared.addError
+                                (Just (Error.BattlefieldMeasurementFailed error))
+                            )
+                        |> E.withOut
+
+        ControlsSizeReceived measured result ->
+            case result of
+                Ok measuredControls ->
+                    let
+                        viewport : Camera.Viewport
+                        viewport =
+                            BattlefieldWorkspace.viewport
+                                { battlefield = measured.battlefield
+                                , inspector = measured.inspector
+                                , controls = measuredControls
+                                }
+                    in
+                    model
+                        |> setBattlefieldViewport
+                            (Just
+                                { origin = { x = measured.battlefield.element.x, y = measured.battlefield.element.y }
+                                , camera = viewport
+                                }
+                            )
+                        |> updatePlaybackCamera
+                        |> E.withOut
+
+                Err error ->
+                    model
+                        |> mapShared
+                            (Shared.addError
+                                (Just (Error.BattlefieldMeasurementFailed error))
+                            )
+                        |> E.withOut
+
+        PanLeftKeyPressed ->
+            model
+                |> navigateBattlefield BattlefieldNavigation.panLeft
+                |> E.withOut
+
+        PanRightKeyPressed ->
+            model
+                |> navigateBattlefield BattlefieldNavigation.panRight
+                |> E.withOut
+
+        PanUpKeyPressed ->
+            model
+                |> navigateBattlefield BattlefieldNavigation.panUp
+                |> E.withOut
+
+        PanDownKeyPressed ->
+            model
+                |> navigateBattlefield BattlefieldNavigation.panDown
+                |> E.withOut
+
+        ZoomInKeyPressed ->
+            model
+                |> navigateBattlefield BattlefieldNavigation.zoomIn
+                |> E.withOut
+
+        ZoomOutKeyPressed ->
+            model
+                |> navigateBattlefield BattlefieldNavigation.zoomOut
+                |> E.withOut
+
+        BattlefieldNavigationMsg navigationMsg ->
+            let
+                dragMode : BattlefieldNavigation.DragMode
+                dragMode =
+                    if pathPreview model /= Nothing then
+                        BattlefieldNavigation.TraceRoute
+
+                    else
+                        BattlefieldNavigation.PanCamera
+
+                traced : Model
+                traced =
+                    model
+                        |> navigateBattlefield
+                            (BattlefieldNavigation.update dragMode navigationMsg)
+            in
+            case navigationMsg of
+                BattlefieldNavigation.MouseReleased _ ->
+                    let
+                        confirmsRoute : Bool
+                        confirmsRoute =
+                            (pathPreview model /= Nothing)
+                                && BattlefieldNavigation.suppressesClick traced.navigation
+
+                        next : Model
+                        next =
+                            if confirmsRoute then
+                                confirmPath traced
+
+                            else
+                                traced
+                    in
+                    E.withOut next
+
+                BattlefieldNavigation.MouseMoved _ _ ->
+                    E.withOut traced
+
+                BattlefieldNavigation.WindowVisibilityChanged _ ->
+                    E.withOut traced
+
+        UnloadUnitToggled id checked ->
+            model
+                |> mapCheckedPlanning
+                    (OrderPlanning.toggleAvailableUnloadCargo
+                        model.map
+                        model.units
+                        (ownPlayerNumbers model)
+                        model.movementRules
+                        (visibleSupplyCrates model.visibleTiles model.supplyCrates)
+                        (UnloadCargo.Passenger id)
+                        checked
+                    )
+                |> E.withOut
+
+        UnloadChoicesConfirmed ->
+            model
+                |> mapCheckedPlanning
+                    (OrderPlanning.confirmPassengers
+                        model.map
+                        model.units
+                        (ownPlayerNumbers model)
+                        model.movementRules
+                        (visibleSupplyCrates model.visibleTiles model.supplyCrates)
+                        model.depots
+                    )
+                |> resetMobileTab (selectedUnitId model)
+                |> E.withOut
+
+        UnloadSkipped ->
+            model
+                |> mapCheckedPlanning
+                    (OrderPlanning.skipUnloading
+                        model.map
+                        model.units
+                        (visibleSupplyCrates model.visibleTiles model.supplyCrates)
+                        model.depots
+                    )
+                |> resetMobileTab (selectedUnitId model)
+                |> E.withOut
+
+        DismountedInfantryClicked id ->
+            let
+                next : Model
+                next =
+                    model
+                        |> mapCheckedPlanning
+                            (OrderPlanning.selectDismountedInfantry model.units id)
+                        |> resetMobileTab (selectedUnitId model)
+                        |> centerDismountOrder (selectedUnitId model)
+            in
+            ( next, focusAdjacentOrder identity Nothing next )
+
+        HoldRemainingInfantryClicked ->
+            holdRemainingInfantry model
+                |> E.withOut
+
+        CancelTruckOrderClicked ->
+            cancelPlanningInteraction model
+                |> E.withOut
+
+        GroundFreightPickupClicked ->
+            model
+                |> mapCheckedPlanning
+                    (OrderPlanning.confirmGroundPickup
+                        >> IC.andThen
+                            (OrderPlanning.promptDismountedOrders model.map model.units)
+                    )
+                |> resetMobileTab (selectedUnitId model)
+                |> centerDismountOrder (selectedUnitId model)
+                |> E.withOut
+
+        LoadCratesClicked id count ->
+            case
+                ListUtil.find
+                    (\unit -> unit.id == id && isOwnUnit model unit)
+                    model.units
+            of
+                Just _ ->
+                    model
+                        |> mapCheckedPlanning
+                            (OrderPlanning.dismissDialog
+                                >> saveCrateLoading id count
+                                >> IC.andThen (OrderPlanning.promptDismountedOrders model.map model.units)
+                            )
+                        |> resetMobileTab (selectedUnitId model)
+                        |> centerDismountOrder (selectedUnitId model)
+                        |> E.withOut
+
+                Nothing ->
+                    model
+                        |> E.withOut
+
+        UnloadCrateToggled index checked ->
+            model
+                |> mapCheckedPlanning
+                    (OrderPlanning.toggleAvailableUnloadCargo
+                        model.map
+                        model.units
+                        (ownPlayerNumbers model)
+                        model.movementRules
+                        (visibleSupplyCrates model.visibleTiles model.supplyCrates)
+                        (UnloadCargo.Crate index)
+                        checked
+                    )
+                |> E.withOut
+
+        CargoUnitClicked id ->
+            model
+                |> clearSelection
+                |> selectUnit id
+                |> E.withOut
+
+        NextUnorderedUnitKeyPressed ->
+            model
+                |> mapPlanning
+                    (OrderPlanning.selectNextUnorderedUnit model.map model.units (ownPlayerNumbers model))
+                |> resetMobileTab (selectedUnitId model)
+                |> centerDismountOrder (selectedUnitId model)
+                |> E.withOut
+
+        OrderMenuMsg orderMsg ->
+            model
+                |> handleOrderMsg orderMsg
+
+        PreviousOrderPressed ->
+            ( model, focusAdjacentOrder List.reverse (focusedOrder model) model )
+
+        NextOrderPressed ->
+            ( model, focusAdjacentOrder identity (focusedOrder model) model )
+
+        OrderFocusCompleted result ->
+            recordFocusResult result model
+                |> E.withOut
+
+        DirectionKeyPressed direction ->
+            model
+                |> saveDirection direction
+                |> E.withOut
+
+        PathDirectionKeyPressed direction ->
+            model
+                |> extendPath direction
+                |> E.withOut
+
+        PathEnterPressed ->
+            model
+                |> confirmPath
+                |> E.withOut
+
+        CancelOrderClicked ->
+            cancelPlanningInteraction model
+                |> E.withOut
+
+        ClearMoveClicked ->
+            model
+                |> revokeSelectedOrder
+                |> E.withOut
+
+        InspectClicked ->
+            model
+                |> clearSelection
+                |> E.withOut
+
+        InspectorCloseClicked ->
+            model
+                |> clearSelection
+                |> E.withOut
+
+        MobileTabClicked tab ->
+            { model | mobileTab = tab }
+                |> E.withOut
+
+        MobileTabNavigationPressed tab ->
+            ( { model | mobileTab = tab }
+            , E.focus
+                { htmlId = MobileBattlefield.tabHtmlId tab }
+                FocusCompleted
+            )
+
+        InspectionHelpClicked help ->
+            if hasDialog model then
+                model
+                    |> E.withOut
+
+            else
+                { model | inspectionHelp = Just help }
+                    |> E.withOut
+
+        InspectionHelpFocusReturned result ->
+            recordFocusResult result model
+                |> E.withOut
+
+        EscapePressed ->
+            if model.inspectionHelp /= Nothing then
+                dismissInspectionHelp model
+
+            else if (model.menu /= MenuClosed) || showTurnIntroduction model then
+                model
+                    |> dismissDialog
+
+            else if planningLocked model then
+                model
+                    |> clearSelection
+                    |> E.withOut
+
+            else
+                cancelPlanningInteraction model
+                    |> E.withOut
+
+        TurnControlsMsg turnControlsMsg ->
+            handleTurnControlsMsg lobbyId turnControlsMsg model
+
+        WelcomeBriefingDismissed ->
+            { model | welcomeBriefingPending = False }
+                |> resumeChatOverlay model.welcomeBriefingPending
+                |> E.and
+                    (E.setLocalStorage
+                        { key = welcomeBriefingPreferenceKey
+                        , value = Encode.bool True
+                        }
+                    )
+
+        DialogDismissed ->
+            if model.inspectionHelp /= Nothing then
+                dismissInspectionHelp model
+
+            else
+                model
+                    |> dismissDialog
+
+        SubmissionCancelled ->
+            case model.currentTurn.phase of
+                TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
+                    dismissDialog model
+
+                _ ->
+                    model
+                        |> E.withOut
+
+        SubmitKeyPressed ->
+            if canSubmitWithKeyboard model then
+                requestSubmission lobbyId model
+
+            else
+                model
+                    |> E.withOut
+
+        SubmissionConfirmed ->
+            confirmSubmission lobbyId model
+
+        SkipUnplannedUnitsWarningChanged skip ->
+            ( { model | skipUnplannedUnitsWarning = skip }
+            , E.setLocalStorage
+                { key = unplannedUnitsWarningPreferenceKey
+                , value = Encode.bool skip
+                }
+            )
+
+        SubmitResponseReceived turnNumber result ->
+            case result of
+                Ok snapshot ->
+                    model
+                        |> applyTurnSnapshot
+                            lobbyId
+                            snapshot
+                            (CurrentTurn.submissionSucceeded
+                                turnNumber
+                                (turnObservation snapshot)
+                                model.currentTurn
+                            )
+
+                Err error ->
+                    model
+                        |> mapCurrentTurn
+                            (CurrentTurn.submissionFailed
+                                turnNumber
+                                (ApiRequest.errorMessage error)
+                            )
+                        |> E.withOut
+
+        CurrentTurnMsg turnMsg ->
+            handleCurrentTurnMsg lobbyId turnMsg model
+
+        PollStatusResponseReceived activitySequence result ->
+            case result of
+                Ok status ->
+                    let
+                        currentTurn : CurrentTurn.Model
+                        currentTurn =
+                            model.currentTurn
+
+                        observed : Model
+                        observed =
+                            if status.number == currentTurn.number then
+                                { model | inactivity = Inactivity.observe model.shared.now activitySequence status.inactivity model.inactivity }
+
+                            else
+                                model
+
+                        needsSnapshot : Bool
+                        needsSnapshot =
+                            (currentTurn.outcome == Nothing)
+                                && ((status.outcome /= Nothing)
+                                        || ((status.number > currentTurn.number) && (playback model == Nothing))
+                                   )
+
+                        observation : CurrentTurn.Observation
+                        observation =
+                            { turn =
+                                { number = status.number
+                                , outcome = status.outcome
+                                , submitted = status.submitted
+                                , opponentSubmitted = status.opponentSubmitted
+                                , resolution = currentTurn.resolution
+                                }
+                            , playbackFrames = []
+                            }
+                    in
+                    if needsSnapshot then
+                        ( observed, E.request PollResponseReceived (loadSnapshot lobbyId) )
+
+                    else
+                        let
+                            next : Model
+                            next =
+                                observed
+                                    |> mapCurrentTurn (CurrentTurn.pollSucceeded observation)
+                                    |> resetMobileTab (selectedUnitId model)
+
+                            reportingChanged : Bool
+                            reportingChanged =
+                                (canRenewInactivity model /= canRenewInactivity next)
+                                    || (Inactivity.reportingContext model.inactivity
+                                            /= Inactivity.reportingContext next.inactivity
+                                       )
+                        in
+                        (if reportingChanged then
+                            renewInactivityTimer lobbyId model.shared.now next
+
+                         else
+                            E.withOut next
+                        )
+                            |> E.andThen (resumeChatOverlay (showTurnIntroduction model))
+
+                Err error ->
+                    model
+                        |> mapCurrentTurn
+                            (CurrentTurn.pollFailed (ApiRequest.errorMessage error))
+                        |> E.withOut
+
+        PollResponseReceived result ->
+            case result of
+                Ok snapshot ->
+                    model
+                        |> applyTurnSnapshot
+                            lobbyId
+                            snapshot
+                            (CurrentTurn.pollSucceeded
+                                (turnObservation snapshot)
+                                model.currentTurn
+                            )
+
+                Err error ->
+                    model
+                        |> mapCurrentTurn
+                            (CurrentTurn.pollFailed (ApiRequest.errorMessage error))
+                        |> E.withOut
+
+        AnimationTimerElapsed _ ->
+            if deathInFocus model || combatEncounter model /= Nothing then
+                model
+                    |> E.withOut
+
+            else
+                { model | frame = AnimationFrame.next model.frame }
+                    |> E.withOut
+
+        TurnIntroductionMsg introMsg ->
+            handleTurnIntroductionMsg introMsg model
+
+        UnitDeathMsg lossMsg ->
+            handleUnitDeathMsg lossMsg model
+
+        CombatTheaterMsg panelMsg ->
+            handleCombatTheaterMsg panelMsg model
+
+        LossDialogOpened htmlId ->
+            case unitLoss model of
+                Just loss ->
+                    if UnitDeath.dialogHtmlId loss == htmlId then
+                        model
+                            |> mapShared
+                                (Shared.addError
+                                    (PlaybackPresentation.lossError model.players (Just loss))
+                                )
+                            |> E.withOut
+
+                    else
+                        E.withOut model
+
+                Nothing ->
+                    E.withOut model
 
 
 handleBattlefieldMsg : Battlefield.Msg -> Model -> Model
@@ -2015,31 +3347,31 @@ handleBattlefieldMsg msg model =
     case msg of
         Battlefield.PanLeftClicked ->
             model
-                |> mapNavigation BattlefieldNavigation.panLeft
+                |> navigateBattlefield BattlefieldNavigation.panLeft
 
         Battlefield.PanRightClicked ->
             model
-                |> mapNavigation BattlefieldNavigation.panRight
+                |> navigateBattlefield BattlefieldNavigation.panRight
 
         Battlefield.PanUpClicked ->
             model
-                |> mapNavigation BattlefieldNavigation.panUp
+                |> navigateBattlefield BattlefieldNavigation.panUp
 
         Battlefield.PanDownClicked ->
             model
-                |> mapNavigation BattlefieldNavigation.panDown
+                |> navigateBattlefield BattlefieldNavigation.panDown
 
         Battlefield.ZoomInClicked ->
             model
-                |> mapNavigation BattlefieldNavigation.zoomIn
+                |> navigateBattlefield BattlefieldNavigation.zoomIn
 
         Battlefield.ZoomOutClicked ->
             model
-                |> mapNavigation BattlefieldNavigation.zoomOut
+                |> navigateBattlefield BattlefieldNavigation.zoomOut
 
         Battlefield.ResetViewClicked ->
             model
-                |> mapNavigation BattlefieldNavigation.resetViewport
+                |> navigateBattlefield BattlefieldNavigation.resetViewport
 
         Battlefield.RotationChoicesMsg rotationMsg ->
             case rotationMsg of
@@ -2165,411 +3497,589 @@ handleBattlefieldMsg msg model =
 
         Battlefield.PointerPressed point ->
             model
-                |> mapNavigation (BattlefieldNavigation.press point)
+                |> navigateBattlefield (BattlefieldNavigation.press point)
 
         Battlefield.WheelScrolled anchor delta ->
             model
-                |> mapNavigation (BattlefieldNavigation.scroll anchor delta)
+                |> navigateBattlefield
+                    (BattlefieldNavigation.scroll anchor delta)
 
         Battlefield.HomePressed ->
             model
-                |> mapNavigation BattlefieldNavigation.resetViewport
+                |> navigateBattlefield BattlefieldNavigation.resetViewport
 
 
-canSurrender : Model -> Bool
-canSurrender model =
-    canOpenDialog model
-        && not model.resigning
-        && (model.currentTurn.outcome == Nothing)
-
-
-requestResignation : ResignationDestination -> Model -> ( Model, Eff Msg )
-requestResignation destination model =
+handleBattlefieldTouch : BattlefieldNavigation.TouchInput -> Model -> Model
+handleBattlefieldTouch input model =
     let
-        canRequestResignation : Bool
-        canRequestResignation =
-            case destination of
-                RemainInGame ->
-                    canSurrender model
-
-                GoHome ->
-                    (model.menu == MainMenu)
-                        && not model.resigning
-                        && (model.currentTurn.outcome == Nothing)
-    in
-    if canRequestResignation then
-        ( model
-            |> setMenu (ConfirmingResignation destination)
-        , E.focus
-            { htmlId = GameMenu.resignationCancelButtonHtmlId }
-            (GameMenu.FocusReturned >> GameMenuMsg)
-        )
-
-    else
-        model
-            |> E.withOut
-
-
-resignGame : LobbyId -> ResignationDestination -> Model -> ( Model, Eff Msg )
-resignGame lobbyId destination model =
-    let
-        canResign : Bool
-        canResign =
-            (model.menu == ConfirmingResignation destination)
-                && not model.resigning
-                && (model.currentTurn.outcome == Nothing)
-    in
-    if canResign then
-        ( model
-            |> setResigning True
-            |> setMenu MenuClosed
-        , Api.Mutation.resignGame { id = LobbyId.toString lobbyId } snapshotSelection
-            |> ApiRequest.mutationRequest
-            |> E.request (ResignResponseReceived destination)
-        )
-
-    else
-        model
-            |> E.withOut
-
-
-recordFocusResult : Result Browser.Dom.Error () -> Model -> Model
-recordFocusResult result model =
-    case result of
-        Ok () ->
-            model
-
-        Err error ->
-            model
-                |> setShared (Shared.addError (Just (Error.ElementFocusFailed error)) model.shared)
-
-
-{-| Retain playback framing across subject changes. Only projected positions
-can request a pan, and the saved planning navigation remains independent.
--}
-updatePlaybackCamera : Model -> Model
-updatePlaybackCamera model =
-    case ( model.currentTurn.phase, model.battlefieldViewport ) of
-        ( TurnLifecycle.Playing playing, Just viewport ) ->
-            let
-                held : PlaybackPresentation.PlaybackCamera
-                held =
-                    PlaybackPresentation.frameCamera
-                        viewport.camera
-                        model.map
-                        (BattlefieldNavigation.camera model.navigation)
-                        playing.animation
-                        playing.camera
-
-                currentTurn : CurrentTurn.Model
-                currentTurn =
-                    model.currentTurn
-            in
-            model
-                |> setCurrentTurn
-                    (currentTurn
-                        |> CurrentTurn.setPhase
-                            (TurnLifecycle.Playing
-                                (playing
-                                    |> TurnLifecycle.setPlaybackCamera (Just held)
-                                )
-                            )
-                    )
-
-        _ ->
-            model
-
-
-playbackCamera : Model -> Maybe TurnLifecycle.PlaybackCamera
-playbackCamera model =
-    phasePlaybackCamera model.currentTurn.phase
-
-
-phasePlaybackCamera : Phase -> Maybe TurnLifecycle.PlaybackCamera
-phasePlaybackCamera phase =
-    case phase of
-        TurnLifecycle.Playing playing ->
-            playing.camera
-
-        _ ->
-            Nothing
-
-
-measureWorkspace : Eff Msg
-measureWorkspace =
-    E.measure Battlefield.htmlId BattlefieldSizeReceived
-
-
-remeasureWorkspace : Model -> ( Model, Eff Msg )
-remeasureWorkspace model =
-    ( model
-        |> setBattlefieldViewport Nothing
-    , measureWorkspace
-    )
-
-
-resetMobileTab : Maybe UnitId -> Model -> Model
-resetMobileTab previousUnitId next =
-    let
-        selectionChanged : Bool
-        selectionChanged =
-            previousUnitId /= selectedUnitId next
-    in
-    if selectionChanged then
-        let
-            tab : MobileBattlefield.Tab
-            tab =
-                if mobileOrdersAvailable next then
-                    MobileBattlefield.Orders
-
-                else
-                    MobileBattlefield.Details
-        in
-        { next | mobileTab = tab }
-
-    else
-        next
-
-
-workspaceLayout : Model -> WorkspaceLayout
-workspaceLayout model =
-    { inspectorOpen = currentSelection model /= Nothing
-    , activity = turnActivity model
-    , outcome = model.currentTurn.outcome
-    , playing = playback model /= Nothing
-    }
-
-
-{-| Selection changes the inspector inset; turn controls can change
-the height available to the battlefield. Playback start requests its own fresh
-measurement, so this check does not request a second one for that transition.
--}
-withLayoutMeasurement : WorkspaceLayout -> Model -> ( Model, Eff Msg )
-withLayoutMeasurement previousLayout model =
-    let
-        layout : WorkspaceLayout
-        layout =
-            workspaceLayout model
-
-        playbackStarted : Bool
-        playbackStarted =
-            not previousLayout.playing && layout.playing
-
-        layoutChanged : Bool
-        layoutChanged =
-            (previousLayout.inspectorOpen /= layout.inspectorOpen)
-                || (previousLayout.activity /= layout.activity)
-                || (previousLayout.outcome /= layout.outcome)
-    in
-    if layoutChanged && not playbackStarted then
-        remeasureWorkspace model
-
-    else
-        model
-            |> E.withOut
-
-
-closeMenuForTurnIntroduction : Model -> Model
-closeMenuForTurnIntroduction model =
-    if showTurnIntroduction model then
-        { model | inspectionHelp = Nothing }
-            |> setMenu MenuClosed
-
-    else
-        model
-
-
-startPlayback : Model -> ( Model, Eff Msg )
-startPlayback model =
-    remeasureWorkspace
-        ({ model | inspectionHelp = Nothing }
-            |> setMenu MenuClosed
-            |> setChat (Chat.hide model.chat)
-        )
-
-
-finishPlayback : Maybe TurnLifecycle.PlaybackCamera -> Model -> ( Model, Eff Msg )
-finishPlayback previousCamera next =
-    let
-        ( returned, cameraEffect ) =
-            if previousCamera /= Nothing then
-                ( next
-                    |> setNavigation (BattlefieldNavigation.startReturn next.navigation)
-                , E.after PlaybackPresentation.cameraPanDurationMs CameraReturnFinished
-                )
+        mode : BattlefieldNavigation.DragMode
+        mode =
+            if pathPreview model /= Nothing then
+                BattlefieldNavigation.TraceRoute
 
             else
-                next
-                    |> E.withOut
-    in
-    returned
-        |> closeMenuForTurnIntroduction
-        |> E.with cameraEffect
+                BattlefieldNavigation.PanCamera
 
+        touched : BattlefieldNavigation.TouchUpdate
+        touched =
+            BattlefieldNavigation.touchWithRoute mode input model.navigation
 
-presentPlaybackTransition : Phase -> Model -> ( Model, Eff Msg )
-presentPlaybackTransition previous next =
-    case ( TurnLifecycle.playback previous, playback next ) of
-        ( Just _, Nothing ) ->
-            finishPlayback (phasePlaybackCamera previous) next
-
-        _ ->
-            next
-                |> updatePlaybackCamera
-                |> E.withOut
-
-
-turnActivity : Model -> TurnControls.Activity
-turnActivity model =
-    let
-        submitLocked : Bool
-        submitLocked =
-            planningLocked model || isChoosingUnload model || choosingDirection model
-    in
-    case model.currentTurn.phase of
-        TurnLifecycle.Submitting _ ->
-            TurnControls.Submitting
-
-        TurnLifecycle.WaitingForOpponent _ ->
-            TurnControls.Waiting
-
-        TurnLifecycle.Playing _ ->
-            TurnControls.Playing
-
-        TurnLifecycle.Planning _ ->
-            if submitLocked then
-                TurnControls.Locked
-
-            else if readyToSubmit model then
-                TurnControls.Ready
-
-            else
-                TurnControls.Planning
-
-
-applyChatUpdate : Chat.Model -> Model -> ( Model, Eff Msg )
-applyChatUpdate chat model =
-    let
         next : Model
         next =
-            setChat chat model
+            navigateBattlefield (always touched.navigation) model
 
-        effects : Eff Msg
-        effects =
-            if chat.overlayVersion /= model.chat.overlayVersion then
-                E.batch
-                    [ chatExpiration next
-                    , scrollChatHistory
-                        { mobile = isMobileView model
-                        , devPanelOpen = model.shared.devPanelOpen
+        routeAt :
+            (Coordinate -> Model -> Model)
+            -> Point
+            -> Model
+            -> Model
+        routeAt action point state =
+            case ( pathPreview state, state.battlefieldViewport ) of
+                ( Just _, Just viewport ) ->
+                    Camera.coordinateAt
+                        viewport.camera.size
+                        state.map
+                        (BattlefieldNavigation.camera state.navigation)
+                        { x = point.x - viewport.origin.x
+                        , y = point.y - viewport.origin.y
                         }
-                        chat
-                    ]
+                        |> Maybe.map (\position -> action position state)
+                        |> Maybe.withDefault state
 
-            else
-                E.none
+                _ ->
+                    state
+
+        traceContact : BattlefieldNavigation.TouchRoute -> Model -> Model
+        traceContact contact =
+            case contact of
+                BattlefieldNavigation.TraceAt point ->
+                    routeAt previewTile point
+
+                BattlefieldNavigation.ReleaseAt point ->
+                    routeAt selectTile point
     in
-    ( next, effects )
+    List.foldl traceContact next touched.route
 
 
-chatHistoryVisible : Bool -> Chat.Model -> Bool
-chatHistoryVisible mobile chat =
-    if mobile then
-        Chat.isOpen chat
-
-    else
-        Chat.historyVisible chat
-
-
-scrollChatHistory :
-    { mobile : Bool, devPanelOpen : Bool }
-    -> Chat.Model
-    -> Eff Msg
-scrollChatHistory { mobile, devPanelOpen } chat =
-    let
-        canFollow : Bool
-        canFollow =
-            chatHistoryVisible mobile chat
-                && Chat.followsHistory chat
-                && not devPanelOpen
-    in
-    if canFollow then
-        E.scrollToBottom { htmlId = ChatView.messagesHtmlId } ChatScrollCompleted
-
-    else
-        E.none
-
-
-chatExpiration : Model -> Eff Msg
-chatExpiration model =
-    if chatOverlayPaused model || List.isEmpty model.chat.recent then
-        E.none
-
-    else
-        E.after 8000 (ChatOverlayExpired model.chat.overlayVersion)
-
-
-chatOverlayPaused : Model -> Bool
-chatOverlayPaused model =
-    model.welcomeBriefingPending || showTurnIntroduction model
-
-
-resumeChatOverlay : Bool -> Model -> ( Model, Eff Msg )
-resumeChatOverlay wasPaused model =
-    if wasPaused then
-        ( model, chatExpiration model )
-
-    else
+handleScreenSize : ScreenSize -> Model -> ( Model, Eff Msg )
+handleScreenSize screenSize model =
+    if screenSize == model.shared.screenSize then
         E.withOut model
 
-
-openChat : Model -> ( Model, Eff Msg )
-openChat model =
-    if canOpenDialog model then
-        ( model
-            |> setCombatEnterHeld False
-            |> setChat (Chat.open model.chat)
-        , E.focus { htmlId = ChatView.inputHtmlId } FocusCompleted
-        )
-
     else
-        model
-            |> E.withOut
+        let
+            usesMobileLayout : ScreenSize -> Bool
+            usesMobileLayout =
+                ScreenSize.usesMobileLayout model.shared.operatingSystem
 
+            mobile : Bool
+            mobile =
+                usesMobileLayout screenSize
 
-sendChat : LobbyId -> Model -> ( Model, Eff Msg )
-sendChat lobbyId model =
-    case Chat.prepareSend model.shared.seed model.chat of
-        Just ( chat, seed, submission ) ->
+            layoutChanged : Bool
+            layoutChanged =
+                usesMobileLayout model.shared.screenSize /= mobile
+        in
+        if layoutChanged then
+            let
+                maxZoom : Float
+                maxZoom =
+                    maxBattlefieldZoom mobile model.map
+            in
             ( model
-                |> setChat (Chat.close chat)
-                |> setShared (Shared.setSeed seed model.shared)
+                |> mapCurrentTurn
+                    (CurrentTurn.mapPhase (limitPlaybackZoom maxZoom))
+                |> mapNavigation (BattlefieldNavigation.setMaxZoom maxZoom)
+                |> mapShared (Shared.setScreenSize screenSize)
             , E.batch
-                [ E.request (ChatSendReceived submission) (Chat.sendRequest lobbyId submission)
-                , E.audio Audio.chatSent
-                , E.focus { htmlId = Battlefield.htmlId } FocusCompleted
+                [ measureWorkspace
+                , scrollChatHistory
+                    { mobile = mobile
+                    , devPanelOpen = model.shared.devPanelOpen
+                    }
+                    model.chat
                 ]
             )
 
-        Nothing ->
-            model
-                |> E.withOut
-
-
-pollChat : LobbyId -> Model -> ( Model, Eff Msg )
-pollChat lobbyId model =
-    case Chat.beginPoll model.chat of
-        Nothing ->
-            model
-                |> E.withOut
-
-        Just chat ->
-            ( model
-                |> setChat chat
-            , Chat.query lobbyId chat.cursor
-                |> ApiRequest.queryRequest
-                |> E.request ChatPollReceived
+        else
+            ( mapShared (Shared.setScreenSize screenSize) model
+            , measureWorkspace
             )
+
+
+handleTurnIntroductionMsg : TurnIntroduction.Msg -> Model -> ( Model, Eff Msg )
+handleTurnIntroductionMsg introMsg model =
+    case introMsg of
+        TurnIntroduction.BeginClicked ->
+            acknowledgeTurnIntroduction model
+
+        TurnIntroduction.ReplayClicked ->
+            if showTurnIntroduction model then
+                case CurrentTurn.replay model.currentTurn of
+                    Just replay ->
+                        model
+                            |> setCurrentTurn replay.currentTurn
+                            |> resetMobileTab (selectedUnitId model)
+                            |> applyPlaybackFrame
+                                { phase = replay.currentTurn.phase, frame = replay.frame }
+                            |> startPlayback
+                            |> E.andThen (resumeChatOverlay True)
+
+                    Nothing ->
+                        model
+                            |> E.withOut
+
+            else
+                model
+                    |> E.withOut
+
+        TurnIntroduction.BattlefieldViewClicked ->
+            acknowledgeTurnIntroduction model
+
+        TurnIntroduction.FeedbackClicked ->
+            let
+                canGiveFeedback : Bool
+                canGiveFeedback =
+                    (model.currentTurn.outcome /= Nothing)
+                        && showTurnIntroduction model
+                        && (model.menu == MenuClosed)
+            in
+            if canGiveFeedback then
+                ( model |> setMenu FeedbackMenu
+                , E.focus { htmlId = FeedbackView.inputHtmlId } FocusCompleted
+                )
+
+            else
+                model
+                    |> E.withOut
+
+        TurnIntroduction.SkipDialogsChanged skip ->
+            model
+                |> acknowledgeTurnIntroduction
+                |> Tuple.mapFirst (setSkipTurnIntroduction skip)
+                |> E.and (rememberTurnIntroductionPreference skip)
+
+
+handleUnitDeathMsg : UnitDeath.Msg -> Model -> ( Model, Eff Msg )
+handleUnitDeathMsg lossMsg model =
+    case lossMsg of
+        UnitDeath.ContinueClicked unitId ->
+            model
+                |> mapCurrentTurn
+                    (CurrentTurn.mapPhase
+                        (TurnLifecycle.acknowledgeLoss unitId)
+                    )
+                |> presentPlaybackTransition model.currentTurn.phase
+
+        UnitDeath.SkipDialogsChanged skip ->
+            ( { model | skipUnitLossDialogs = skip }
+            , rememberPlaybackPreference PlaybackPresentation.SkipLossDialogs skip
+            )
+
+
+handleCombatTheaterMsg : CombatTheater.Msg -> Model -> ( Model, Eff Msg )
+handleCombatTheaterMsg panelMsg model =
+    case panelMsg of
+        CombatTheater.AutomaticallyCloseChanged automaticallyClose ->
+            ( { model | automaticallyCloseCombatTheater = automaticallyClose }
+            , rememberPlaybackPreference PlaybackPresentation.AutomaticallyCloseCombat automaticallyClose
+            )
+
+        CombatTheater.ContinueClicked ->
+            continueCombat model
+                |> presentPlaybackTransition model.currentTurn.phase
+
+        CombatTheater.SeeMapPressed ->
+            setCombatMapView TurnPlayback.SeeingMap model
+                |> E.withOut
+
+        CombatTheater.SeeMapReleased ->
+            setCombatMapView TurnPlayback.CardVisible model
+                |> E.withOut
+
+
+handleChatMsg : LobbyId -> ChatView.Msg -> Model -> ( Model, Eff Msg )
+handleChatMsg lobbyId msg model =
+    case msg of
+        ChatView.OpenPressed ->
+            openChat model
+
+        ChatView.CloseClicked ->
+            ( model
+                |> mapChat Chat.close
+            , E.focus { htmlId = Battlefield.htmlId } FocusCompleted
+            )
+
+        ChatView.TextChanged text ->
+            model
+                |> mapChat (Chat.edit text)
+                |> E.withOut
+
+        ChatView.HistoryScrolled position ->
+            model
+                |> mapChat (Chat.scrollHistory position)
+                |> E.withOut
+
+        ChatView.DialogOpened ->
+            let
+                newChat : Chat.Model
+                newChat =
+                    Chat.historyOpened model.chat
+            in
+            ( model
+                |> setChat newChat
+            , scrollChatHistory
+                { mobile = isMobileView model
+                , devPanelOpen = model.shared.devPanelOpen
+                }
+                newChat
+            )
+
+        ChatView.HistoryClicked ->
+            let
+                newChat : Chat.Model
+                newChat =
+                    Chat.toggleHistory model.chat
+            in
+            ( model
+                |> setChat newChat
+            , scrollChatHistory
+                { mobile = isMobileView model
+                , devPanelOpen = model.shared.devPanelOpen
+                }
+                newChat
+            )
+
+        ChatView.SendPressed ->
+            sendChat lobbyId model
+
+        ChatView.RetrySendPressed ->
+            model
+                |> mapChat Chat.open
+                |> sendChat lobbyId
+
+        ChatView.RetryUpdatesPressed ->
+            pollChat lobbyId model
+
+        ChatView.DismissErrorClicked ->
+            let
+                focusHtmlId : String
+                focusHtmlId =
+                    if Chat.isOpen model.chat then
+                        ChatView.inputHtmlId
+
+                    else
+                        Battlefield.htmlId
+            in
+            ( model
+                |> mapChat Chat.dismissErrors
+            , E.focus { htmlId = focusHtmlId } FocusCompleted
+            )
+
+
+handleGameMenuMsg : LobbyId -> GameMenu.Msg -> Model -> ( Model, Eff Msg )
+handleGameMenuMsg lobbyId msg model =
+    case msg of
+        GameMenu.ChatClicked ->
+            openChat model
+
+        GameMenu.OpenClicked ->
+            if canOpenDialog model then
+                ( model
+                    |> setMenu MainMenu
+                , E.none
+                )
+
+            else
+                model
+                    |> E.withOut
+
+        GameMenu.FeedbackClicked ->
+            if (model.menu == MainMenu) && not model.resigning then
+                ( model |> setMenu FeedbackMenu
+                , E.focus { htmlId = FeedbackView.inputHtmlId } FocusCompleted
+                )
+
+            else
+                ( model, E.none )
+
+        GameMenu.AboutClicked ->
+            if (model.menu == MainMenu) && not model.resigning then
+                ( model
+                    |> setMenu AboutMenu
+                , E.focus
+                    { htmlId = About.htmlId ++ "-title" }
+                    (GameMenu.FocusReturned >> GameMenuMsg)
+                )
+
+            else
+                model
+                    |> E.withOut
+
+        GameMenu.SettingsClicked ->
+            if (model.menu == MainMenu) && not model.resigning then
+                ( model
+                    |> setMenu (SettingsMenu Settings.Dialogs)
+                , E.focus { htmlId = Settings.dialogHtmlId ++ "-title" } FocusCompleted
+                )
+
+            else
+                model
+                    |> E.withOut
+
+        GameMenu.DevPanelClicked ->
+            if model.menu == MainMenu then
+                model
+                    |> mapShared (Shared.setDevPanelOpen True)
+                    |> E.withOut
+
+            else
+                E.withOut model
+
+        GameMenu.CloseClicked ->
+            let
+                returnHtmlId : String
+                returnHtmlId =
+                    if model.menu == MobileOrdersHelp then
+                        MobileBattlefield.ordersHelpButtonHtmlId
+
+                    else
+                        GameMenu.buttonHtmlId
+            in
+            ( model
+                |> setMenu MenuClosed
+            , E.focus
+                { htmlId = returnHtmlId }
+                (GameMenu.FocusReturned >> GameMenuMsg)
+            )
+
+        GameMenu.ResignationConfirmed ->
+            case model.menu of
+                ConfirmingResignation destination ->
+                    resignGame lobbyId destination model
+
+                _ ->
+                    model
+                        |> E.withOut
+
+        GameMenu.ResignationCanceled ->
+            case model.menu of
+                ConfirmingResignation destination ->
+                    case destination of
+                        RemainInGame ->
+                            ( model
+                                |> setMenu MenuClosed
+                            , E.focus { htmlId = TurnControls.surrenderButtonHtmlId } FocusCompleted
+                            )
+
+                        GoHome ->
+                            ( model
+                                |> setMenu MainMenu
+                            , E.focus
+                                { htmlId = GameMenu.closeButtonHtmlId }
+                                (GameMenu.FocusReturned >> GameMenuMsg)
+                            )
+
+                _ ->
+                    model
+                        |> E.withOut
+
+        GameMenu.HomeClicked ->
+            if (model.menu /= MainMenu) || model.resigning then
+                model
+                    |> E.withOut
+
+            else if model.currentTurn.outcome /= Nothing then
+                ( model, Route.navigate model.shared.deployment Route.Home )
+
+            else
+                requestResignation GoHome model
+
+        GameMenu.FocusReturned result ->
+            recordFocusResult result model
+                |> E.withOut
+
+
+handleSettingsMsg : Settings.Msg -> Model -> ( Model, Eff Msg )
+handleSettingsMsg msg model =
+    case msg of
+        Settings.CloseClicked ->
+            ( model
+                |> setMenu MenuClosed
+            , E.focus { htmlId = GameMenu.buttonHtmlId } FocusCompleted
+            )
+
+        Settings.TabClicked tab ->
+            ( model
+                |> setMenu (SettingsMenu tab)
+            , E.none
+            )
+
+        Settings.TabNavigationPressed tab ->
+            ( model
+                |> setMenu (SettingsMenu tab)
+            , E.focus { htmlId = Settings.tabHtmlId tab } FocusCompleted
+            )
+
+        Settings.SkipIntroductionChanged skip ->
+            model
+                |> setSkipTurnIntroduction skip
+                |> resumeChatOverlay (showTurnIntroduction model)
+                |> E.and (rememberTurnIntroductionPreference skip)
+
+        Settings.SkipLossesChanged skip ->
+            ( { model | skipUnitLossDialogs = skip }
+            , rememberPlaybackPreference PlaybackPresentation.SkipLossDialogs skip
+            )
+
+        Settings.SkipOrdersWarningChanged skip ->
+            ( { model | skipUnplannedUnitsWarning = skip }
+            , E.setLocalStorage
+                { key = unplannedUnitsWarningPreferenceKey
+                , value = Encode.bool skip
+                }
+            )
+
+        Settings.MuteChanged muted ->
+            let
+                mute : Audio.MuteState
+                mute =
+                    if muted then
+                        Audio.Muted
+
+                    else
+                        Audio.Unmuted
+            in
+            ( mapShared (Shared.setAudioMute mute) model
+            , E.batch
+                [ E.audio (Audio.SetMute mute)
+                , E.setLocalStorage (Audio.encodeMutePreference mute)
+                ]
+            )
+
+        Settings.VolumeChanged channel volume ->
+            let
+                volumes : Audio.Volumes
+                volumes =
+                    Audio.setChannelVolume channel volume model.shared.audioVolumes
+            in
+            ( mapShared (Shared.setAudioVolumes volumes) model
+            , E.batch
+                [ E.audio (Audio.SetVolumes volumes)
+                , E.setLocalStorage (Audio.encodeVolumesPreference volumes)
+                ]
+            )
+
+
+handleTurnControlsMsg : LobbyId -> TurnControls.Msg -> Model -> ( Model, Eff Msg )
+handleTurnControlsMsg lobbyId msg model =
+    case msg of
+        TurnControls.SubmitClicked ->
+            requestSubmission lobbyId model
+
+        TurnControls.SurrenderClicked ->
+            requestResignation RemainInGame model
+
+
+handleCurrentTurnMsg : LobbyId -> CurrentTurn.Msg -> Model -> ( Model, Eff Msg )
+handleCurrentTurnMsg lobbyId msg model =
+    let
+        currentTurn : CurrentTurn.Model
+        currentTurn =
+            model.currentTurn
+    in
+    case msg of
+        CurrentTurn.PollTimerElapsed ->
+            refreshTurn lobbyId model
+
+        CurrentTurn.GotPlaybackPresentationMsg playbackMsg ->
+            case playbackMsg of
+                PlaybackPresentation.FrameElapsed delta ->
+                    advanceCurrentPlayback delta model
+
+                PlaybackPresentation.CombatEnterReleased ->
+                    if canContinueCombatWithEnter model then
+                        model
+                            |> setCombatEnterHeld False
+                            |> continueCombat
+                            |> presentPlaybackTransition currentTurn.phase
+
+                    else
+                        model
+                            |> setCombatEnterHeld False
+                            |> E.withOut
+
+                PlaybackPresentation.CombatSeeMapReleased ->
+                    setCombatMapView TurnPlayback.CardVisible model
+                        |> E.withOut
+
+
+handleOrderMsg : OrderMenu.Msg -> Model -> ( Model, Eff Msg )
+handleOrderMsg orderMsg model =
+    case orderMsg of
+        OrderMenu.InfoClicked ->
+            if hasDialog model then
+                model
+                    |> E.withOut
+
+            else if isMobileView model then
+                model
+                    |> setMenu MobileOrdersHelp
+                    |> E.withOut
+
+            else
+                model
+                    |> mapPlanning
+                        (OrderPlanning.openOrderGuide
+                            model.map
+                            model.units
+                            (ownPlayerNumbers model)
+                        )
+                    |> E.withOut
+
+        OrderMenu.CancelClicked ->
+            case dismountOrderProgress model of
+                Just _ ->
+                    cancelPlanningInteraction model
+                        |> E.withOut
+
+                Nothing ->
+                    model
+                        |> clearSelection
+                        |> E.withOut
+
+        OrderMenu.OrderFocused order ->
+            model
+                |> focusOrder order
+                |> E.withOut
+
+        OrderMenu.OrderPicked order ->
+            model
+                |> applyOrder order
+                |> E.withOut
+
+        OrderMenu.ArrowedUpOrderMenu current ->
+            ( model
+            , focusAdjacentOrder List.reverse (Just current) model
+            )
+
+        OrderMenu.ArrowedDownOrderMenu current ->
+            ( model
+            , focusAdjacentOrder identity (Just current) model
+            )
+
+
+recordUserInteraction : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
+recordUserInteraction lobbyId msg model =
+    if
+        isUserInteraction msg
+            && (model.currentTurn.outcome == Nothing)
+    then
+        { model | inactivity = Inactivity.recordInteraction model.inactivity }
+            |> renewInactivityTimer lobbyId model.shared.now
+
+    else
+        E.withOut model
 
 
 {-| Classify the player input that renews the inactivity clock.
@@ -2794,1296 +4304,115 @@ isUserInteraction msg =
             False
 
 
-recordUserInteraction : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
-recordUserInteraction lobbyId msg model =
-    if
-        isUserInteraction msg
-            && (model.currentTurn.outcome == Nothing)
-    then
-        { model | inactivity = Inactivity.recordInteraction model.inactivity }
-            |> renewInactivityTimer lobbyId model.shared.now
+battlefieldMsgCountsAsInteraction : Battlefield.Msg -> Bool
+battlefieldMsgCountsAsInteraction msg =
+    case msg of
+        Battlefield.PanLeftClicked ->
+            True
 
-    else
-        E.withOut model
+        Battlefield.PanRightClicked ->
+            True
 
+        Battlefield.PanUpClicked ->
+            True
 
-inactivityTimerNeeded : Model -> Bool
-inactivityTimerNeeded model =
-    case model.currentTurn.phase of
-        TurnLifecycle.WaitingForOpponent _ ->
+        Battlefield.PanDownClicked ->
+            True
+
+        Battlefield.ZoomInClicked ->
+            True
+
+        Battlefield.ZoomOutClicked ->
+            True
+
+        Battlefield.ResetViewClicked ->
+            True
+
+        Battlefield.RotationChoicesMsg rotationMsg ->
+            case rotationMsg of
+                RotationChoices.MouseMovedOverDirection _ ->
+                    False
+
+                RotationChoices.FocusedDirection _ ->
+                    False
+
+                RotationChoices.ClickedDirection _ ->
+                    True
+
+                RotationChoices.DirectionActivationKeyPressed _ ->
+                    True
+
+        Battlefield.ClickedUnit _ _ ->
+            True
+
+        Battlefield.PressedEnterOnUnit _ ->
+            True
+
+        Battlefield.PressedSpaceOnUnit _ ->
+            True
+
+        Battlefield.MouseOverUnit _ ->
             False
 
-        _ ->
+        Battlefield.ClickedDepot _ _ ->
+            True
+
+        Battlefield.PressedEnterOnDepot _ ->
+            True
+
+        Battlefield.PressedSpaceOnDepot _ ->
+            True
+
+        Battlefield.MouseOverDepot _ ->
+            False
+
+        Battlefield.ClickedDepotStock _ _ ->
+            True
+
+        Battlefield.PressedEnterOnDepotStock _ ->
+            True
+
+        Battlefield.PressedSpaceOnDepotStock _ ->
+            True
+
+        Battlefield.ClickedTile _ _ ->
+            True
+
+        Battlefield.PressedEnterOnTile _ ->
+            True
+
+        Battlefield.PressedSpaceOnTile _ ->
+            True
+
+        Battlefield.FocusedBoardUnit _ ->
+            False
+
+        Battlefield.FocusedBoardTile _ ->
+            False
+
+        Battlefield.TargetPreviewLeft ->
+            False
+
+        Battlefield.MouseOverTile _ ->
+            False
+
+        Battlefield.PointerPressed _ ->
+            True
+
+        Battlefield.TouchInputReceived _ ->
+            True
+
+        Battlefield.WheelScrolled _ _ ->
+            True
+
+        Battlefield.HomePressed ->
             True
 
 
-inactivityPresentation : Model -> Maybe InactivityRenewalReason
-inactivityPresentation model =
-    if playback model /= Nothing then
-        Just RenewalReason.PlaybackAllowance
-
-    else if model.welcomeBriefingPending && (model.currentTurn.number == 1) then
-        Just RenewalReason.BriefingAllowance
-
-    else
-        Nothing
-
-
-canRenewInactivity : Model -> Bool
-canRenewInactivity model =
-    (model.currentTurn.outcome == Nothing) && inactivityTimerNeeded model
-
-
-scheduleInactivity : Time.Posix -> Int -> Model -> ( Model, Eff Msg )
-scheduleInactivity now minimumDelay model =
-    if (model.inactivityWakeAt == Nothing) && canRenewInactivity model then
-        case Inactivity.reportDelay now (inactivityPresentation model) model.inactivity of
-            Just reportDelay ->
-                let
-                    delay : Int
-                    delay =
-                        max minimumDelay reportDelay
-
-                    wakeAt : Time.Posix
-                    wakeAt =
-                        Time.millisToPosix (Time.posixToMillis now + delay)
-                in
-                ( { model | inactivityWakeAt = Just wakeAt }
-                , E.after (toFloat delay) (InactivityWakeElapsed wakeAt)
-                )
-
-            Nothing ->
-                E.withOut model
-
-    else
-        E.withOut model
-
-
-renewInactivityTimer :
-    LobbyId
-    -> Time.Posix
-    -> Model
-    -> ( Model, Eff Msg )
-renewInactivityTimer lobbyId now model =
-    if canRenewInactivity model then
-        let
-            ( activity, report ) =
-                Inactivity.beginReport now
-                    { turnNumber = model.currentTurn.number
-                    , presentation = inactivityPresentation model
-                    }
-                    model.inactivity
-
-            next : Model
-            next =
-                { model | inactivity = activity }
-        in
-        case report of
-            Just request ->
-                ( { next | inactivityWakeAt = Nothing }
-                , Api.Mutation.renewInactivityTimer
-                    { id = LobbyId.toString lobbyId
-                    , turnNumber = request.turnNumber
-                    , reason = request.reason
-                    }
-                    pollStatusSelection
-                    |> ApiRequest.mutationRequest
-                    |> E.request (InactivityRenewalResponseReceived request)
-                )
-
-            Nothing ->
-                scheduleInactivity now 0 next
-
-    else
-        model |> E.withOut
-
-
-handleScreenSize : ScreenSize -> Model -> ( Model, Eff Msg )
-handleScreenSize screenSize model =
-    if screenSize == model.shared.screenSize then
-        E.withOut model
-
-    else
-        let
-            shared : Shared.Model
-            shared =
-                Shared.setScreenSize screenSize model.shared
-
-            usesMobileLayout : ScreenSize -> Bool
-            usesMobileLayout =
-                ScreenSize.usesMobileLayout model.shared.operatingSystem
-
-            mobile : Bool
-            mobile =
-                usesMobileLayout screenSize
-
-            layoutChanged : Bool
-            layoutChanged =
-                usesMobileLayout model.shared.screenSize /= mobile
-        in
-        if layoutChanged then
-            let
-                maxZoom : Float
-                maxZoom =
-                    maxBattlefieldZoom mobile model.map
-            in
-            ( { model
-                | currentTurn =
-                    model.currentTurn
-                        |> CurrentTurn.setPhase
-                            (limitPlaybackZoom
-                                maxZoom
-                                model.currentTurn.phase
-                            )
-              }
-                |> setNavigation (BattlefieldNavigation.setMaxZoom maxZoom model.navigation)
-                |> setShared shared
-            , E.batch
-                [ measureWorkspace
-                , scrollChatHistory
-                    { mobile = mobile
-                    , devPanelOpen = model.shared.devPanelOpen
-                    }
-                    model.chat
-                ]
-            )
-
-        else
-            ( setShared shared model, measureWorkspace )
-
-
 
 ----------------------------------------------------------------
--- UPDATE --
+-- AUDIO --
 ----------------------------------------------------------------
-
-
-track : Msg -> Analytics.Event
-track msg =
-    case msg of
-        StillHereClicked ->
-            Analytics.none
-
-        InactivityWakeElapsed _ ->
-            Analytics.none
-
-        InactivityWakeTimeReceived _ _ ->
-            Analytics.none
-
-        InactivityRenewalResponseReceived _ _ ->
-            Analytics.none
-
-        WindowResized _ ->
-            Analytics.none
-
-        GotWindowSizeMeasurement _ ->
-            Analytics.none
-
-        BattlefieldSizeReceived _ ->
-            Analytics.none
-
-        FeedbackMsg _ ->
-            Analytics.none
-
-        FeedbackResponseReceived _ _ ->
-            Analytics.none
-
-        PlanningErrorReportTick _ ->
-            Analytics.none
-
-        PlanningErrorReportReceived _ ->
-            Analytics.none
-
-        ChatMsg _ ->
-            Analytics.none
-
-        ChatPollElapsed _ ->
-            Analytics.none
-
-        ChatPollReceived _ ->
-            Analytics.none
-
-        ChatSendReceived _ _ ->
-            Analytics.none
-
-        ChatOverlayExpired _ ->
-            Analytics.none
-
-        ChatScrollCompleted _ ->
-            Analytics.none
-
-        CombatEnterPressed ->
-            Analytics.none
-
-        InspectorSizeReceived _ _ ->
-            Analytics.none
-
-        ControlsSizeReceived _ _ ->
-            Analytics.none
-
-        CameraReturnFinished ->
-            Analytics.none
-
-        BattlefieldMsg _ ->
-            Analytics.none
-
-        BattlefieldNavigationMsg _ ->
-            Analytics.none
-
-        OrderMenuMsg _ ->
-            Analytics.none
-
-        GameMenuMsg _ ->
-            Analytics.none
-
-        SettingsMsg _ ->
-            Analytics.none
-
-        RotationNoticeCanceled ->
-            Analytics.none
-
-        FocusCompleted _ ->
-            Analytics.none
-
-        PreviousOrderPressed ->
-            Analytics.none
-
-        NextOrderPressed ->
-            Analytics.none
-
-        OrderFocusCompleted _ ->
-            Analytics.none
-
-        PanLeftKeyPressed ->
-            Analytics.none
-
-        PanRightKeyPressed ->
-            Analytics.none
-
-        PanUpKeyPressed ->
-            Analytics.none
-
-        PanDownKeyPressed ->
-            Analytics.none
-
-        ZoomInKeyPressed ->
-            Analytics.none
-
-        ZoomOutKeyPressed ->
-            Analytics.none
-
-        AnimationTimerElapsed _ ->
-            Analytics.none
-
-        TurnIntroductionMsg introMsg ->
-            case introMsg of
-                TurnIntroduction.BeginClicked ->
-                    Analytics.none
-
-                TurnIntroduction.ReplayClicked ->
-                    Analytics.noData "replay turn clicked"
-
-                TurnIntroduction.BattlefieldViewClicked ->
-                    Analytics.noData "game over dismissed"
-
-                TurnIntroduction.FeedbackClicked ->
-                    Analytics.noData "game over feedback clicked"
-
-                TurnIntroduction.SkipDialogsChanged _ ->
-                    Analytics.none
-
-        UnitDeathMsg _ ->
-            Analytics.none
-
-        LossDialogOpened _ ->
-            Analytics.none
-
-        CombatTheaterMsg _ ->
-            Analytics.none
-
-        DirectionKeyPressed _ ->
-            Analytics.none
-
-        PathDirectionKeyPressed _ ->
-            Analytics.none
-
-        PathEnterPressed ->
-            Analytics.none
-
-        NextUnorderedUnitKeyPressed ->
-            Analytics.none
-
-        ClearMoveClicked ->
-            Analytics.none
-
-        CancelOrderClicked ->
-            Analytics.none
-
-        CargoUnitClicked _ ->
-            Analytics.none
-
-        LoadCratesClicked _ _ ->
-            Analytics.none
-
-        GroundFreightPickupClicked ->
-            Analytics.none
-
-        UnloadCrateToggled _ _ ->
-            Analytics.none
-
-        UnloadUnitToggled _ _ ->
-            Analytics.none
-
-        UnloadChoicesConfirmed ->
-            Analytics.none
-
-        UnloadSkipped ->
-            Analytics.none
-
-        DismountedInfantryClicked _ ->
-            Analytics.none
-
-        HoldRemainingInfantryClicked ->
-            Analytics.none
-
-        CancelTruckOrderClicked ->
-            Analytics.none
-
-        InspectClicked ->
-            Analytics.none
-
-        InspectorCloseClicked ->
-            Analytics.none
-
-        MobileTabClicked _ ->
-            Analytics.none
-
-        MobileTabNavigationPressed _ ->
-            Analytics.none
-
-        InspectionHelpClicked _ ->
-            Analytics.none
-
-        InspectionHelpFocusReturned _ ->
-            Analytics.none
-
-        EscapePressed ->
-            Analytics.none
-
-        WelcomeBriefingDismissed ->
-            Analytics.none
-
-        DialogDismissed ->
-            Analytics.none
-
-        SubmissionCancelled ->
-            Analytics.none
-
-        SubmissionConfirmed ->
-            Analytics.noData "submission confirmed"
-
-        SubmitKeyPressed ->
-            Analytics.none
-
-        SkipUnplannedUnitsWarningChanged _ ->
-            Analytics.none
-
-        TurnControlsMsg controlsMsg ->
-            case controlsMsg of
-                TurnControls.SubmitClicked ->
-                    Analytics.noData "submit clicked"
-
-                TurnControls.SurrenderClicked ->
-                    Analytics.noData "surrender clicked"
-
-        RequestRetryClicked ->
-            Analytics.none
-
-        RequestErrorDismissed ->
-            Analytics.none
-
-        SubmitResponseReceived _ _ ->
-            Analytics.none
-
-        CurrentTurnMsg _ ->
-            Analytics.none
-
-        ResignResponseReceived _ _ ->
-            Analytics.none
-
-        PollStatusResponseReceived _ _ ->
-            Analytics.none
-
-        PollResponseReceived _ ->
-            Analytics.none
-
-
-{-| Record player activity, synchronize playback audio, play UI cues, and
-remeasure the workspace when the rendered layout changes.
--}
-superUpdate : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
-superUpdate lobbyId msg model =
-    model
-        |> update lobbyId msg
-        |> E.andThen (recordUserInteraction lobbyId msg)
-        |> E.andThen (withLayoutMeasurement (workspaceLayout model))
-        |> E.and (E.audio (playAudio msg model))
-        |> E.andThen (withPlaybackAudio (playbackAudio model))
-
-
-update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
-update lobbyId msg model =
-    case msg of
-        CombatEnterPressed ->
-            model
-                |> setCombatEnterHeld (not (hasDialog model))
-                |> E.withOut
-
-        StillHereClicked ->
-            E.withOut model
-
-        InactivityWakeElapsed wakeAt ->
-            if model.inactivityWakeAt == Just wakeAt then
-                ( model, E.now (InactivityWakeTimeReceived wakeAt) )
-
-            else
-                E.withOut model
-
-        InactivityWakeTimeReceived wakeAt now ->
-            if model.inactivityWakeAt == Just wakeAt then
-                { model | inactivityWakeAt = Nothing }
-                    |> renewInactivityTimer lobbyId now
-
-            else
-                E.withOut model
-
-        InactivityRenewalResponseReceived report result ->
-            case result of
-                Ok status ->
-                    if report.turnNumber == model.currentTurn.number then
-                        { model
-                            | inactivity =
-                                Inactivity.succeeded
-                                    model.shared.now
-                                    report
-                                    status.inactivity
-                                    model.inactivity
-                        }
-                            |> renewInactivityTimer lobbyId model.shared.now
-
-                    else
-                        model |> E.withOut
-
-                Err error ->
-                    { model | inactivity = Inactivity.failed report (ApiRequest.errorMessage error) model.inactivity }
-                        |> scheduleInactivity model.shared.now 1000
-
-        ChatMsg chatMsg ->
-            handleChatMsg lobbyId chatMsg model
-
-        ChatPollElapsed _ ->
-            pollChat lobbyId model
-
-        ChatPollReceived result ->
-            case result of
-                Ok messages ->
-                    let
-                        notification : Eff Msg
-                        notification =
-                            if
-                                Chat.hasNewIncoming
-                                    { known = model.chat.messages
-                                    , received = messages
-                                    , ownNames =
-                                        model.players
-                                            |> List.filter .isYou
-                                            |> List.map .name
-                                    }
-                            then
-                                E.audio Audio.chatReceived
-
-                            else
-                                E.none
-                    in
-                    model
-                        |> applyChatUpdate (Chat.receive messages model.chat)
-                        |> E.and notification
-
-                Err error ->
-                    model
-                        |> setChat (Chat.pollFailed (ApiRequest.errorMessage error) model.chat)
-                        |> E.withOut
-
-        ChatSendReceived submission result ->
-            let
-                chat : Chat.Model
-                chat =
-                    Chat.sent
-                        submission
-                        (Result.mapError ApiRequest.errorMessage result)
-                        model.chat
-
-                visibleSubmission : Bool
-                visibleSubmission =
-                    case model.chat.panel of
-                        Chat.Composing composer ->
-                            composer.delivery == Chat.Sending submission
-
-                        _ ->
-                            False
-
-                focus : Eff Msg
-                focus =
-                    if Chat.isOpen model.chat && not (Chat.isOpen chat) then
-                        E.focus { htmlId = Battlefield.htmlId } FocusCompleted
-
-                    else if visibleSubmission && Chat.isOpen chat then
-                        E.focus { htmlId = ChatView.inputHtmlId } FocusCompleted
-
-                    else
-                        E.none
-            in
-            model
-                |> applyChatUpdate chat
-                |> E.and focus
-
-        ChatScrollCompleted result ->
-            case result of
-                Err error ->
-                    let
-                        shouldReportError : Bool
-                        shouldReportError =
-                            chatHistoryVisible (isMobileView model) model.chat
-                                && not model.shared.devPanelOpen
-                    in
-                    if shouldReportError then
-                        model
-                            |> setShared (Shared.addError (Just (Error.ElementScrollFailed error)) model.shared)
-                            |> E.withOut
-
-                    else
-                        model
-                            |> E.withOut
-
-                Ok () ->
-                    model
-                        |> E.withOut
-
-        ChatOverlayExpired version ->
-            if showTurnIntroduction model then
-                model
-                    |> E.withOut
-
-            else
-                model
-                    |> setChat (Chat.expire version model.chat)
-                    |> E.withOut
-
-        FeedbackMsg feedbackMsg ->
-            case feedbackMsg of
-                FeedbackView.TextChanged text ->
-                    model
-                        |> setFeedback (Feedback.edit text model.feedback)
-                        |> E.withOut
-
-                FeedbackView.CloseClicked ->
-                    let
-                        focusHtmlId : String
-                        focusHtmlId =
-                            if showTurnIntroduction model then
-                                TurnIntroduction.feedbackButtonHtmlId
-
-                            else
-                                GameMenu.buttonHtmlId
-                    in
-                    ( model |> setMenu MenuClosed
-                    , E.focus { htmlId = focusHtmlId } FocusCompleted
-                    )
-
-                FeedbackView.SubmitClicked ->
-                    let
-                        ( id, seed ) =
-                            Random.step Feedback.requestId model.shared.seed
-                    in
-                    case Feedback.beginSubmission id model.feedback of
-                        Just pending ->
-                            ( model
-                                |> setShared (Shared.setSeed seed model.shared)
-                                |> setFeedback pending
-                            , E.request (FeedbackResponseReceived id) (Feedback.request pending)
-                            )
-
-                        Nothing ->
-                            ( model, E.none )
-
-        FeedbackResponseReceived id response ->
-            model
-                |> setFeedback (Feedback.receive id response model.feedback)
-                |> E.withOut
-
-        PlanningErrorReportTick now ->
-            reportPlanningViolations lobbyId now model
-
-        PlanningErrorReportReceived result ->
-            case result of
-                Ok _ ->
-                    model |> E.withOut
-
-                Err error ->
-                    model
-                        |> setShared
-                            (Shared.addError
-                                (Just (Error.PlanningErrorReportFailed (ApiRequest.errorMessage error)))
-                                model.shared
-                            )
-                        |> E.withOut
-
-        GameMenuMsg menuMsg ->
-            handleGameMenuMsg lobbyId menuMsg model
-
-        SettingsMsg settingsMsg ->
-            case model.menu of
-                SettingsMenu _ ->
-                    handleSettingsMsg settingsMsg model
-
-                _ ->
-                    model
-                        |> E.withOut
-
-        RequestRetryClicked ->
-            case model.currentTurn.error of
-                Just (CurrentTurn.SubmissionError _) ->
-                    requestSubmission lobbyId model
-
-                Just (CurrentTurn.PollError _) ->
-                    refreshTurn lobbyId model
-
-                Just (CurrentTurn.ResignationError _) ->
-                    requestResignation RemainInGame model
-
-                _ ->
-                    model
-                        |> E.withOut
-
-        RequestErrorDismissed ->
-            ( model
-                |> setCurrentTurn (CurrentTurn.dismissError model.currentTurn)
-            , E.focus { htmlId = Battlefield.htmlId } FocusCompleted
-            )
-
-        RotationNoticeCanceled ->
-            E.withOut model
-
-        FocusCompleted result ->
-            recordFocusResult result model
-                |> E.withOut
-
-        ResignResponseReceived destination result ->
-            case result of
-                Ok snapshot ->
-                    let
-                        effect : Eff Msg
-                        effect =
-                            case destination of
-                                RemainInGame ->
-                                    E.none
-
-                                GoHome ->
-                                    Route.navigate model.shared.deployment
-                                        Route.Home
-                    in
-                    (model
-                        |> setResigning False
-                    )
-                        |> applyTurnSnapshot lobbyId
-                            snapshot
-                            (CurrentTurn.pollSucceeded (turnObservation snapshot) model.currentTurn)
-                        |> E.and effect
-
-                Err error ->
-                    let
-                        currentTurn : CurrentTurn.Model
-                        currentTurn =
-                            model.currentTurn
-                    in
-                    (model
-                        |> setResigning False
-                        |> setMenu MenuClosed
-                        |> setCurrentTurn
-                            (currentTurn
-                                |> CurrentTurn.setError
-                                    (Just (CurrentTurn.ResignationError (ApiRequest.errorMessage error)))
-                            )
-                    )
-                        |> E.withOut
-
-        BattlefieldMsg boardMsg ->
-            handleBattlefieldMsg boardMsg model
-                |> E.withOut
-
-        CameraReturnFinished ->
-            (model
-                |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
-            )
-                |> updatePlaybackCamera
-                |> E.withOut
-
-        WindowResized screenSize ->
-            handleScreenSize screenSize model
-
-        GotWindowSizeMeasurement screenSize ->
-            handleScreenSize screenSize model
-
-        BattlefieldSizeReceived result ->
-            case result of
-                Ok battlefield ->
-                    if (battlefield.element.width <= 0) || (battlefield.element.height <= 0) then
-                        E.withOut model
-
-                    else if isMobileView model then
-                        let
-                            viewport : Camera.Viewport
-                            viewport =
-                                { size =
-                                    { x = battlefield.element.width
-                                    , y = battlefield.element.height
-                                    }
-                                , bottomInset = 0
-                                , rightInset = 0
-                                }
-                        in
-                        model
-                            |> setBattlefieldViewport
-                                (Just
-                                    { origin = { x = battlefield.element.x, y = battlefield.element.y }
-                                    , camera = viewport
-                                    }
-                                )
-                            |> updatePlaybackCamera
-                            |> E.withOut
-
-                    else
-                        ( model
-                        , E.measure
-                            BattlefieldWorkspace.inspectorHtmlId
-                            (InspectorSizeReceived battlefield)
-                        )
-
-                Err error ->
-                    (model
-                        |> setShared (Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared)
-                    )
-                        |> E.withOut
-
-        InspectorSizeReceived battlefield result ->
-            case result of
-                Ok inspector ->
-                    ( model
-                    , E.measure BattlefieldWorkspace.controlsHtmlId
-                        (ControlsSizeReceived { battlefield = battlefield, inspector = inspector })
-                    )
-
-                Err error ->
-                    model
-                        |> setShared
-                            (Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared)
-                        |> E.withOut
-
-        ControlsSizeReceived measured result ->
-            case result of
-                Ok measuredControls ->
-                    let
-                        viewport : Camera.Viewport
-                        viewport =
-                            BattlefieldWorkspace.viewport
-                                { battlefield = measured.battlefield
-                                , inspector = measured.inspector
-                                , controls = measuredControls
-                                }
-                    in
-                    model
-                        |> setBattlefieldViewport
-                            (Just
-                                { origin = { x = measured.battlefield.element.x, y = measured.battlefield.element.y }
-                                , camera = viewport
-                                }
-                            )
-                        |> updatePlaybackCamera
-                        |> E.withOut
-
-                Err error ->
-                    model
-                        |> setShared
-                            (Shared.addError
-                                (Just (Error.BattlefieldMeasurementFailed error))
-                                model.shared
-                            )
-                        |> E.withOut
-
-        PanLeftKeyPressed ->
-            model
-                |> mapNavigation BattlefieldNavigation.panLeft
-                |> E.withOut
-
-        PanRightKeyPressed ->
-            model
-                |> mapNavigation BattlefieldNavigation.panRight
-                |> E.withOut
-
-        PanUpKeyPressed ->
-            model
-                |> mapNavigation BattlefieldNavigation.panUp
-                |> E.withOut
-
-        PanDownKeyPressed ->
-            model
-                |> mapNavigation BattlefieldNavigation.panDown
-                |> E.withOut
-
-        ZoomInKeyPressed ->
-            model
-                |> mapNavigation BattlefieldNavigation.zoomIn
-                |> E.withOut
-
-        ZoomOutKeyPressed ->
-            model
-                |> mapNavigation BattlefieldNavigation.zoomOut
-                |> E.withOut
-
-        BattlefieldNavigationMsg navigationMsg ->
-            let
-                dragMode : BattlefieldNavigation.DragMode
-                dragMode =
-                    if pathPreview model /= Nothing then
-                        BattlefieldNavigation.TraceRoute
-
-                    else
-                        BattlefieldNavigation.PanCamera
-
-                traced : Model
-                traced =
-                    model
-                        |> mapNavigation (BattlefieldNavigation.update dragMode navigationMsg)
-            in
-            case navigationMsg of
-                BattlefieldNavigation.MouseReleased _ ->
-                    let
-                        confirmsRoute : Bool
-                        confirmsRoute =
-                            (pathPreview model /= Nothing)
-                                && BattlefieldNavigation.suppressesClick traced.navigation
-
-                        next : Model
-                        next =
-                            if confirmsRoute then
-                                confirmPath traced
-
-                            else
-                                traced
-                    in
-                    E.withOut next
-
-                BattlefieldNavigation.MouseMoved _ _ ->
-                    E.withOut traced
-
-                BattlefieldNavigation.WindowVisibilityChanged _ ->
-                    E.withOut traced
-
-        UnloadUnitToggled id checked ->
-            model
-                |> mapCheckedPlanning
-                    (OrderPlanning.toggleAvailableUnloadCargo
-                        model.map
-                        model.units
-                        (ownPlayerNumbers model)
-                        model.movementRules
-                        (visibleSupplyCrates model.visibleTiles model.supplyCrates)
-                        (UnloadCargo.Passenger id)
-                        checked
-                    )
-                |> E.withOut
-
-        UnloadChoicesConfirmed ->
-            model
-                |> mapCheckedPlanning
-                    (OrderPlanning.confirmPassengers
-                        model.map
-                        model.units
-                        (ownPlayerNumbers model)
-                        model.movementRules
-                        (visibleSupplyCrates model.visibleTiles model.supplyCrates)
-                        model.depots
-                    )
-                |> E.withOut
-
-        UnloadSkipped ->
-            model
-                |> mapCheckedPlanning
-                    (OrderPlanning.skipUnloading
-                        model.map
-                        model.units
-                        (visibleSupplyCrates model.visibleTiles model.supplyCrates)
-                        model.depots
-                    )
-                |> E.withOut
-
-        DismountedInfantryClicked id ->
-            let
-                next : Model
-                next =
-                    mapCheckedPlanning
-                        (OrderPlanning.selectDismountedInfantry model.units id)
-                        model
-            in
-            ( next, focusAdjacentOrder identity Nothing next )
-
-        HoldRemainingInfantryClicked ->
-            holdRemainingInfantry model
-                |> E.withOut
-
-        CancelTruckOrderClicked ->
-            cancelTruckOrder model
-                |> E.withOut
-
-        GroundFreightPickupClicked ->
-            model
-                |> mapCheckedPlanning
-                    (OrderPlanning.confirmGroundPickup
-                        >> IC.andThen
-                            (OrderPlanning.promptDismountedOrders model.map model.units)
-                    )
-                |> E.withOut
-
-        LoadCratesClicked id count ->
-            case
-                ListUtil.find
-                    (\unit -> unit.id == id && isOwnUnit model unit)
-                    model.units
-            of
-                Just _ ->
-                    model
-                        |> mapCheckedPlanning
-                            (OrderPlanning.dismissDialog
-                                >> saveCrateLoading id count
-                                >> IC.andThen (OrderPlanning.promptDismountedOrders model.map model.units)
-                            )
-                        |> E.withOut
-
-                Nothing ->
-                    model
-                        |> E.withOut
-
-        UnloadCrateToggled index checked ->
-            model
-                |> mapCheckedPlanning
-                    (OrderPlanning.toggleAvailableUnloadCargo
-                        model.map
-                        model.units
-                        (ownPlayerNumbers model)
-                        model.movementRules
-                        (visibleSupplyCrates model.visibleTiles model.supplyCrates)
-                        (UnloadCargo.Crate index)
-                        checked
-                    )
-                |> E.withOut
-
-        CargoUnitClicked id ->
-            model
-                |> clearSelection
-                |> selectUnit id
-                |> E.withOut
-
-        NextUnorderedUnitKeyPressed ->
-            model
-                |> mapPlanning
-                    (OrderPlanning.selectNextUnorderedUnit model.map model.units (ownPlayerNumbers model))
-                |> E.withOut
-
-        OrderMenuMsg orderMsg ->
-            model
-                |> handleOrderMsg orderMsg
-
-        PreviousOrderPressed ->
-            ( model, focusAdjacentOrder List.reverse (focusedOrder model) model )
-
-        NextOrderPressed ->
-            ( model, focusAdjacentOrder identity (focusedOrder model) model )
-
-        OrderFocusCompleted result ->
-            recordFocusResult result model
-                |> E.withOut
-
-        DirectionKeyPressed direction ->
-            model
-                |> saveDirection direction
-                |> E.withOut
-
-        PathDirectionKeyPressed direction ->
-            model
-                |> extendPath direction
-                |> E.withOut
-
-        PathEnterPressed ->
-            model
-                |> confirmPath
-                |> E.withOut
-
-        CancelOrderClicked ->
-            model
-                |> mapCheckedPlanning (OrderPlanning.cancelInteraction model.map model.units)
-                |> E.withOut
-
-        ClearMoveClicked ->
-            model
-                |> revokeSelectedOrder
-                |> E.withOut
-
-        InspectClicked ->
-            model
-                |> clearSelection
-                |> E.withOut
-
-        InspectorCloseClicked ->
-            model
-                |> clearSelection
-                |> E.withOut
-
-        MobileTabClicked tab ->
-            { model | mobileTab = tab }
-                |> E.withOut
-
-        MobileTabNavigationPressed tab ->
-            ( { model | mobileTab = tab }
-            , E.focus
-                { htmlId = MobileBattlefield.tabHtmlId tab }
-                FocusCompleted
-            )
-
-        InspectionHelpClicked help ->
-            if hasDialog model then
-                model
-                    |> E.withOut
-
-            else
-                { model | inspectionHelp = Just help }
-                    |> E.withOut
-
-        InspectionHelpFocusReturned result ->
-            recordFocusResult result model
-                |> E.withOut
-
-        EscapePressed ->
-            if model.inspectionHelp /= Nothing then
-                dismissInspectionHelp model
-
-            else if (model.menu /= MenuClosed) || showTurnIntroduction model then
-                model
-                    |> dismissDialog
-
-            else if planningLocked model then
-                model
-                    |> clearSelection
-                    |> E.withOut
-
-            else
-                model
-                    |> mapCheckedPlanning (OrderPlanning.cancelInteraction model.map model.units)
-                    |> E.withOut
-
-        TurnControlsMsg turnControlsMsg ->
-            handleTurnControlsMsg lobbyId turnControlsMsg model
-
-        WelcomeBriefingDismissed ->
-            { model | welcomeBriefingPending = False }
-                |> resumeChatOverlay model.welcomeBriefingPending
-                |> E.and
-                    (E.setLocalStorage
-                        { key = welcomeBriefingPreferenceKey
-                        , value = Encode.bool True
-                        }
-                    )
-
-        DialogDismissed ->
-            if model.inspectionHelp /= Nothing then
-                dismissInspectionHelp model
-
-            else
-                model
-                    |> dismissDialog
-
-        SubmissionCancelled ->
-            case model.currentTurn.phase of
-                TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
-                    dismissDialog model
-
-                _ ->
-                    model
-                        |> E.withOut
-
-        SubmitKeyPressed ->
-            if canSubmitWithKeyboard model then
-                requestSubmission lobbyId model
-
-            else
-                model
-                    |> E.withOut
-
-        SubmissionConfirmed ->
-            confirmSubmission lobbyId model
-
-        SkipUnplannedUnitsWarningChanged skip ->
-            ( { model | skipUnplannedUnitsWarning = skip }
-            , E.setLocalStorage
-                { key = unplannedUnitsWarningPreferenceKey
-                , value = Encode.bool skip
-                }
-            )
-
-        SubmitResponseReceived turnNumber result ->
-            case result of
-                Ok snapshot ->
-                    model
-                        |> applyTurnSnapshot
-                            lobbyId
-                            snapshot
-                            (CurrentTurn.submissionSucceeded
-                                turnNumber
-                                (turnObservation snapshot)
-                                model.currentTurn
-                            )
-
-                Err error ->
-                    (model
-                        |> setCurrentTurn
-                            (CurrentTurn.submissionFailed
-                                turnNumber
-                                (ApiRequest.errorMessage error)
-                                model.currentTurn
-                            )
-                    )
-                        |> E.withOut
-
-        CurrentTurnMsg turnMsg ->
-            handleCurrentTurnMsg lobbyId turnMsg model
-
-        PollStatusResponseReceived activitySequence result ->
-            case result of
-                Ok status ->
-                    let
-                        currentTurn : CurrentTurn.Model
-                        currentTurn =
-                            model.currentTurn
-
-                        observed : Model
-                        observed =
-                            if status.number == currentTurn.number then
-                                { model | inactivity = Inactivity.observe model.shared.now activitySequence status.inactivity model.inactivity }
-
-                            else
-                                model
-
-                        needsSnapshot : Bool
-                        needsSnapshot =
-                            (currentTurn.outcome == Nothing)
-                                && ((status.outcome /= Nothing)
-                                        || ((status.number > currentTurn.number) && (playback model == Nothing))
-                                   )
-
-                        observation : CurrentTurn.Observation
-                        observation =
-                            { turn =
-                                { number = status.number
-                                , outcome = status.outcome
-                                , submitted = status.submitted
-                                , opponentSubmitted = status.opponentSubmitted
-                                , resolution = currentTurn.resolution
-                                }
-                            , playbackFrames = []
-                            }
-                    in
-                    if needsSnapshot then
-                        ( observed, E.request PollResponseReceived (loadSnapshot lobbyId) )
-
-                    else
-                        let
-                            next : Model
-                            next =
-                                observed
-                                    |> setCurrentTurn (CurrentTurn.pollSucceeded observation currentTurn)
-
-                            reportingChanged : Bool
-                            reportingChanged =
-                                (canRenewInactivity model /= canRenewInactivity next)
-                                    || (Inactivity.reportingContext model.inactivity
-                                            /= Inactivity.reportingContext next.inactivity
-                                       )
-                        in
-                        (if reportingChanged then
-                            renewInactivityTimer lobbyId model.shared.now next
-
-                         else
-                            E.withOut next
-                        )
-                            |> E.andThen (resumeChatOverlay (showTurnIntroduction model))
-
-                Err error ->
-                    (model
-                        |> setCurrentTurn (CurrentTurn.pollFailed (ApiRequest.errorMessage error) model.currentTurn)
-                    )
-                        |> E.withOut
-
-        PollResponseReceived result ->
-            case result of
-                Ok snapshot ->
-                    model
-                        |> applyTurnSnapshot
-                            lobbyId
-                            snapshot
-                            (CurrentTurn.pollSucceeded
-                                (turnObservation snapshot)
-                                model.currentTurn
-                            )
-
-                Err error ->
-                    model
-                        |> setCurrentTurn (CurrentTurn.pollFailed (ApiRequest.errorMessage error) model.currentTurn)
-                        |> E.withOut
-
-        AnimationTimerElapsed _ ->
-            if deathInFocus model || combatEncounter model /= Nothing then
-                model
-                    |> E.withOut
-
-            else
-                { model | frame = AnimationFrame.next model.frame }
-                    |> E.withOut
-
-        TurnIntroductionMsg introMsg ->
-            handleTurnIntroductionMsg introMsg model
-
-        UnitDeathMsg lossMsg ->
-            handleUnitDeathMsg lossMsg model
-
-        CombatTheaterMsg panelMsg ->
-            handleCombatTheaterMsg panelMsg model
-
-        LossDialogOpened htmlId ->
-            case unitLoss model of
-                Just loss ->
-                    if UnitDeath.dialogHtmlId loss == htmlId then
-                        model
-                            |> setShared
-                                (Shared.addError
-                                    (PlaybackPresentation.lossError model.players (Just loss))
-                                    model.shared
-                                )
-                            |> E.withOut
-
-                    else
-                        E.withOut model
-
-                Nothing ->
-                    E.withOut model
 
 
 {-| Classify message intent for UI feedback. Continuous input and background
@@ -4604,683 +4933,347 @@ battlefieldClickAudio click model =
         Audio.affirm
 
 
-handleTurnIntroductionMsg : TurnIntroduction.Msg -> Model -> ( Model, Eff Msg )
-handleTurnIntroductionMsg introMsg model =
-    case introMsg of
-        TurnIntroduction.BeginClicked ->
-            acknowledgeTurnIntroduction model
-
-        TurnIntroduction.ReplayClicked ->
-            if showTurnIntroduction model then
-                case CurrentTurn.replay model.currentTurn of
-                    Just replay ->
-                        model
-                            |> setCurrentTurn replay.currentTurn
-                            |> applyPlaybackFrame
-                                { phase = replay.currentTurn.phase, frame = replay.frame }
-                            |> startPlayback
-                            |> E.andThen (resumeChatOverlay True)
-
-                    Nothing ->
-                        model
-                            |> E.withOut
-
-            else
-                model
-                    |> E.withOut
-
-        TurnIntroduction.BattlefieldViewClicked ->
-            acknowledgeTurnIntroduction model
-
-        TurnIntroduction.FeedbackClicked ->
-            let
-                canGiveFeedback : Bool
-                canGiveFeedback =
-                    (model.currentTurn.outcome /= Nothing)
-                        && showTurnIntroduction model
-                        && (model.menu == MenuClosed)
-            in
-            if canGiveFeedback then
-                ( model |> setMenu FeedbackMenu
-                , E.focus { htmlId = FeedbackView.inputHtmlId } FocusCompleted
-                )
-
-            else
-                model
-                    |> E.withOut
-
-        TurnIntroduction.SkipDialogsChanged skip ->
-            model
-                |> acknowledgeTurnIntroduction
-                |> Tuple.mapFirst (setSkipTurnIntroduction skip)
-                |> E.and (rememberTurnIntroductionPreference skip)
-
-
-handleUnitDeathMsg : UnitDeath.Msg -> Model -> ( Model, Eff Msg )
-handleUnitDeathMsg lossMsg model =
-    case lossMsg of
-        UnitDeath.ContinueClicked unitId ->
-            let
-                currentTurn : CurrentTurn.Model
-                currentTurn =
-                    model.currentTurn
-            in
-            model
-                |> setCurrentTurn
-                    (currentTurn
-                        |> CurrentTurn.setPhase
-                            (TurnLifecycle.acknowledgeLoss
-                                unitId
-                                currentTurn.phase
-                            )
-                    )
-                |> presentPlaybackTransition currentTurn.phase
-
-        UnitDeath.SkipDialogsChanged skip ->
-            ( { model | skipUnitLossDialogs = skip }
-            , rememberPlaybackPreference PlaybackPresentation.SkipLossDialogs skip
-            )
-
-
-handleCombatTheaterMsg : CombatTheater.Msg -> Model -> ( Model, Eff Msg )
-handleCombatTheaterMsg panelMsg model =
-    case panelMsg of
-        CombatTheater.AutomaticallyCloseChanged automaticallyClose ->
-            ( { model | automaticallyCloseCombatTheater = automaticallyClose }
-            , rememberPlaybackPreference PlaybackPresentation.AutomaticallyCloseCombat automaticallyClose
-            )
-
-        CombatTheater.ContinueClicked ->
-            continueCombat model
-                |> presentPlaybackTransition model.currentTurn.phase
-
-        CombatTheater.SeeMapPressed ->
-            setCombatMapView TurnPlayback.SeeingMap model
-                |> E.withOut
-
-        CombatTheater.SeeMapReleased ->
-            setCombatMapView TurnPlayback.CardVisible model
-                |> E.withOut
-
-
-handleChatMsg : LobbyId -> ChatView.Msg -> Model -> ( Model, Eff Msg )
-handleChatMsg lobbyId msg model =
-    case msg of
-        ChatView.OpenPressed ->
-            openChat model
-
-        ChatView.CloseClicked ->
-            ( model
-                |> setChat (Chat.close model.chat)
-            , E.focus { htmlId = Battlefield.htmlId } FocusCompleted
-            )
-
-        ChatView.TextChanged text ->
-            model
-                |> setChat (Chat.edit text model.chat)
-                |> E.withOut
-
-        ChatView.HistoryScrolled position ->
-            model
-                |> setChat (Chat.scrollHistory position model.chat)
-                |> E.withOut
-
-        ChatView.DialogOpened ->
-            let
-                newChat : Chat.Model
-                newChat =
-                    Chat.historyOpened model.chat
-            in
-            ( model
-                |> setChat newChat
-            , scrollChatHistory
-                { mobile = isMobileView model
-                , devPanelOpen = model.shared.devPanelOpen
-                }
-                newChat
-            )
-
-        ChatView.HistoryClicked ->
-            let
-                newChat : Chat.Model
-                newChat =
-                    Chat.toggleHistory model.chat
-            in
-            ( model
-                |> setChat newChat
-            , scrollChatHistory
-                { mobile = isMobileView model
-                , devPanelOpen = model.shared.devPanelOpen
-                }
-                newChat
-            )
-
-        ChatView.SendPressed ->
-            sendChat lobbyId model
-
-        ChatView.RetrySendPressed ->
-            model
-                |> setChat (Chat.open model.chat)
-                |> sendChat lobbyId
-
-        ChatView.RetryUpdatesPressed ->
-            pollChat lobbyId model
-
-        ChatView.DismissErrorClicked ->
-            let
-                focusHtmlId : String
-                focusHtmlId =
-                    if Chat.isOpen model.chat then
-                        ChatView.inputHtmlId
-
-                    else
-                        Battlefield.htmlId
-            in
-            ( model
-                |> setChat (Chat.dismissErrors model.chat)
-            , E.focus { htmlId = focusHtmlId } FocusCompleted
-            )
-
-
-handleGameMenuMsg : LobbyId -> GameMenu.Msg -> Model -> ( Model, Eff Msg )
-handleGameMenuMsg lobbyId msg model =
-    case msg of
-        GameMenu.ChatClicked ->
-            openChat model
-
-        GameMenu.OpenClicked ->
-            if canOpenDialog model then
-                ( model
-                    |> setMenu MainMenu
-                , E.none
-                )
-
-            else
-                model
-                    |> E.withOut
-
-        GameMenu.FeedbackClicked ->
-            if (model.menu == MainMenu) && not model.resigning then
-                ( model |> setMenu FeedbackMenu
-                , E.focus { htmlId = FeedbackView.inputHtmlId } FocusCompleted
-                )
-
-            else
-                ( model, E.none )
-
-        GameMenu.AboutClicked ->
-            if (model.menu == MainMenu) && not model.resigning then
-                ( model
-                    |> setMenu AboutMenu
-                , E.focus
-                    { htmlId = About.htmlId ++ "-title" }
-                    (GameMenu.FocusReturned >> GameMenuMsg)
-                )
-
-            else
-                model
-                    |> E.withOut
-
-        GameMenu.SettingsClicked ->
-            if (model.menu == MainMenu) && not model.resigning then
-                ( model
-                    |> setMenu (SettingsMenu Settings.Dialogs)
-                , E.focus { htmlId = Settings.dialogHtmlId ++ "-title" } FocusCompleted
-                )
-
-            else
-                model
-                    |> E.withOut
-
-        GameMenu.DevPanelClicked ->
-            if model.menu == MainMenu then
-                model
-                    |> setShared (Shared.setDevPanelOpen True model.shared)
-                    |> E.withOut
-
-            else
-                E.withOut model
-
-        GameMenu.CloseClicked ->
-            let
-                returnHtmlId : String
-                returnHtmlId =
-                    if model.menu == MobileOrdersHelp then
-                        MobileBattlefield.ordersHelpButtonHtmlId
-
-                    else
-                        GameMenu.buttonHtmlId
-            in
-            ( model
-                |> setMenu MenuClosed
-            , E.focus
-                { htmlId = returnHtmlId }
-                (GameMenu.FocusReturned >> GameMenuMsg)
-            )
-
-        GameMenu.ResignationConfirmed ->
-            case model.menu of
-                ConfirmingResignation destination ->
-                    resignGame lobbyId destination model
-
-                _ ->
-                    model
-                        |> E.withOut
-
-        GameMenu.ResignationCanceled ->
-            case model.menu of
-                ConfirmingResignation destination ->
-                    case destination of
-                        RemainInGame ->
-                            ( model
-                                |> setMenu MenuClosed
-                            , E.focus { htmlId = TurnControls.surrenderButtonHtmlId } FocusCompleted
-                            )
-
-                        GoHome ->
-                            ( model
-                                |> setMenu MainMenu
-                            , E.focus
-                                { htmlId = GameMenu.closeButtonHtmlId }
-                                (GameMenu.FocusReturned >> GameMenuMsg)
-                            )
-
-                _ ->
-                    model
-                        |> E.withOut
-
-        GameMenu.HomeClicked ->
-            if (model.menu /= MainMenu) || model.resigning then
-                model
-                    |> E.withOut
-
-            else if model.currentTurn.outcome /= Nothing then
-                ( model, Route.navigate model.shared.deployment Route.Home )
-
-            else
-                requestResignation GoHome model
-
-        GameMenu.FocusReturned result ->
-            recordFocusResult result model
-                |> E.withOut
-
-
-handleSettingsMsg : Settings.Msg -> Model -> ( Model, Eff Msg )
-handleSettingsMsg msg model =
-    case msg of
-        Settings.CloseClicked ->
-            ( model
-                |> setMenu MenuClosed
-            , E.focus { htmlId = GameMenu.buttonHtmlId } FocusCompleted
-            )
-
-        Settings.TabClicked tab ->
-            ( model
-                |> setMenu (SettingsMenu tab)
-            , E.none
-            )
-
-        Settings.TabNavigationPressed tab ->
-            ( model
-                |> setMenu (SettingsMenu tab)
-            , E.focus { htmlId = Settings.tabHtmlId tab } FocusCompleted
-            )
-
-        Settings.SkipIntroductionChanged skip ->
-            model
-                |> setSkipTurnIntroduction skip
-                |> resumeChatOverlay (showTurnIntroduction model)
-                |> E.and (rememberTurnIntroductionPreference skip)
-
-        Settings.SkipLossesChanged skip ->
-            ( { model | skipUnitLossDialogs = skip }
-            , rememberPlaybackPreference PlaybackPresentation.SkipLossDialogs skip
-            )
-
-        Settings.SkipOrdersWarningChanged skip ->
-            ( { model | skipUnplannedUnitsWarning = skip }
-            , E.setLocalStorage
-                { key = unplannedUnitsWarningPreferenceKey
-                , value = Encode.bool skip
-                }
-            )
-
-        Settings.MuteChanged muted ->
-            let
-                mute : Audio.MuteState
-                mute =
-                    if muted then
-                        Audio.Muted
-
-                    else
-                        Audio.Unmuted
-            in
-            ( setShared (Shared.setAudioMute mute model.shared) model
-            , E.batch
-                [ E.audio (Audio.SetMute mute)
-                , E.setLocalStorage (Audio.encodeMutePreference mute)
-                ]
-            )
-
-        Settings.VolumeChanged channel volume ->
-            let
-                volumes : Audio.Volumes
-                volumes =
-                    Audio.setChannelVolume channel volume model.shared.audioVolumes
-            in
-            ( setShared (Shared.setAudioVolumes volumes model.shared) model
-            , E.batch
-                [ E.audio (Audio.SetVolumes volumes)
-                , E.setLocalStorage (Audio.encodeVolumesPreference volumes)
-                ]
-            )
-
-
-handleTurnControlsMsg : LobbyId -> TurnControls.Msg -> Model -> ( Model, Eff Msg )
-handleTurnControlsMsg lobbyId msg model =
-    case msg of
-        TurnControls.SubmitClicked ->
-            requestSubmission lobbyId model
-
-        TurnControls.SurrenderClicked ->
-            requestResignation RemainInGame model
-
-
-canSubmitWithKeyboard : Model -> Bool
-canSubmitWithKeyboard model =
-    case ( hasDialog model, model.currentTurn.phase ) of
-        ( False, TurnLifecycle.Planning (OrderPlanning.OrdinaryPlanning { selection }) ) ->
-            let
-                idleSelection : Bool
-                idleSelection =
-                    case selection of
-                        Just (UnitSelection _) ->
-                            False
-
-                        _ ->
-                            True
-            in
-            idleSelection && not (BattlefieldNavigation.active model.navigation)
-
-        _ ->
-            False
-
-
-confirmSubmission : LobbyId -> Model -> ( Model, Eff Msg )
-confirmSubmission lobbyId model =
-    case model.currentTurn.phase of
-        TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
-            submitTurn lobbyId model
-
-        _ ->
-            model
-                |> E.withOut
-
-
-requestSubmission : LobbyId -> Model -> ( Model, Eff Msg )
-requestSubmission lobbyId model =
-    if
-        planningLocked model
-            || isChoosingUnload model
-            || (unloadChoice model.currentTurn.phase /= Nothing)
-    then
-        model
-            |> E.withOut
-
-    else if model.skipUnplannedUnitsWarning || List.isEmpty (unitsWithoutOrders model) then
-        model
-            |> submitTurn lobbyId
-
-    else
-        model
-            |> mapPlanning OrderPlanning.showSubmissionWarning
-            |> E.withOut
-
-
-refreshTurn : LobbyId -> Model -> ( Model, Eff Msg )
-refreshTurn lobbyId model =
-    if model.currentTurn.outcome /= Nothing || model.currentTurn.refreshing then
-        model
-            |> E.withOut
-
-    else
-        ( model
-            |> setCurrentTurn (CurrentTurn.setRefreshing True model.currentTurn)
-        , E.request (PollStatusResponseReceived (Inactivity.sequence model.inactivity)) (pollRequest lobbyId)
-        )
-
-
-handleCurrentTurnMsg : LobbyId -> CurrentTurn.Msg -> Model -> ( Model, Eff Msg )
-handleCurrentTurnMsg lobbyId msg model =
+playbackAudio : Model -> PlaybackAudio
+playbackAudio model =
     let
-        currentTurn : CurrentTurn.Model
-        currentTurn =
-            model.currentTurn
-    in
-    case msg of
-        CurrentTurn.PollTimerElapsed ->
-            refreshTurn lobbyId model
-
-        CurrentTurn.GotPlaybackPresentationMsg playbackMsg ->
-            case playbackMsg of
-                PlaybackPresentation.FrameElapsed delta ->
-                    advanceCurrentPlayback delta model
-
-                PlaybackPresentation.CombatEnterReleased ->
-                    if canContinueCombatWithEnter model then
-                        model
-                            |> setCombatEnterHeld False
-                            |> continueCombat
-                            |> presentPlaybackTransition currentTurn.phase
-
-                    else
-                        model
-                            |> setCombatEnterHeld False
-                            |> E.withOut
-
-                PlaybackPresentation.CombatSeeMapReleased ->
-                    setCombatMapView TurnPlayback.CardVisible model
-                        |> E.withOut
-
-
-advanceCurrentPlayback : Float -> Model -> ( Model, Eff Msg )
-advanceCurrentPlayback delta model =
-    let
-        currentTurn : CurrentTurn.Model
-        currentTurn =
-            model.currentTurn
-    in
-    case model.currentTurn.phase of
-        TurnLifecycle.Playing playing ->
-            case playing.camera of
-                Just held ->
-                    if held.remainingPanMs > 0 then
-                        (model
-                            |> setCurrentTurn
-                                (currentTurn
-                                    |> CurrentTurn.setPhase
-                                        (TurnLifecycle.Playing
-                                            (playing
-                                                |> TurnLifecycle.setPlaybackCamera
-                                                    (Just
-                                                        (held
-                                                            |> PlaybackPresentation.setRemainingPanMs
-                                                                (max 0 (held.remainingPanMs - delta))
-                                                        )
-                                                    )
-                                            )
-                                        )
-                                )
-                        )
-                            |> E.withOut
-
-                    else
-                        advancePlayback delta model
-
-                Nothing ->
-                    advancePlayback delta model
-
-        _ ->
-            model
-                |> E.withOut
-
-
-{-| Keep the action at its current frame while the camera settles.
--}
-advancePlayback : Float -> Model -> ( Model, Eff Msg )
-advancePlayback delta model =
-    let
-        advance : Float -> Phase -> Maybe { phase : Phase, frame : TurnPlayback.Frame }
-        advance =
-            if model.skipUnitLossDialogs then
-                TurnLifecycle.tick
-
-            else
-                TurnLifecycle.tickUntilLoss
-    in
-    case advance delta model.currentTurn.phase of
-        Just next ->
-            let
-                ( advanced, effect ) =
-                    applyPlaybackFrame next model
-                        |> automaticallyContinueCombat
-                        |> presentPlaybackTransition model.currentTurn.phase
-
-                sounds : List (Eff Msg)
-                sounds =
-                    PlaybackPresentation.audioBetween
-                        { before = playback model
-                        , after = playback advanced
-                        }
-                        |> List.map E.audio
-            in
-            ( advanced
-            , E.batch (effect :: sounds)
-            )
-
-        Nothing ->
-            model
-                |> E.withOut
-
-
-automaticallyContinueCombat : Model -> Model
-automaticallyContinueCombat model =
-    let
-        ready : Bool
-        ready =
+        animation : Maybe TurnPlayback.Playback
+        animation =
             playback model
-                |> Maybe.map (PlaybackPresentation.readyToAutomaticallyClose model.automaticallyCloseCombatTheater)
-                |> Maybe.withDefault False
+
+        camera : Maybe TurnLifecycle.PlaybackCamera
+        camera =
+            playbackCamera model
     in
-    if ready then
-        continueCombat model
-
-    else
-        model
-
-
-continueCombat : Model -> Model
-continueCombat model =
-    case TurnLifecycle.continueCombat model.currentTurn.phase of
-        Just next ->
-            applyPlaybackFrame next model
-
-        Nothing ->
-            model
-
-
-setCombatMapView : TurnPlayback.MapView -> Model -> Model
-setCombatMapView mapView model =
-    let
-        currentTurn : CurrentTurn.Model
-        currentTurn =
-            model.currentTurn
-    in
-    (model
-        |> setCurrentTurn
-            (currentTurn
-                |> CurrentTurn.setPhase (TurnLifecycle.setCombatMapView mapView currentTurn.phase)
-            )
-    )
-        |> updatePlaybackCamera
-
-
-applyPlaybackFrame :
-    { phase : Phase
-    , frame : TurnPlayback.Frame
+    { movement =
+        PlaybackPresentation.movingUnits
+            { playback = animation
+            , paused = False
+            , camera = camera
+            , skipLossDialogs = model.skipUnitLossDialogs
+            }
+    , ambience =
+        PlaybackPresentation.ambience
+            { map = model.map
+            , playback = animation
+            , paused = False
+            }
+    , infantryFire =
+        PlaybackPresentation.firingInfantry
+            { playback = animation
+            , paused = False
+            , camera = camera
+            }
     }
-    -> Model
-    -> Model
-applyPlaybackFrame next model =
-    let
-        currentTurn : CurrentTurn.Model
-        currentTurn =
-            model.currentTurn
-    in
-    model
-        |> setCurrentTurn
-            (currentTurn
-                |> CurrentTurn.setPhase next.phase
+
+
+withPlaybackAudio : PlaybackAudio -> Model -> ( Model, Eff Msg )
+withPlaybackAudio before model =
+    ( model
+    , syncPlaybackAudio
+        { before = before, after = playbackAudio model }
+    )
+
+
+syncPlaybackAudio :
+    { before : PlaybackAudio, after : PlaybackAudio }
+    -> Eff msg
+syncPlaybackAudio { before, after } =
+    E.batch
+        [ E.audio
+            (Audio.syncMovement
+                { before = before.movement, after = after.movement }
             )
-        |> setDepots next.frame.depots
-        |> setSupplyCrates next.frame.supplyCrates
-        |> setUnits next.frame.units
-        |> setVisibleTiles next.frame.visibleTiles
-
-
-handleOrderMsg : OrderMenu.Msg -> Model -> ( Model, Eff Msg )
-handleOrderMsg orderMsg model =
-    case orderMsg of
-        OrderMenu.InfoClicked ->
-            if hasDialog model then
-                model
-                    |> E.withOut
-
-            else if isMobileView model then
-                model
-                    |> setMenu MobileOrdersHelp
-                    |> E.withOut
-
-            else
-                model
-                    |> mapPlanning
-                        (OrderPlanning.openOrderGuide
-                            model.map
-                            model.units
-                            (ownPlayerNumbers model)
-                        )
-                    |> E.withOut
-
-        OrderMenu.CancelClicked ->
-            case dismountOrderProgress model of
-                Just _ ->
-                    cancelTruckOrder model
-                        |> E.withOut
-
-                Nothing ->
-                    model
-                        |> clearSelection
-                        |> E.withOut
-
-        OrderMenu.OrderFocused order ->
-            model
-                |> focusOrder order
-                |> E.withOut
-
-        OrderMenu.OrderPicked order ->
-            model
-                |> applyOrder order
-                |> E.withOut
-
-        OrderMenu.ArrowedUpOrderMenu current ->
-            ( model
-            , focusAdjacentOrder List.reverse (Just current) model
+        , E.audio
+            (Audio.syncAmbience
+                { before = before.ambience, after = after.ambience }
             )
-
-        OrderMenu.ArrowedDownOrderMenu current ->
-            ( model
-            , focusAdjacentOrder identity (Just current) model
+        , E.audio
+            (Audio.syncInfantryFire
+                { before = before.infantryFire
+                , after = after.infantryFire
+                }
             )
+        ]
+
+
+{-| Clear the active voices when the player app leaves this game page.
+-}
+stopPlaybackAudio : Model -> Eff msg
+stopPlaybackAudio model =
+    syncPlaybackAudio
+        { before = playbackAudio model
+        , after =
+            { movement = []
+            , ambience = []
+            , infantryFire = []
+            }
+        }
+
+
+
+----------------------------------------------------------------
+-- ANALYTICS --
+----------------------------------------------------------------
+
+
+track : Msg -> Analytics.Event
+track msg =
+    case msg of
+        StillHereClicked ->
+            Analytics.none
+
+        InactivityWakeElapsed _ ->
+            Analytics.none
+
+        InactivityWakeTimeReceived _ _ ->
+            Analytics.none
+
+        InactivityRenewalResponseReceived _ _ ->
+            Analytics.none
+
+        WindowResized _ ->
+            Analytics.none
+
+        GotWindowSizeMeasurement _ ->
+            Analytics.none
+
+        BattlefieldSizeReceived _ ->
+            Analytics.none
+
+        FeedbackMsg _ ->
+            Analytics.none
+
+        FeedbackResponseReceived _ _ ->
+            Analytics.none
+
+        PlanningErrorReportTick _ ->
+            Analytics.none
+
+        PlanningErrorReportReceived _ ->
+            Analytics.none
+
+        ChatMsg _ ->
+            Analytics.none
+
+        ChatPollElapsed _ ->
+            Analytics.none
+
+        ChatPollReceived _ ->
+            Analytics.none
+
+        ChatSendReceived _ _ ->
+            Analytics.none
+
+        ChatOverlayExpired _ ->
+            Analytics.none
+
+        ChatScrollCompleted _ ->
+            Analytics.none
+
+        CombatEnterPressed ->
+            Analytics.none
+
+        InspectorSizeReceived _ _ ->
+            Analytics.none
+
+        ControlsSizeReceived _ _ ->
+            Analytics.none
+
+        CameraReturnFinished ->
+            Analytics.none
+
+        BattlefieldMsg _ ->
+            Analytics.none
+
+        BattlefieldNavigationMsg _ ->
+            Analytics.none
+
+        OrderMenuMsg _ ->
+            Analytics.none
+
+        GameMenuMsg _ ->
+            Analytics.none
+
+        SettingsMsg _ ->
+            Analytics.none
+
+        RotationNoticeCanceled ->
+            Analytics.none
+
+        FocusCompleted _ ->
+            Analytics.none
+
+        PreviousOrderPressed ->
+            Analytics.none
+
+        NextOrderPressed ->
+            Analytics.none
+
+        OrderFocusCompleted _ ->
+            Analytics.none
+
+        PanLeftKeyPressed ->
+            Analytics.none
+
+        PanRightKeyPressed ->
+            Analytics.none
+
+        PanUpKeyPressed ->
+            Analytics.none
+
+        PanDownKeyPressed ->
+            Analytics.none
+
+        ZoomInKeyPressed ->
+            Analytics.none
+
+        ZoomOutKeyPressed ->
+            Analytics.none
+
+        AnimationTimerElapsed _ ->
+            Analytics.none
+
+        TurnIntroductionMsg introMsg ->
+            case introMsg of
+                TurnIntroduction.BeginClicked ->
+                    Analytics.none
+
+                TurnIntroduction.ReplayClicked ->
+                    Analytics.noData "replay turn clicked"
+
+                TurnIntroduction.BattlefieldViewClicked ->
+                    Analytics.noData "game over dismissed"
+
+                TurnIntroduction.FeedbackClicked ->
+                    Analytics.noData "game over feedback clicked"
+
+                TurnIntroduction.SkipDialogsChanged _ ->
+                    Analytics.none
+
+        UnitDeathMsg _ ->
+            Analytics.none
+
+        LossDialogOpened _ ->
+            Analytics.none
+
+        CombatTheaterMsg _ ->
+            Analytics.none
+
+        DirectionKeyPressed _ ->
+            Analytics.none
+
+        PathDirectionKeyPressed _ ->
+            Analytics.none
+
+        PathEnterPressed ->
+            Analytics.none
+
+        NextUnorderedUnitKeyPressed ->
+            Analytics.none
+
+        ClearMoveClicked ->
+            Analytics.none
+
+        CancelOrderClicked ->
+            Analytics.none
+
+        CargoUnitClicked _ ->
+            Analytics.none
+
+        LoadCratesClicked _ _ ->
+            Analytics.none
+
+        GroundFreightPickupClicked ->
+            Analytics.none
+
+        UnloadCrateToggled _ _ ->
+            Analytics.none
+
+        UnloadUnitToggled _ _ ->
+            Analytics.none
+
+        UnloadChoicesConfirmed ->
+            Analytics.none
+
+        UnloadSkipped ->
+            Analytics.none
+
+        DismountedInfantryClicked _ ->
+            Analytics.none
+
+        HoldRemainingInfantryClicked ->
+            Analytics.none
+
+        CancelTruckOrderClicked ->
+            Analytics.none
+
+        InspectClicked ->
+            Analytics.none
+
+        InspectorCloseClicked ->
+            Analytics.none
+
+        MobileTabClicked _ ->
+            Analytics.none
+
+        MobileTabNavigationPressed _ ->
+            Analytics.none
+
+        InspectionHelpClicked _ ->
+            Analytics.none
+
+        InspectionHelpFocusReturned _ ->
+            Analytics.none
+
+        EscapePressed ->
+            Analytics.none
+
+        WelcomeBriefingDismissed ->
+            Analytics.none
+
+        DialogDismissed ->
+            Analytics.none
+
+        SubmissionCancelled ->
+            Analytics.none
+
+        SubmissionConfirmed ->
+            Analytics.noData "submission confirmed"
+
+        SubmitKeyPressed ->
+            Analytics.none
+
+        SkipUnplannedUnitsWarningChanged _ ->
+            Analytics.none
+
+        TurnControlsMsg controlsMsg ->
+            case controlsMsg of
+                TurnControls.SubmitClicked ->
+                    Analytics.noData "submit clicked"
+
+                TurnControls.SurrenderClicked ->
+                    Analytics.noData "surrender clicked"
+
+        RequestRetryClicked ->
+            Analytics.none
+
+        RequestErrorDismissed ->
+            Analytics.none
+
+        SubmitResponseReceived _ _ ->
+            Analytics.none
+
+        CurrentTurnMsg _ ->
+            Analytics.none
+
+        ResignResponseReceived _ _ ->
+            Analytics.none
+
+        PollStatusResponseReceived _ _ ->
+            Analytics.none
+
+        PollResponseReceived _ ->
+            Analytics.none
 
 
 
@@ -5303,6 +5296,17 @@ view model =
     ChatView.overlay model.chat.recent :: workspace
 
 
+armyStyle : Model -> Maybe { style : ArmyStyle, players : List PlayerNumber }
+armyStyle model =
+    Features.armyStyle model.shared.features
+        |> Maybe.map
+            (\style ->
+                { style = style
+                , players = ownPlayerNumbers model
+                }
+            )
+
+
 battlefieldView : Model -> Html Msg
 battlefieldView model =
     let
@@ -5318,14 +5322,7 @@ battlefieldView model =
             , supplyCrates = model.supplyCrates
             , visibleTiles = model.visibleTiles
             , frame = model.frame
-            , armyStyle =
-                Features.armyStyle model.shared.features
-                    |> Maybe.map
-                        (\style ->
-                            { style = style
-                            , players = ownPlayerNumbers model
-                            }
-                        )
+            , armyStyle = armyStyle model
             , selected = selectedPosition model
             , selectedUnitId = selectedUnit model |> Maybe.map .id
             , facingUnits = List.filter (unitShowsFacing model) model.units |> List.map .id
@@ -5506,6 +5503,7 @@ desktopView model =
             PlaybackPresentation.combatOverlay
                 { calibrations = CombatTheaterCalibrations.catalog
                 , automaticallyClose = model.automaticallyCloseCombatTheater
+                , armyStyle = armyStyle model
                 , mobile = False
                 }
                 model.map
@@ -5572,22 +5570,13 @@ mobileView model =
             PlaybackPresentation.combatOverlay
                 { calibrations = CombatTheaterCalibrations.catalog
                 , automaticallyClose = model.automaticallyCloseCombatTheater
+                , armyStyle = armyStyle model
                 , mobile = True
                 }
                 model.map
                 (playback model)
                 |> H.map CombatTheaterMsg
         }
-
-
-mobileOrdersAvailable : Model -> Bool
-mobileOrdersAvailable model =
-    case selectedUnit model of
-        Just unit ->
-            isOwnUnit model unit && not (planningLocked model)
-
-        Nothing ->
-            False
 
 
 mobilePanelTab : Model -> MobileBattlefield.Tab
@@ -5775,6 +5764,23 @@ mobileOrdersPanel model =
                     H.p
                         []
                         [ H.text "tap a unit to plan its orders" ]
+
+
+dismountOrderTitle : Model -> Maybe String
+dismountOrderTitle model =
+    let
+        title : OrderPlanning.DismountOrderProgress -> String
+        title progress =
+            if progress.total == 1 then
+                "unloaded infantry"
+
+            else
+                "unloaded infantry · "
+                    ++ String.fromInt progress.current
+                    ++ " of "
+                    ++ String.fromInt progress.total
+    in
+    dismountOrderProgress model |> Maybe.map title
 
 
 mobileUnloadPreview : List Unit -> UnloadPlanning -> Html Msg
@@ -6058,6 +6064,11 @@ battlefieldSelectionView layout model =
         }
 
 
+ownerName : Model -> Unit -> Maybe String
+ownerName model =
+    PlaybackPresentation.ownerName model.players
+
+
 movementView : Model -> Html Msg
 movementView model =
     let
@@ -6128,13 +6139,6 @@ movementView model =
             ]
         ]
         content
-
-
-canRevokeOrder : Model -> Unit -> Bool
-canRevokeOrder model unit =
-    TurnLifecycle.planning model.currentTurn.phase
-        |> Maybe.map (OrderPlanning.canRevokeOrder model.map model.units (ownPlayerNumbers model) unit.id)
-        |> Maybe.withDefault False
 
 
 unitOrderView : Model -> Unit -> List (Html Msg)
@@ -6297,34 +6301,31 @@ unitOrderView model unit =
             []
 
 
-choosingAmbush : Model -> Bool
-choosingAmbush model =
-    case currentSelection model of
-        Just (UnitSelection { interaction }) ->
-            case interaction of
-                ChoosingDirection (DirectionPlanning.Stationary DirectionPlanning.AmbushPurpose _) ->
-                    True
+plannedAction : Model -> Unit -> Movement.Option -> String
+plannedAction model unit move =
+    if Unit.carrierId unit /= Nothing && List.length move.path > 1 then
+        "unload at"
 
-                _ ->
-                    False
+    else if
+        PlannedTransport.loadingTarget
+            model.units
+            unit
+            move.destination
+            (plannedOrders model)
+            /= Nothing
+    then
+        "load at"
 
-        _ ->
-            False
+    else
+        "move to"
 
 
-choosingStandGround : Model -> Bool
-choosingStandGround model =
-    case currentSelection model of
-        Just (UnitSelection { interaction }) ->
-            case interaction of
-                ChoosingDirection (DirectionPlanning.Stationary DirectionPlanning.StandGroundPurpose _) ->
-                    True
-
-                _ ->
-                    False
-
-        _ ->
-            False
+receivingLoad : Unit -> Model -> Bool
+receivingLoad unit model =
+    PlannedTransport.receivingLoad
+        model.units
+        unit
+        (plannedOrders model)
 
 
 unitShowsFacing : Model -> Unit -> Bool
@@ -6414,6 +6415,30 @@ ambushDetails unit =
     , H.p
         []
         [ H.text ("supplies: normal upkeep + " ++ String.fromInt rules.readinessCost ++ " readiness + " ++ String.fromInt rules.shotCost ++ " per shot")
+        ]
+    ]
+
+
+indirectFireDetails : Unit -> List (Html Msg)
+indirectFireDetails unit =
+    let
+        costs : String
+        costs =
+            "range: "
+                ++ String.fromInt unit.combatRules.indirectRange
+                ++ " tiles · supplies: upkeep + "
+                ++ String.fromInt unit.combatRules.readinessCost
+                ++ " readiness + "
+                ++ String.fromInt unit.combatRules.shotCost
+                ++ " per shot"
+    in
+    [ H.p
+        []
+        [ H.text "choose any tile in range, including fog. fires after movement and unloading at whoever remains there; friendly units can be hit. empty tiles waste the shot. unseen hits stay unconfirmed."
+        ]
+    , H.p
+        []
+        [ H.text costs
         ]
     ]
 

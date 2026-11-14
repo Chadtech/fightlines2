@@ -14,12 +14,16 @@ import Error
 import Fightlines.Page.GamePage as GamePage
 import Fightlines.View.MobileBattlefield as MobileBattlefield
 import Fightlines.View.OrderMenu as OrderMenu
+import Game.BattlefieldNavigation as BattlefieldNavigation
+import Game.Camera as Camera
+import Game.Coordinate exposing (Coordinate)
 import Game.CurrentTurn as CurrentTurn
 import Game.Inactivity as Inactivity
 import Game.Map as Map
 import Game.Movement as Movement
 import Game.OrderPlanning as OrderPlanning
 import Game.Outcome as GameOutcome
+import Game.PlannedOrder as PlannedOrder exposing (PlannedOrder)
 import Game.Selection exposing (Selection(..), UnitInteraction(..))
 import Game.Terrain as Terrain
 import Game.Turn as Turn
@@ -365,6 +369,77 @@ checks lobbyId friendlyId enemyId shared =
         savedThenClosed =
             step GamePage.InspectorCloseClicked saved
 
+        dismountShortcutCenters : Bool
+        dismountShortcutCenters =
+            let
+                exit : Coordinate
+                exit =
+                    { x = 0, y = 1 }
+
+                truckOrder : PlannedOrder
+                truckOrder =
+                    { unitId = friendlyId
+                    , action =
+                        PlannedOrder.Unload
+                            { position = { x = 0, y = 0 }
+                            , unloads =
+                                [ { unitId = enemyId, destination = exit }
+                                ]
+                            }
+                    }
+
+                currentTurn : CurrentTurn.Model
+                currentTurn =
+                    CurrentTurn.setPhase
+                        (TurnLifecycle.Planning
+                            (OrderPlanning.setOrders
+                                [ truckOrder ]
+                                OrderPlanning.init
+                            )
+                        )
+                        ready.currentTurn
+
+                viewport : Camera.Viewport
+                viewport =
+                    { size = { x = 852, y = 345 }
+                    , bottomInset = 0
+                    , rightInset = 0
+                    }
+
+                before : GamePage.Model
+                before =
+                    { ready
+                        | currentTurn = currentTurn
+                        , battlefieldViewport =
+                            Just
+                                { origin = { x = 0, y = 0 }
+                                , camera = viewport
+                                }
+                    }
+                        |> GamePage.setUnits
+                            [ unit friendlyId PlayerNumber.Player1 0
+                                |> Unit.setKind Kind.Truck
+                            , unit enemyId PlayerNumber.Player1 1
+                                |> Unit.setLocation (Location.Aboard friendlyId)
+                            ]
+
+                after : GamePage.Model
+                after =
+                    step GamePage.NextUnorderedUnitKeyPressed before
+
+                expectedCamera : Camera.Camera
+                expectedCamera =
+                    BattlefieldNavigation.camera before.navigation
+                        |> Camera.centerOn viewport before.map exit
+            in
+            case TurnLifecycle.selection after.currentTurn.phase of
+                Just (UnitSelection infantry) ->
+                    (infantry.id == enemyId)
+                        && (BattlefieldNavigation.camera after.navigation == expectedCamera)
+
+                _ ->
+                    False
+
         unloadWithMissingRule : GamePage.Model
         unloadWithMissingRule =
             let
@@ -467,6 +542,10 @@ checks lobbyId friendlyId enemyId shared =
         advanced : GamePage.Model
         advanced =
             step (GamePage.PollResponseReceived (Ok resolvedFlags.snapshot)) savedThenClosed
+
+        advancedWithReports : GamePage.Model
+        advancedWithReports =
+            step (GamePage.PollResponseReceived (Ok resolvedFlags.snapshot)) distinctFailure
 
         resigned : GamePage.Model
         resigned =
@@ -615,6 +694,11 @@ checks lobbyId friendlyId enemyId shared =
                    )
                 && List.isEmpty (reportTick (reportTime + 60000) distinctFailure).planningReports.pending
             )
+        , expect "advancing the turn resets deduplication and preserves queued reports"
+            (List.isEmpty advancedWithReports.planningReports.seen
+                && (advancedWithReports.planningReports.pending == distinctFailure.planningReports.pending)
+                && (advancedWithReports.planningReports.nextSendAt == distinctFailure.planningReports.nextSendAt)
+            )
         , expect "a new resolved turn with one frame displays the snapshot board and records a single error"
             ((advanced.currentTurn.number == 2)
                 && (advanced.units == resolvedFlags.snapshot.battlefield.units)
@@ -634,6 +718,8 @@ checks lobbyId friendlyId enemyId shared =
                 && (TurnLifecycle.orders savedThenClosed.currentTurn.phase == TurnLifecycle.orders saved.currentTurn.phase)
             )
         , expect "friendly selection opens orders" (selected.mobileTab == MobileBattlefield.Orders)
+        , expect "period centers the camera on the selected infantry's planned exit"
+            dismountShortcutCenters
         , expect "fixture enters route planning" choosingMove
         , expect "details preserves active route planning" ((details.mobileTab == MobileBattlefield.Details) && (details.currentTurn == moving.currentTurn))
         , expect "returning to orders preserves active route planning" ((orders.mobileTab == MobileBattlefield.Orders) && (orders.currentTurn == moving.currentTurn))

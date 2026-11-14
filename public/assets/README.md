@@ -190,6 +190,19 @@ ordinary static portrait. Live games and logged replays share this sequence and
 its synchronized sound, impact, and close timing. Earlier v1–v5 studies remain
 locally for comparison; the committed v3 atlases are retained as earlier artwork.
 
+### Amazon Corporate
+
+`army-tank-firing-v1/amazon-corporate-{red,blue}.png` uses the same cell
+geometry, track anchor, and playback clock as the standard tank. Eight
+ImageGen drawings cover ready, ignition, recoil, and settling dust. The
+export holds the last dust drawing for two cells and copies the ready drawing
+for the final rest. Both team palettes use the same geometry. The Amazon
+Corporate feature applies this art to tanks controlled by the current player
+in live games, including playback. Reduced motion uses the ready drawing.
+
+The source sheet, generation prompt, atlas exporter, and review GIFs are
+under `artwork/units/illustrated/combat-theater/amazon-corporate-firing-v1/`.
+
 ## Illustrated supply crate
 
 The supply crate was generated and revised with built-in imagegen on

@@ -18,12 +18,13 @@ import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
-import Api.Enum.PlayerNumber as PlayerNumber
+import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 import Api.Enum.SpriteFacing as SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Audio
 import Css
 import Css.Global as Global
+import Game.ArmyStyle exposing (ArmyStyle)
 import Game.BackdropCalibration as BackdropCalibration
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
@@ -78,6 +79,7 @@ type alias Scenery =
     { map : Map
     , calibrations : List BackdropCalibration.Entry
     , depots : List Depot
+    , armyStyle : Maybe { style : ArmyStyle, players : List PlayerNumber }
     }
 
 
@@ -703,6 +705,7 @@ type alias TheaterOptions =
 toHtml :
     { calibrations : List BackdropCalibration.Entry
     , automaticallyClose : Bool
+    , armyStyle : Maybe { style : ArmyStyle, players : List PlayerNumber }
     , visibleTiles : List Coordinate
     , mobile : Bool
     }
@@ -711,9 +714,10 @@ toHtml :
     -> Panel
     -> Html Msg
 toHtml config depots map panel =
-    Lazy.lazy6 theaterView
+    Lazy.lazy7 theaterView
         config.calibrations
         (theaterOptions config)
+        config.armyStyle
         config.visibleTiles
         depots
         map
@@ -770,18 +774,20 @@ desktopManual =
 theaterView :
     List BackdropCalibration.Entry
     -> TheaterOptions
+    -> Maybe { style : ArmyStyle, players : List PlayerNumber }
     -> List Coordinate
     -> List Depot
     -> Map
     -> Panel
     -> Html Msg
-theaterView calibrations options visibleTiles depots map panel =
+theaterView calibrations options armyStyle visibleTiles depots map panel =
     let
         scenery : Scenery
         scenery =
             { map = map
             , calibrations = calibrations
             , depots = depots
+            , armyStyle = armyStyle
             }
 
         participantPortraits : List (Html Msg)
@@ -1539,6 +1545,20 @@ exhaustionHealth unit =
     }
 
 
+armyStyleFor : Scenery -> Unit -> Maybe ArmyStyle
+armyStyleFor scenery unit =
+    case scenery.armyStyle of
+        Just selection ->
+            if List.member unit.playerNumber selection.players then
+                Just selection.style
+
+            else
+                Nothing
+
+        Nothing ->
+            Nothing
+
+
 exhaustionScene : Scenery -> Panel -> Unit -> Html Msg
 exhaustionScene scenery panel unit =
     let
@@ -1560,6 +1580,7 @@ exhaustionScene scenery panel unit =
         (Unit.label unit ++ "; ran out of supplies")
         (CombatFormation.exhaustionToSvg
             (BackdropCalibration.find { backdrop = path, unitKind = unit.kind } scenery.calibrations)
+            (armyStyleFor scenery unit)
             panel.elapsed
             (exhaustionHealth unit)
             appearance
@@ -1776,6 +1797,7 @@ portraitScene scenery panel health unit =
             { elapsed = panel.elapsed
             , impactDelay = attackDelay panel
             , attack = attackFor panel unit
+            , armyStyle = armyStyleFor scenery unit
             , infantryLoadout = infantryLoadout panel unit
             , trenchOccupancy = trenchOccupancy appearance panel unit
             }
@@ -1863,6 +1885,7 @@ preview calibration path hitPoints unit =
             { elapsed = 0
             , impactDelay = 0
             , attack = CombatAttack.NotAttacking
+            , armyStyle = Nothing
             , infantryLoadout = CombatInfantry.SmallArms
             , trenchOccupancy = CombatFormation.Occupied
             }

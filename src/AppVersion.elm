@@ -8,9 +8,9 @@ module AppVersion exposing
 
 current : String
 current =
-    "25"
+    "26"
 
 
 releasedAt : String
 releasedAt =
-    "2026-11-14 20:27:01 utc"
+    "2026-11-14 21:44:36 utc"

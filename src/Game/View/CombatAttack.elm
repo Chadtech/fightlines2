@@ -13,6 +13,7 @@ import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Css
+import Game.ArmyStyle exposing (ArmyStyle(..))
 import Game.View.UnitSprite as UnitSprite exposing (Appearance)
 import Html.Styled.Attributes as A
 import Style as S
@@ -135,29 +136,64 @@ teamName player =
 
 imagePaths : List String
 imagePaths =
-    [ tankPath "red", tankPath "blue", fieldGunPath "red", fieldGunPath "blue" ]
+    [ tankPath "red"
+    , tankPath "blue"
+    , fieldGunPath "red"
+    , fieldGunPath "blue"
+    , amazonTankPath "red"
+    , amazonTankPath "blue"
+    ]
 
 
-toSvg : { elapsed : Float, figureIndex : Int } -> Attack -> Appearance -> Svg msg
-toSvg clock attack unit =
-    case attack of
-        Attacking timing ->
+amazonTankPath : String -> String
+amazonTankPath team =
+    "assets/army-tank-firing-v1/amazon-corporate-" ++ team ++ ".png"
+
+
+toSvg :
+    { elapsed : Float, figureIndex : Int }
+    -> Maybe ArmyStyle
+    -> Attack
+    -> Appearance
+    -> Svg msg
+toSvg clock armyStyle attack unit =
+    let
+        frame : Int
+        frame =
+            case attack of
+                Attacking timing ->
+                    frameAt
+                        unit.kind
+                        (clock.elapsed - timing.startsAt - toFloat clock.figureIndex * staggerMs)
+
+                NotAttacking ->
+                    0
+    in
+    case ( unit.kind, armyStyle, attack ) of
+        ( Kind.Tank, Just AmazonCorporate, _ ) ->
             let
-                frame : Int
-                frame =
-                    frameAt unit.kind (clock.elapsed - timing.startsAt - toFloat clock.figureIndex * staggerMs)
+                atlas : Atlas
+                atlas =
+                    tankAtlas amazonTankPath unit
             in
-            case unit.kind of
-                Kind.Tank ->
-                    tankToSvg frame unit
+            case attack of
+                NotAttacking ->
+                    atlasFrameToSvg atlas 0 unit
 
-                Kind.FieldGun ->
-                    fieldGunToSvg frame unit
+                Attacking _ ->
+                    animatedAtlasToSvg
+                        atlas
+                        frame
+                        unit
+                        (atlasFrameToSvg atlas 0 unit)
 
-                _ ->
-                    UnitSprite.portraitToSvg unit
+        ( Kind.Tank, _, Attacking _ ) ->
+            atlasToSvg (tankAtlas tankPath unit) frame unit
 
-        NotAttacking ->
+        ( Kind.FieldGun, _, Attacking _ ) ->
+            fieldGunToSvg frame unit
+
+        _ ->
             UnitSprite.portraitToSvg unit
 
 
@@ -174,23 +210,20 @@ type alias Atlas =
     }
 
 
-tankToSvg : Int -> Appearance -> Svg msg
-tankToSvg frame unit =
+tankAtlas : (String -> String) -> Appearance -> Atlas
+tankAtlas path unit =
     -- The drawn cell's track anchor is (155.75,255.5). Match the original
     -- 16-unit portrait's center and footing, including ready/final holds.
-    atlasToSvg
-        { path = tankPath (teamName unit.playerNumber)
-        , columns = 5
-        , cellWidth = 448
-        , cellHeight = 288
-        , portraitWidth = 16
-        , x = 8 - 155.75 / 16
-        , y = UnitSprite.portraitFooting unit - 255.5 / 16
-        , width = 28
-        , height = 18
-        }
-        frame
-        unit
+    { path = path (teamName unit.playerNumber)
+    , columns = 5
+    , cellWidth = 448
+    , cellHeight = 288
+    , portraitWidth = 16
+    , x = 8 - 155.75 / 16
+    , y = UnitSprite.portraitFooting unit - 255.5 / 16
+    , width = 28
+    , height = 18
+    }
 
 
 fieldGunToSvg : Int -> Appearance -> Svg msg
@@ -219,6 +252,35 @@ fieldGunToSvg frame unit =
 
 atlasToSvg : Atlas -> Int -> Appearance -> Svg msg
 atlasToSvg atlas frame unit =
+    animatedAtlasToSvg atlas frame unit (UnitSprite.portraitToSvg unit)
+
+
+animatedAtlasToSvg : Atlas -> Int -> Appearance -> Svg msg -> Svg msg
+animatedAtlasToSvg atlas frame unit still =
+    Svg.g
+        [ A.attribute "data-attack-frame" (String.fromInt frame) ]
+        [ Svg.g
+            [ A.css
+                [ S.reducedMotion
+                    [ S.displayNone
+                    ]
+                ]
+            ]
+            [ atlasFrameToSvg atlas frame unit ]
+        , Svg.g
+            [ A.css
+                [ S.displayNone
+                , S.reducedMotion
+                    [ Css.display Css.inline
+                    ]
+                ]
+            ]
+            [ still ]
+        ]
+
+
+atlasFrameToSvg : Atlas -> Int -> Appearance -> Svg msg
+atlasFrameToSvg atlas frame unit =
     let
         facing : String
         facing =
@@ -240,37 +302,19 @@ atlasToSvg atlas frame unit =
                 ++ String.fromInt atlas.cellHeight
     in
     Svg.g
-        [ A.attribute "data-attack-frame" (String.fromInt frame) ]
-        [ Svg.g
-            [ A.css
-                [ S.reducedMotion
-                    [ S.displayNone
-                    ]
-                ]
-            , SA.transform facing
+        [ SA.transform facing ]
+        [ Svg.svg
+            [ SA.x (String.fromFloat atlas.x)
+            , SA.y (String.fromFloat atlas.y)
+            , SA.width (String.fromFloat atlas.width)
+            , SA.height (String.fromFloat atlas.height)
+            , SA.viewBox viewBox
             ]
-            [ Svg.svg
-                [ SA.x (String.fromFloat atlas.x)
-                , SA.y (String.fromFloat atlas.y)
-                , SA.width (String.fromFloat atlas.width)
-                , SA.height (String.fromFloat atlas.height)
-                , SA.viewBox viewBox
+            [ Svg.image
+                [ SA.xlinkHref atlas.path
+                , SA.width (String.fromInt (atlas.cellWidth * atlas.columns))
+                , SA.height (String.fromInt (atlas.cellHeight * 2))
                 ]
-                [ Svg.image
-                    [ SA.xlinkHref atlas.path
-                    , SA.width (String.fromInt (atlas.cellWidth * atlas.columns))
-                    , SA.height (String.fromInt (atlas.cellHeight * 2))
-                    ]
-                    []
-                ]
+                []
             ]
-        , Svg.g
-            [ A.css
-                [ S.displayNone
-                , S.reducedMotion
-                    [ Css.display Css.inline
-                    ]
-                ]
-            ]
-            [ UnitSprite.portraitToSvg unit ]
         ]

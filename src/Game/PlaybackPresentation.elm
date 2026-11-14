@@ -25,6 +25,7 @@ import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Audio
 import Browser.Events
 import Error exposing (Error)
+import Game.ArmyStyle exposing (ArmyStyle)
 import Game.BackdropCalibration as BackdropCalibration
 import Game.BattlefieldSnapshot as BattlefieldSnapshot exposing (Player)
 import Game.Camera as Camera exposing (Camera)
@@ -354,6 +355,7 @@ lossDialog config playback =
 combatOverlay :
     { calibrations : List BackdropCalibration.Entry
     , automaticallyClose : Bool
+    , armyStyle : Maybe { style : ArmyStyle, players : List PlayerNumber }
     , mobile : Bool
     }
     -> Map
@@ -368,6 +370,7 @@ combatOverlay config map playback =
                     (CombatTheater.toHtml
                         { calibrations = config.calibrations
                         , automaticallyClose = config.automaticallyClose
+                        , armyStyle = config.armyStyle
                         , mobile = config.mobile
                         , visibleTiles = animation.current.visibleTiles
                         }

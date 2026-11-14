@@ -3,20 +3,24 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::PathBuf,
     process::{Command, Stdio},
+    sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+static NEXT_FIXTURE_ID: AtomicU64 = AtomicU64::new(0);
+
 struct Fixture(PathBuf);
 
 impl Fixture {
     fn new() -> Result<Self> {
         let root = std::env::temp_dir().join(format!(
-            "fightlines-supervisor-cli-{}-{}",
+            "fightlines-supervisor-cli-{}-{}-{}",
             std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos(),
+            NEXT_FIXTURE_ID.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&root)?;
         Ok(Self(root))

@@ -8,6 +8,7 @@ module Game.CurrentTurn exposing
     , dismissError
     , init
     , introductionPending
+    , mapPhase
     , mapPlanning
     , pollFailed
     , pollSucceeded
@@ -178,7 +179,7 @@ mapPlanning transition model =
 setSelection : Maybe Selection -> Model -> Model
 setSelection selected model =
     model
-        |> setPhase (TurnLifecycle.setSelection selected model.phase)
+        |> mapPhase (TurnLifecycle.setSelection selected)
 
 
 startSubmission : Model -> Maybe Model
@@ -208,11 +209,7 @@ submissionSucceeded originatingTurn observation model =
     else
         receive observation
             (model
-                |> setPhase
-                    (TurnLifecycle.finishSubmission
-                        originatingTurn
-                        model.phase
-                    )
+                |> mapPhase (TurnLifecycle.finishSubmission originatingTurn)
                 |> setError Nothing
             )
 
@@ -223,7 +220,8 @@ submissionFailed originatingTurn error model =
         TurnLifecycle.Submitting _ ->
             if originatingTurn == model.number then
                 model
-                    |> setPhase (TurnLifecycle.finishSubmission originatingTurn model.phase)
+                    |> mapPhase
+                        (TurnLifecycle.finishSubmission originatingTurn)
                     |> setError (Just (SubmissionError error))
 
             else
@@ -320,6 +318,11 @@ setIntroduction introduction model =
 setPhase : Phase -> Model -> Model
 setPhase phase model =
     { model | phase = phase }
+
+
+mapPhase : (Phase -> Phase) -> Model -> Model
+mapPhase change model =
+    setPhase (change model.phase) model
 
 
 setError : Maybe RequestError -> Model -> Model

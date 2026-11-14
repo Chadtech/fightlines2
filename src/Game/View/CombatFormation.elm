@@ -16,6 +16,7 @@ import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
+import Game.ArmyStyle exposing (ArmyStyle)
 import Game.BackdropCalibration as BackdropCalibration exposing (Calibration)
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.View.CombatAttack as CombatAttack
@@ -35,6 +36,7 @@ type alias Animation =
     { elapsed : Float
     , impactDelay : Float
     , attack : CombatAttack.Attack
+    , armyStyle : Maybe ArmyStyle
     , infantryLoadout : CombatInfantry.Loadout
     , trenchOccupancy : TrenchOccupancy
     }
@@ -235,7 +237,11 @@ combatantToSvg index animation unit =
                         unit
 
         _ ->
-            CombatAttack.toSvg { elapsed = animation.elapsed, figureIndex = index } animation.attack unit
+            CombatAttack.toSvg
+                { elapsed = animation.elapsed, figureIndex = index }
+                animation.armyStyle
+                animation.attack
+                unit
 
 
 toSvg : Animation -> CombatHealth -> Appearance -> List (Svg msg)
@@ -265,14 +271,21 @@ exhaustionEndsAt =
 
 {-| Three slow skull pulses precede simultaneous formation removal.
 -}
-exhaustionToSvg : Maybe Calibration -> Float -> CombatHealth -> Appearance -> List (Svg msg)
-exhaustionToSvg calibration elapsed =
+exhaustionToSvg :
+    Maybe Calibration
+    -> Maybe ArmyStyle
+    -> Float
+    -> CombatHealth
+    -> Appearance
+    -> List (Svg msg)
+exhaustionToSvg calibration armyStyle elapsed =
     layersToSvg SupplyExhaustion
         calibration
         [ Combatants, ExhaustionMarkers ]
         { elapsed = elapsed
         , impactDelay = 0
         , attack = CombatAttack.NotAttacking
+        , armyStyle = armyStyle
         , infantryLoadout = CombatInfantry.SmallArms
         , trenchOccupancy = Occupied
         }
