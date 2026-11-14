@@ -1,5 +1,7 @@
 use crate::{
-    admin, backdrop_calibration,
+    admin,
+    analytics::{self, AnalyticsEventInput},
+    backdrop_calibration,
     chat::{self, ChatMessage, SendChatInput},
     combat::chart,
     environment::Environment,
@@ -79,6 +81,7 @@ pub struct Context {
     client_address: ClientAddress,
     pub feedback: Option<Arc<feedback::Directory>>,
     pub planning_errors: Option<Arc<planning_error::Directory>>,
+    pub analytics: Option<Arc<analytics::Recorder>>,
     pub editor: map_editor::Access,
     pub archives: game_archive::Access,
     identity: Mutex<Option<SessionToken>>,
@@ -297,6 +300,14 @@ impl Mutation {
     ) -> FieldResult<bool> {
         context.admit(Operation::ReportPlanningError)?;
         planning_error::submit(context, input)
+    }
+
+    fn record_analytics(context: &Context, input: AnalyticsEventInput) -> FieldResult<bool> {
+        context
+            .mutation_limits
+            .admit(Operation::RecordAnalytics, context.client_address, None)
+            .map_err(server_limits::Rejection::into_field_error)?;
+        analytics::submit(context, input)
     }
 
     fn send_chat(context: &Context, input: SendChatInput) -> FieldResult<ChatMessage> {
@@ -519,6 +530,10 @@ pub async fn handle(
             .app_data::<web::Data<planning_error::Directory>>()
             .cloned()
             .map(web::Data::into_inner),
+        analytics: request
+            .app_data::<web::Data<analytics::Recorder>>()
+            .cloned()
+            .map(web::Data::into_inner),
         editor: map_editor::Access::from_request(editor, &request),
         archives: match archives {
             Some(archives) => game_archive::Access::from_browser(Some(archives)),
@@ -604,6 +619,7 @@ pub fn export_schema() -> std::io::Result<()> {
         client_address: ClientAddress::Unavailable,
         feedback: None,
         planning_errors: None,
+        analytics: None,
         editor: map_editor::Access::Disabled,
         archives: game_archive::Access::Disabled,
         identity: Mutex::new(None),

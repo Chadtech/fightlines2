@@ -28,6 +28,35 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+buildAnalyticsEventInput :
+    AnalyticsEventInputRequiredFields
+    -> AnalyticsEventInput
+buildAnalyticsEventInput required____ =
+    { name = required____.name, data = required____.data }
+
+
+type alias AnalyticsEventInputRequiredFields =
+    { name : String
+    , data : String
+    }
+
+
+{-| Type for the AnalyticsEventInput input object.
+-}
+type alias AnalyticsEventInput =
+    { name : String
+    , data : String
+    }
+
+
+{-| Encode a AnalyticsEventInput into a value that can be used as an argument.
+-}
+encodeAnalyticsEventInput : AnalyticsEventInput -> Value
+encodeAnalyticsEventInput input____ =
+    Encode.maybeObject
+        [ ( "name", Encode.string input____.name |> Just ), ( "data", Encode.string input____.data |> Just ) ]
+
+
 buildBackdropCalibrationInput :
     BackdropCalibrationInputRequiredFields
     -> BackdropCalibrationInput

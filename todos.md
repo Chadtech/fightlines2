@@ -7,6 +7,8 @@
 - UI not clear about doing infantry moves when unloading from truck, a dialog should appear?
 
 ## Immediately
+- refactor screen size handling, take it out of shared
+- Review button module and feedback thing
 - Frontend AI engine
 - Tutorial missions
 

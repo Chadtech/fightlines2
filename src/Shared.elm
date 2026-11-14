@@ -49,6 +49,7 @@ import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
 import Random
 import ScreenSize exposing (ScreenSize)
+import SessionId exposing (SessionId)
 import Time
 import Url exposing (Url)
 import View.Dialog as Dialog exposing (Dialog)
@@ -75,6 +76,7 @@ type alias Model =
     , localStorage : LocalStorage
     , features : Features.Model
     , seed : Random.Seed
+    , sessionId : SessionId
     , errors : ErrorHistory.Model Error
     , devPanel : DevPanel.Model
     , devPanelOpen : Bool
@@ -106,13 +108,14 @@ type Msg
 init :
     Time.Posix
     -> Random.Seed
+    -> SessionId
     -> OperatingSystem
     -> ScreenSize
     -> LocalStorage
     -> Url
     -> Navigation.Key
     -> Model
-init now seed operatingSystem screenSize localStorage url key =
+init now seed sessionId operatingSystem screenSize localStorage url key =
     let
         ( features, featuresError ) =
             Features.init localStorage
@@ -131,6 +134,7 @@ init now seed operatingSystem screenSize localStorage url key =
     , localStorage = localStorage
     , features = features
     , seed = seed
+    , sessionId = sessionId
     , errors = ErrorHistory.init
     , devPanel = DevPanel.init
     , devPanelOpen = False
@@ -300,6 +304,12 @@ toDevPanelError error =
             DevPanel.Error
                 { title = "could not report planning error"
                 , details = message
+                }
+
+        Error.AnalyticsRecordingFailed failure ->
+            DevPanel.Error
+                { title = "could not record analytics"
+                , details = ApiRequest.errorDetails failure
                 }
 
         Error.TurnPlaybackInvariantViolated (TurnPlayback.TooFewFrames missing) ->

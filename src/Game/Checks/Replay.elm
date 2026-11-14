@@ -37,6 +37,7 @@ import Json.Decode as Decode
 import LocalStorage
 import OperatingSystem
 import Random
+import SessionId
 import Shared
 import Time
 
@@ -70,6 +71,7 @@ main =
                             (Shared.init
                                 (Time.millisToPosix 1700000000000)
                                 (Random.initialSeed 0)
+                                SessionId.test
                                 OperatingSystem.Unknown
                                 { width = 1280
                                 , height = 800

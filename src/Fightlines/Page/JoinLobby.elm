@@ -4,10 +4,12 @@ module Fightlines.Page.JoinLobby exposing
     , Msg
     , init
     , setShared
+    , track
     , update
     , view
     )
 
+import Analytics
 import Api.Mutation
 import Api.Object
 import Api.Object.Snapshot as Snapshot
@@ -144,6 +146,19 @@ join id name =
 ----------------------------------------------------------------
 
 
+track : Msg -> Analytics.Event
+track msg =
+    case msg of
+        NameInputChanged _ ->
+            Analytics.none
+
+        JoinButtonClicked ->
+            Analytics.noData "join clicked"
+
+        JoinResponseReceived _ _ ->
+            Analytics.none
+
+
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
@@ -239,7 +254,7 @@ view model =
                             [ A.disabled model.busy
                             , A.css [ S.border0 ]
                             ]
-                            [ Button.primary "join lobby" JoinButtonClicked
+                            [ Button.submit "join lobby"
                                 |> Button.toHtml
                             ]
                         ]

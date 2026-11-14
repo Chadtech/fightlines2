@@ -12,11 +12,13 @@ module Fightlines.Page.MatchMaking exposing
     , prepareVisit
     , setShared
     , subscriptions
+    , track
     , update
     , view
     , visitId
     )
 
+import Analytics
 import Api.Mutation
 import Api.Object.MatchMakingIdle as IdleApi
 import Api.Object.MatchMakingMatched as MatchedApi
@@ -385,6 +387,43 @@ handoff error =
 ----------------------------------------------------------------
 
 
+track : Msg -> Analytics.Event
+track msg =
+    case msg of
+        NameInputChanged _ ->
+            Analytics.none
+
+        FindGameRequested ->
+            Analytics.noData "find game requested"
+
+        JoinResponseReceived _ _ ->
+            Analytics.none
+
+        ReadyTimeReceived _ ->
+            Analytics.none
+
+        ReadyTimerElapsed ->
+            Analytics.none
+
+        WindowVisibilityChanged _ ->
+            Analytics.none
+
+        VisibleTimeReceived _ ->
+            Analytics.none
+
+        PollTick ->
+            Analytics.none
+
+        PollResponseReceived _ _ ->
+            Analytics.none
+
+        CancelButtonClicked ->
+            Analytics.noData "cancel clicked"
+
+        CancelResponseReceived _ _ ->
+            Analytics.none
+
+
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
@@ -574,7 +613,7 @@ view model =
                                 |> TextField.withHtmlId "match-making-user-name"
                                 |> TextField.toHtml
                             ]
-                        , Button.primary "find a game" FindGameRequested
+                        , Button.submit "find a game"
                             |> Button.fullWidth
                             |> Button.toHtml
                         ]

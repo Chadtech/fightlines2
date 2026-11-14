@@ -2,6 +2,7 @@
 
 mod admin;
 mod ai;
+mod analytics;
 mod app_version;
 mod backdrop_calibration;
 mod chat;
@@ -144,6 +145,7 @@ async fn run(frontend: PathBuf, log_directory: PathBuf) -> io::Result<()> {
     let feedback = web::Data::new(feedback::Directory::open(feedback_path, &frontend)?);
     let planning_errors =
         web::Data::new(planning_error::Directory::open(&log_directory, &frontend)?);
+    let analytics = web::Data::new(analytics::Recorder::open(&log_directory)?);
     let listener = TcpListener::bind(&address)?;
     let server_start = logs.record_server_start(seed)?;
     tracing::info!(record = %server_start.display(), "private server-start record saved");
@@ -190,6 +192,7 @@ async fn run(frontend: PathBuf, log_directory: PathBuf) -> io::Result<()> {
             .app_data(endpoint.clone())
             .app_data(feedback.clone())
             .app_data(planning_errors.clone())
+            .app_data(analytics.clone())
             .route("/", web::get().to(player_index))
             .route("/graphql", web::post().to(graphql::handle))
             .route("/_routing", web::get().to(deployment_routing::route))

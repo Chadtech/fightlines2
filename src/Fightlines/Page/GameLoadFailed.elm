@@ -3,10 +3,12 @@ module Fightlines.Page.GameLoadFailed exposing
     , Msg
     , init
     , setShared
+    , track
     , update
     , view
     )
 
+import Analytics
 import ApiRequest
 import Effect
     exposing
@@ -79,6 +81,16 @@ setShared shared model =
 ----------------------------------------------------------------
 -- UPDATE --
 ----------------------------------------------------------------
+
+
+track : Msg -> Analytics.Event
+track msg =
+    case msg of
+        RetryButtonClicked ->
+            Analytics.noData "retry clicked"
+
+        ReturnHomeButtonClicked ->
+            Analytics.noData "return home clicked"
 
 
 update : Msg -> Model -> Eff Msg

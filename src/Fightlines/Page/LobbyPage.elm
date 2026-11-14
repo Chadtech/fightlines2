@@ -9,10 +9,12 @@ module Fightlines.Page.LobbyPage exposing
     , load
     , setShared
     , subscriptions
+    , track
     , update
     , view
     )
 
+import Analytics
 import Api.Enum.Controller
     exposing
         ( Controller(..)
@@ -788,6 +790,106 @@ pollChat model =
 ----------------------------------------------------------------
 -- UPDATE --
 ----------------------------------------------------------------
+
+
+track : Msg -> Analytics.Event
+track msg =
+    case msg of
+        SideInputChanged _ ->
+            Analytics.none
+
+        LobbyTabClicked _ ->
+            Analytics.none
+
+        LobbyTabNavigated _ ->
+            Analytics.none
+
+        ChatMsg _ ->
+            Analytics.none
+
+        ChatPollElapsed _ ->
+            Analytics.none
+
+        ChatPollReceived _ ->
+            Analytics.none
+
+        ChatSendReceived _ _ ->
+            Analytics.none
+
+        LobbyFocusReturned _ ->
+            Analytics.none
+
+        ChatScrollCompleted _ ->
+            Analytics.none
+
+        ControllerInputChanged _ ->
+            Analytics.none
+
+        KickPlayerButtonClicked _ ->
+            Analytics.none
+
+        ChooseMapButtonClicked ->
+            Analytics.noData "choose map clicked"
+
+        BackToLobbyButtonClicked ->
+            Analytics.none
+
+        MapPreviewClicked _ ->
+            Analytics.none
+
+        MapSearchInputChanged _ ->
+            Analytics.none
+
+        UseMapButtonClicked ->
+            Analytics.none
+
+        MapResponseReceived _ ->
+            Analytics.none
+
+        CloseLobbyButtonClicked ->
+            Analytics.none
+
+        CloseLobbyCanceled ->
+            Analytics.none
+
+        CloseLobbyConfirmed ->
+            Analytics.none
+
+        CloseLobbyResponseReceived _ ->
+            Analytics.none
+
+        CloseDialogOpened ->
+            Analytics.none
+
+        CloseFocusReturned _ ->
+            Analytics.none
+
+        HomeButtonClicked ->
+            Analytics.noData "home clicked"
+
+        StartButtonClicked ->
+            Analytics.noData "start clicked"
+
+        RetryButtonClicked ->
+            Analytics.none
+
+        CopyLinkButtonClicked ->
+            Analytics.noData "copy link clicked"
+
+        CopyLinkResultReceived _ ->
+            Analytics.none
+
+        CopyFeedbackElapsed ->
+            Analytics.none
+
+        PollTimerElapsed _ ->
+            Analytics.none
+
+        LobbyResponseReceived _ _ ->
+            Analytics.none
+
+        ActionResponseReceived _ ->
+            Analytics.none
 
 
 update : Msg -> Model -> ( Model, Eff Msg )

@@ -13,6 +13,7 @@ import Graphql.Http
 import LocalStorage
 import OperatingSystem
 import Random
+import SessionId
 import Shared
 import Time
 import Url
@@ -47,6 +48,7 @@ initialize _ url key =
             (Shared.init
                 (Time.millisToPosix 1700000000000)
                 (Random.initialSeed 17)
+                SessionId.test
                 OperatingSystem.Unknown
                 { width = 1280
                 , height = 800

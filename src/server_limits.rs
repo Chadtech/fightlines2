@@ -24,6 +24,7 @@ pub enum Operation {
     SendChat,
     SubmitFeedback,
     ReportPlanningError,
+    RecordAnalytics,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -75,6 +76,10 @@ struct Budget {
 impl RateKey {
     fn budget(&self) -> Budget {
         match (&self.client, self.operation) {
+            (_, Operation::RecordAnalytics) => Budget {
+                burst: 60,
+                refill_every: Duration::from_secs(1),
+            },
             (_, Operation::AdminLogin) => Budget {
                 burst: 5,
                 refill_every: Duration::from_secs(60),

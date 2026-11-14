@@ -36,6 +36,7 @@ import LobbyId exposing (LobbyId)
 import LocalStorage
 import OperatingSystem
 import Random
+import SessionId
 import Shared
 import Time
 import View.Dialog as Dialog
@@ -55,6 +56,7 @@ main =
                         Shared.init
                             (Time.millisToPosix 1700000000000)
                             (Random.initialSeed 42)
+                            SessionId.test
                             OperatingSystem.Unknown
                             { width = 852
                             , height = 393

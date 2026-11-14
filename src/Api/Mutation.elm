@@ -98,6 +98,17 @@ reportPlanningErrors requiredArgs____ =
     Object.selectionForField "Bool" "reportPlanningErrors" [ Argument.required "input" requiredArgs____.input Api.InputObject.encodePlanningErrorBatchInput ] Decode.bool
 
 
+type alias RecordAnalyticsRequiredArguments =
+    { input : Api.InputObject.AnalyticsEventInput }
+
+
+recordAnalytics :
+    RecordAnalyticsRequiredArguments
+    -> SelectionSet Bool RootMutation
+recordAnalytics requiredArgs____ =
+    Object.selectionForField "Bool" "recordAnalytics" [ Argument.required "input" requiredArgs____.input Api.InputObject.encodeAnalyticsEventInput ] Decode.bool
+
+
 type alias SendChatRequiredArguments =
     { input : Api.InputObject.SendChatInput }
 

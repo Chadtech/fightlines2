@@ -1,3 +1,8 @@
+function newSessionId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function startElmApp(elmApp, handleMessage) {
   const ELM_LOCALSTORAGE_KEY = "fightlines.localStorage";
 
@@ -24,6 +29,7 @@ function startElmApp(elmApp, handleMessage) {
       operatingSystem: navigator.userAgentData?.platform ?? navigator.userAgent,
       localStorage: getLocalStorage(),
       seed: Math.floor(Math.random() * 0x80000000),
+      sessionId: newSessionId(),
     },
   });
 

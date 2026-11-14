@@ -23,4 +23,5 @@ type Error
     | BattlefieldMeasurementFailed Browser.Dom.Error
     | OrderPlanningInvariantViolated OrderPlanning.InvariantViolation
     | PlanningErrorReportFailed String
+    | AnalyticsRecordingFailed (Graphql.Http.Error Bool)
     | TurnPlaybackInvariantViolated TurnPlayback.InvariantViolation

@@ -104,6 +104,9 @@ checks =
                 PlanningErrorReportFailed _ ->
                     "unexpected planning error report failure while reading local storage"
 
+                AnalyticsRecordingFailed _ ->
+                    "unexpected analytics recording failure while reading local storage"
+
                 TurnPlaybackInvariantViolated _ ->
                     "unexpected turn playback error while reading local storage"
 
@@ -240,6 +243,7 @@ clockFlagChecks =
             , ( "operatingSystem", Encode.string "test" )
             , ( "localStorage", Encode.object [] )
             , ( "seed", Encode.int 42 )
+            , ( "sessionId", Encode.string "00000000000000000000000000000001" )
             ]
 
         flags : Encode.Value
@@ -297,6 +301,9 @@ screenSizeFlagChecks =
               )
             , ( "seed"
               , Encode.int 42
+              )
+            , ( "sessionId"
+              , Encode.string "00000000000000000000000000000001"
               )
             ]
 

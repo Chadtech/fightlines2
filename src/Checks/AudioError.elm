@@ -6,6 +6,7 @@ import LocalStorage
 import OperatingSystem
 import Ports.Js.From as FromJs
 import Random
+import SessionId
 import Shared
 import Time
 
@@ -26,6 +27,7 @@ main =
                 ( Shared.init
                     (Time.millisToPosix 1700000000000)
                     (Random.initialSeed 42)
+                    SessionId.test
                     OperatingSystem.Unknown
                     { width = 1280
                     , height = 800

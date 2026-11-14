@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
+const { webcrypto } = require('node:crypto');
 const { readFileSync, mkdtempSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
@@ -48,6 +49,7 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
       innerHeight: 393,
     },
     AbortController, setTimeout, clearTimeout,
+    crypto: webcrypto,
     Image: class {
       set src(path) {
         if (path) images.push(path);
@@ -124,6 +126,10 @@ async function checkInterop() {
     }
   }
   assert.equal(boot(undefined).flags.isProduction, undefined);
+  const sessionId = boot(undefined).flags.sessionId;
+  assert.match(sessionId, /^[0-9a-f]{32}$/);
+  assert.notEqual(boot(undefined).flags.sessionId, sessionId);
+  assert.match(boot(undefined, { entryPoint: 'DevTools' }).flags.sessionId, /^[0-9a-f]{32}$/);
   assert.equal(boot(undefined).flags.seed, 1073741824);
   assert.equal(boot(undefined, { randomSample: 0 }).flags.seed, 0);
   assert.equal(boot(undefined, { randomSample: 1 - Number.EPSILON }).flags.seed, 2147483647);

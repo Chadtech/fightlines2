@@ -5,10 +5,12 @@ module Fightlines.Page.Home exposing
     , init
     , setShared
     , styles
+    , track
     , update
     , view
     )
 
+import Analytics
 import ApiRequest
 import Audio
 import Browser.Dom
@@ -208,6 +210,37 @@ sceneArtwork scene =
 ----------------------------------------------------------------
 -- UPDATE --
 ----------------------------------------------------------------
+
+
+track : Msg -> Analytics.Event
+track msg =
+    case msg of
+        CreateALobbyClicked ->
+            Analytics.noData "create lobby clicked"
+
+        MatchMakingButtonClicked ->
+            Analytics.noData "matchmaking clicked"
+
+        FeedbackButtonClicked ->
+            Analytics.noData "feedback clicked"
+
+        FeedbackMsg _ ->
+            Analytics.none
+
+        FeedbackResponseReceived _ _ ->
+            Analytics.none
+
+        AboutButtonClicked ->
+            Analytics.none
+
+        AboutDialogClosed ->
+            Analytics.none
+
+        DialogButtonFocusReturned _ ->
+            Analytics.none
+
+        SceneCycleCompleted _ ->
+            Analytics.none
 
 
 update : Msg -> Model -> ( Model, Eff Msg )

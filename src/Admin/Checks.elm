@@ -42,6 +42,7 @@ checks url key =
                     Encode.object
                         [ ( "now", Encode.int 1700000000000 )
                         , ( "seed", Encode.int 17 )
+                        , ( "sessionId", Encode.string "00000000000000000000000000000001" )
                         , ( "screenSize"
                           , Encode.object
                                 [ ( "width", Encode.int 1280 )

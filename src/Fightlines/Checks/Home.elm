@@ -10,6 +10,7 @@ import LocalStorage
 import OperatingSystem
 import Random
 import ScreenSize exposing (ScreenSize)
+import SessionId
 import Shared
 import Time
 
@@ -71,6 +72,7 @@ main =
                         Shared.init
                             initialTime
                             (Random.initialSeed 42)
+                            SessionId.test
                             OperatingSystem.Unknown
                             initialScreenSize
                             LocalStorage.test

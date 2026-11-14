@@ -476,6 +476,20 @@ jq 'select(.level == "ERROR")' /var/log/fightlines/fightlines.*.jsonl
 
 Schema export and offline archive replay do not initialize the server logger.
 
+## Player analytics
+
+The player app sends selected events through the GraphQL `recordAnalytics` mutation.
+Each loaded player document creates a fresh random session ID. Events
+cover page views and selected UI actions such as clicking find a game or submit
+turn. The player app sets `data.sessionId` and `data.page` on each event and
+includes `data.lobbyId` on game-page events. The recorded fields exclude cookies.
+
+The server appends JSON lines with `name`, `data`, `version`,
+and `received_at_unix_ms` under `analytics/` in the private server log
+directory. Files rotate daily in UTC, with up to 30 files retained per release.
+The mutation allows a burst of 60 events per address and refills one event per
+second.
+
 
 ## Browser planning errors
 

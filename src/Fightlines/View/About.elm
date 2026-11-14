@@ -245,9 +245,7 @@ not justified by the cause or the aims of the war. Most of the time, it would be
                 |> List.concatMap Prose.paragraphs
 
         PrivacyPolicy ->
-            Prose.paragraphs """I retain a log of every game, including the chat messages. I use this for debugging, when there are errors
-and also so that I can understand people's user experience better and improve the game. I don't record any
-other info right now"""
+            Prose.paragraphs """i retain a log of every game, including the chat messages. i also record page viewsm and track some ui analytics, like when people click key buttons like "submit turn" and "start game". i use the game logs to debug problems and improve the game, and the ui analytics to get a sense of how people are using this website and whether they are enjoying the game."""
 
 
 externalLink : { label : String, href : String } -> Html msg

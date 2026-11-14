@@ -133,6 +133,7 @@ init value url key =
                     Shared.init
                         flags.now
                         flags.seed
+                        flags.sessionId
                         flags.operatingSystem
                         flags.screenSize
                         flags.localStorage

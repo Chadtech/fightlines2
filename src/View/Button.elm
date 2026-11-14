@@ -16,6 +16,7 @@ module View.Button exposing
     , secondary
     , small
     , styles
+    , submit
     , toHtml
     , withFeedback
     , withHtmlId
@@ -153,6 +154,13 @@ primary : String -> msg -> Button msg
 primary label msg =
     fromLabelAndVariant label Variant__Primary
         |> onClick msg
+
+
+{-| A primary button handled by the enclosing form's submit event.
+-}
+submit : String -> Button msg
+submit label =
+    fromLabelAndVariant label Variant__Primary
 
 
 danger : String -> msg -> Button msg

@@ -3,10 +3,12 @@ module Fightlines.Page.LobbyLoadFailed exposing
     , Msg
     , init
     , setShared
+    , track
     , update
     , view
     )
 
+import Analytics
 import ApiRequest
 import Effect
     exposing
@@ -57,6 +59,16 @@ init shared id location error =
 setShared : Shared.Model -> Model -> Model
 setShared shared model =
     { model | shared = shared }
+
+
+track : Msg -> Analytics.Event
+track msg =
+    case msg of
+        RetryButtonClicked ->
+            Analytics.noData "retry clicked"
+
+        ReturnHomeButtonClicked ->
+            Analytics.noData "return home clicked"
 
 
 update : Msg -> Model -> Eff Msg

@@ -3,10 +3,12 @@ module Fightlines.Page.NewLobby exposing
     , Msg
     , init
     , setShared
+    , track
     , update
     , view
     )
 
+import Analytics
 import Api.Mutation
 import Api.Object
 import Api.Object.Snapshot as Snapshot
@@ -129,6 +131,22 @@ create input =
 ----------------------------------------------------------------
 -- UPDATE --
 ----------------------------------------------------------------
+
+
+track : Msg -> Analytics.Event
+track msg =
+    case msg of
+        NameInputChanged _ ->
+            Analytics.none
+
+        LobbyNameInputChanged _ ->
+            Analytics.none
+
+        CreateButtonClicked ->
+            Analytics.noData "create lobby clicked"
+
+        CreateResponseReceived _ ->
+            Analytics.none
 
 
 update : Msg -> Model -> ( Model, Eff Msg )
@@ -264,7 +282,7 @@ view model =
                             , TextField.simple model.lobbyName LobbyNameInputChanged
                                 |> TextField.toHtml
                             ]
-                        , Button.primary "create lobby" CreateButtonClicked
+                        , Button.submit "create lobby"
                             |> Button.toHtml
                         ]
                     ]

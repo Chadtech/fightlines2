@@ -1,5 +1,6 @@
 module Fightlines exposing (main)
 
+import Analytics
 import ApiRequest
     exposing
         ( Response
@@ -37,6 +38,7 @@ import Html.Styled as H
         )
 import Html.Styled.Attributes as A
 import Json.Decode as Decode
+import Json.Encode as Encode
 import KeyCmd
 import LobbyId
     exposing
@@ -45,6 +47,7 @@ import LobbyId
 import LocalStorage exposing (LocalStorage)
 import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
+import SessionId
 import Shared
 import Style as S
 import Subscriptions
@@ -105,6 +108,7 @@ type Msg
     | GotSharedMsg Shared.Msg
     | DeploymentPollTimerElapsed Time.Posix
     | DeploymentStatusReceived (Response Deployment.Status)
+    | AnalyticsResponseReceived (Response Bool)
 
 
 
@@ -147,16 +151,20 @@ init value url key =
                     Shared.init
                         flags.now
                         flags.seed
+                        flags.sessionId
                         flags.operatingSystem
                         flags.screenSize
                         flags.localStorage
                         url
                         key
             in
-            handleRoute shared (Route.fromUrl url)
+            url
+                |> Route.fromUrl
+                |> handleRoute shared
                 |> E.and (E.request DeploymentStatusReceived Deployment.load)
                 |> E.and (E.audio (Audio.SetMute shared.audioMute))
                 |> E.and (E.audio (Audio.SetVolumes shared.audioVolumes))
+                |> E.andThen (recordAnalytics (Analytics.noData "page viewed"))
 
         Err error ->
             ( AppInitError key error, E.none )
@@ -403,11 +411,180 @@ superUpdate : Msg -> Page -> ( Page, Eff Msg )
 superUpdate msg page =
     update msg page
         |> syncDialog page
+        |> E.andThen (recordAnalytics (track msg))
+
+
+recordAnalytics : Analytics.Event -> Page -> ( Page, Eff Msg )
+recordAnalytics event page =
+    case getShared page of
+        Just shared ->
+            ( page
+            , event
+                |> Analytics.withData "sessionId"
+                    (Encode.string (SessionId.toString shared.sessionId))
+                |> Analytics.withData "page" (Encode.string (analyticsPage page))
+                |> withGameLobbyId page
+                |> Analytics.toEff AnalyticsResponseReceived
+            )
+
+        Nothing ->
+            page
+                |> E.withOut
+
+
+withGameLobbyId : Page -> Analytics.Event -> Analytics.Event
+withGameLobbyId page event =
+    case page of
+        LoadingGame _ id ->
+            withLobbyId id event
+
+        GameLoadFailed id _ ->
+            withLobbyId id event
+
+        Game id _ ->
+            withLobbyId id event
+
+        _ ->
+            event
+
+
+withLobbyId : LobbyId -> Analytics.Event -> Analytics.Event
+withLobbyId id event =
+    Analytics.withData "lobbyId"
+        (Encode.string (LobbyId.toString id))
+        event
+
+
+track : Msg -> Analytics.Event
+track msg =
+    case msg of
+        LinkClicked _ ->
+            Analytics.none
+
+        RouteReceived _ ->
+            Analytics.noData "page viewed"
+
+        NewLobbyMsg pageMsg ->
+            NewLobby.track pageMsg
+
+        MatchMakingMsg _ pageMsg ->
+            MatchMaking.track pageMsg
+
+        MatchMakingResponseReceived _ _ ->
+            Analytics.none
+
+        MatchMakingRetryButtonClicked ->
+            Analytics.noData "retry clicked"
+
+        JoinLobbyMsg _ pageMsg ->
+            JoinLobby.track pageMsg
+
+        LobbyMsg _ _ pageMsg ->
+            LobbyPage.track pageMsg
+
+        LobbyResponseReceived _ _ _ ->
+            Analytics.none
+
+        LobbyLoadFailedMsg _ pageMsg ->
+            LobbyLoadFailed.track pageMsg
+
+        GameMsg _ pageMsg ->
+            GamePage.track pageMsg
+
+        GameResponseReceived _ _ ->
+            Analytics.none
+
+        GameLoadFailedMsg _ pageMsg ->
+            GameLoadFailed.track pageMsg
+
+        ReturnHomeButtonClicked ->
+            Analytics.noData "return home clicked"
+
+        HomeMsg pageMsg ->
+            Home.track pageMsg
+
+        GotSharedMsg _ ->
+            Analytics.none
+
+        DeploymentPollTimerElapsed _ ->
+            Analytics.none
+
+        DeploymentStatusReceived _ ->
+            Analytics.none
+
+        AnalyticsResponseReceived _ ->
+            Analytics.none
+
+
+analyticsPage : Page -> String
+analyticsPage page =
+    case page of
+        AppInitError _ _ ->
+            "app init error"
+
+        Home _ ->
+            "home"
+
+        NewLobby _ ->
+            "new lobby"
+
+        LoadingMatchMaking _ _ ->
+            "matchmaking"
+
+        MatchMakingLoadFailed _ _ ->
+            "matchmaking load failed"
+
+        MatchMaking _ ->
+            "matchmaking"
+
+        LoadingLobby _ _ location ->
+            lobbyAnalyticsPage location
+
+        LobbyLoadFailed _ _ ->
+            "lobby load failed"
+
+        JoinLobby _ _ ->
+            "join lobby"
+
+        Lobby _ model ->
+            lobbyAnalyticsPage (LobbyPage.currentLocation model)
+
+        LoadingGame _ _ ->
+            "game"
+
+        GameLoadFailed _ _ ->
+            "game load failed"
+
+        Game _ _ ->
+            "game"
+
+        NotFound _ ->
+            "not found"
+
+
+lobbyAnalyticsPage : LobbyPage.Location -> String
+lobbyAnalyticsPage location =
+    case location of
+        LobbyPage.LobbySetup ->
+            "lobby"
+
+        LobbyPage.MapLibrary ->
+            "lobby maps"
 
 
 update : Msg -> Page -> ( Page, Eff Msg )
 update msg page =
     case msg of
+        AnalyticsResponseReceived result ->
+            case result of
+                Ok _ ->
+                    page |> E.withOut
+
+                Err error ->
+                    page
+                        |> mapShared (Shared.addError (Just (Error.AnalyticsRecordingFailed error)))
+                        |> E.withOut
+
         DeploymentPollTimerElapsed _ ->
             ( page, E.request DeploymentStatusReceived Deployment.load )
 

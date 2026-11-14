@@ -8,6 +8,7 @@ import LocalStorage exposing (LocalStorage)
 import OperatingSystem exposing (OperatingSystem)
 import Random
 import ScreenSize exposing (ScreenSize)
+import SessionId exposing (SessionId)
 import Time
 
 
@@ -17,15 +18,17 @@ type alias Flags =
     , operatingSystem : OperatingSystem
     , localStorage : LocalStorage
     , seed : Random.Seed
+    , sessionId : SessionId
     }
 
 
 decoder : Decode.Decoder Flags
 decoder =
-    Decode.map5
+    Decode.map6
         Flags
         (Decode.field "now" (Decode.map Time.millisToPosix Decode.int))
         (Decode.field "screenSize" ScreenSize.decoder)
         (Decode.field "operatingSystem" OperatingSystem.decoder)
         (Decode.field "localStorage" LocalStorage.decoder)
         (Decode.field "seed" (Decode.map Random.initialSeed Decode.int))
+        (Decode.field "sessionId" SessionId.decoder)

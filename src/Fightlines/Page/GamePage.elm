@@ -13,9 +13,11 @@ module Fightlines.Page.GamePage exposing
     , stopPlaybackAudio
     , subscriptions
     , superUpdate
+    , track
     , view
     )
 
+import Analytics
 import Api.Enum.Direction as DirectionEnum exposing (Direction)
 import Api.Enum.InactivityRenewalReason as RenewalReason exposing (InactivityRenewalReason)
 import Api.Enum.PlayerNumber as PlayerNumberEnum exposing (PlayerNumber)
@@ -2918,6 +2920,260 @@ renewInactivityTimer lobbyId now model =
 ----------------------------------------------------------------
 -- UPDATE --
 ----------------------------------------------------------------
+
+
+track : Msg -> Analytics.Event
+track msg =
+    case msg of
+        StillHereClicked ->
+            Analytics.none
+
+        InactivityWakeElapsed _ ->
+            Analytics.none
+
+        InactivityWakeTimeReceived _ _ ->
+            Analytics.none
+
+        InactivityRenewalResponseReceived _ _ ->
+            Analytics.none
+
+        BattlefieldSizeReceived _ ->
+            Analytics.none
+
+        FeedbackMsg _ ->
+            Analytics.none
+
+        FeedbackResponseReceived _ _ ->
+            Analytics.none
+
+        PlanningErrorReportTick _ ->
+            Analytics.none
+
+        PlanningErrorReportReceived _ ->
+            Analytics.none
+
+        ChatMsg _ ->
+            Analytics.none
+
+        ChatPollElapsed _ ->
+            Analytics.none
+
+        ChatPollReceived _ ->
+            Analytics.none
+
+        ChatSendReceived _ _ ->
+            Analytics.none
+
+        ChatOverlayExpired _ ->
+            Analytics.none
+
+        ChatScrollCompleted _ ->
+            Analytics.none
+
+        CombatEnterPressed ->
+            Analytics.none
+
+        InspectorSizeReceived _ _ ->
+            Analytics.none
+
+        ControlsSizeReceived _ _ ->
+            Analytics.none
+
+        CameraReturnFinished ->
+            Analytics.none
+
+        BattlefieldMsg _ ->
+            Analytics.none
+
+        BattlefieldNavigationMsg _ ->
+            Analytics.none
+
+        OrderMenuMsg _ ->
+            Analytics.none
+
+        GameMenuMsg _ ->
+            Analytics.none
+
+        SettingsMsg _ ->
+            Analytics.none
+
+        RotationNoticeCanceled ->
+            Analytics.none
+
+        FocusCompleted _ ->
+            Analytics.none
+
+        PreviousOrderPressed ->
+            Analytics.none
+
+        NextOrderPressed ->
+            Analytics.none
+
+        OrderFocusCompleted _ ->
+            Analytics.none
+
+        PanLeftKeyPressed ->
+            Analytics.none
+
+        PanRightKeyPressed ->
+            Analytics.none
+
+        PanUpKeyPressed ->
+            Analytics.none
+
+        PanDownKeyPressed ->
+            Analytics.none
+
+        ZoomInKeyPressed ->
+            Analytics.none
+
+        ZoomOutKeyPressed ->
+            Analytics.none
+
+        AnimationTimerElapsed _ ->
+            Analytics.none
+
+        TurnIntroductionMsg introMsg ->
+            case introMsg of
+                TurnIntroduction.BeginClicked ->
+                    Analytics.none
+
+                TurnIntroduction.ReplayClicked ->
+                    Analytics.noData "replay turn clicked"
+
+                TurnIntroduction.BattlefieldViewClicked ->
+                    Analytics.noData "game over dismissed"
+
+                TurnIntroduction.FeedbackClicked ->
+                    Analytics.noData "game over feedback clicked"
+
+                TurnIntroduction.SkipDialogsChanged _ ->
+                    Analytics.none
+
+        UnitDeathMsg _ ->
+            Analytics.none
+
+        LossDialogOpened _ ->
+            Analytics.none
+
+        CombatTheaterMsg _ ->
+            Analytics.none
+
+        DirectionKeyPressed _ ->
+            Analytics.none
+
+        PathDirectionKeyPressed _ ->
+            Analytics.none
+
+        PathEnterPressed ->
+            Analytics.none
+
+        NextUnorderedUnitKeyPressed ->
+            Analytics.none
+
+        ClearMoveClicked ->
+            Analytics.none
+
+        CancelOrderClicked ->
+            Analytics.none
+
+        CargoUnitClicked _ ->
+            Analytics.none
+
+        LoadCratesClicked _ _ ->
+            Analytics.none
+
+        GroundFreightPickupClicked ->
+            Analytics.none
+
+        UnloadCrateToggled _ _ ->
+            Analytics.none
+
+        UnloadUnitToggled _ _ ->
+            Analytics.none
+
+        UnloadChoicesConfirmed ->
+            Analytics.none
+
+        UnloadSkipped ->
+            Analytics.none
+
+        DismountedInfantryClicked _ ->
+            Analytics.none
+
+        HoldRemainingInfantryClicked ->
+            Analytics.none
+
+        CancelTruckOrderClicked ->
+            Analytics.none
+
+        InspectClicked ->
+            Analytics.none
+
+        InspectorCloseClicked ->
+            Analytics.none
+
+        MobileTabClicked _ ->
+            Analytics.none
+
+        MobileTabNavigationPressed _ ->
+            Analytics.none
+
+        InspectionHelpClicked _ ->
+            Analytics.none
+
+        InspectionHelpFocusReturned _ ->
+            Analytics.none
+
+        EscapePressed ->
+            Analytics.none
+
+        WelcomeBriefingDismissed ->
+            Analytics.none
+
+        DialogDismissed ->
+            Analytics.none
+
+        SubmissionCancelled ->
+            Analytics.none
+
+        SubmissionConfirmed ->
+            Analytics.noData "submission confirmed"
+
+        SubmitKeyPressed ->
+            Analytics.none
+
+        SkipUnplannedUnitsWarningChanged _ ->
+            Analytics.none
+
+        TurnControlsMsg controlsMsg ->
+            case controlsMsg of
+                TurnControls.SubmitClicked ->
+                    Analytics.noData "submit clicked"
+
+                TurnControls.SurrenderClicked ->
+                    Analytics.noData "surrender clicked"
+
+        RequestRetryClicked ->
+            Analytics.none
+
+        RequestErrorDismissed ->
+            Analytics.none
+
+        SubmitResponseReceived _ _ ->
+            Analytics.none
+
+        CurrentTurnMsg _ ->
+            Analytics.none
+
+        ResignResponseReceived _ _ ->
+            Analytics.none
+
+        PollStatusResponseReceived _ _ ->
+            Analytics.none
+
+        PollResponseReceived _ ->
+            Analytics.none
 
 
 {-| Record player activity, synchronize playback audio, play UI cues, and
