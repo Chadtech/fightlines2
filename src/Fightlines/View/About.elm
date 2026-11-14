@@ -23,10 +23,11 @@ import View.Prose as Prose
 
 type Section
     = Game
-    | Intro
+    | WhoAmI
     | Contact
     | Code
     | Pacifism
+    | RoadMap
     | PrivacyPolicy
 
 
@@ -39,11 +40,12 @@ type Section
 all : List Section
 all =
     [ Game
-    , Intro
+    , PrivacyPolicy
+    , RoadMap
+    , WhoAmI
     , Contact
     , Code
     , Pacifism
-    , PrivacyPolicy
     ]
 
 
@@ -58,7 +60,7 @@ sectionTitle section =
         Game ->
             "the game"
 
-        Intro ->
+        WhoAmI ->
             "intro"
 
         Pacifism ->
@@ -72,6 +74,9 @@ sectionTitle section =
 
         PrivacyPolicy ->
             "privacy policy"
+
+        RoadMap ->
+            "road map"
 
 
 aboutPhotoSource : String
@@ -170,7 +175,7 @@ set ambushes, and cut off enemy supply lines. winning a firefight means little i
 runs out of supplies and becomes stranded.
 """
 
-        Intro ->
+        WhoAmI ->
             [ creatorPhoto
             , H.p
                 [ A.css
@@ -245,7 +250,10 @@ not justified by the cause or the aims of the war. Most of the time, it would be
                 |> List.concatMap Prose.paragraphs
 
         PrivacyPolicy ->
-            Prose.paragraphs """i retain a log of every game, including the chat messages. i also record page viewsm and track some ui analytics, like when people click key buttons like "submit turn" and "start game". i use the game logs to debug problems and improve the game, and the ui analytics to get a sense of how people are using this website and whether they are enjoying the game."""
+            Prose.paragraphs """i retain a log of every game, including the chat messages. i also record page views and track some ui analytics, like when people click key buttons like "submit turn" and "start game". i use the game logs to debug problems and improve the game, and the ui analytics to get a sense of how people are using this website and whether they are enjoying the game."""
+
+        RoadMap ->
+            Prose.paragraphs """right now i am trying to verify that the basic combat between units is fun. once i feel good about that i would like to implement a system of cities and factories that can produce more units and simulate more of a sustained campaign of combat, where forces can be replaced when they are lost and your economy can be wiped out. from there i would like to introduce aerial and naval combat with their own combat mechanics."""
 
 
 externalLink : { label : String, href : String } -> Html msg
