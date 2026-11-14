@@ -17,6 +17,18 @@ type AdminPlayer
     = AdminPlayer
 
 
+type AnalyticsLog
+    = AnalyticsLog
+
+
+type AnalyticsPage
+    = AnalyticsPage
+
+
+type AnalyticsRecord
+    = AnalyticsRecord
+
+
 type ArchivePlayer
     = ArchivePlayer
 

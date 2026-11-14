@@ -123,6 +123,17 @@ toHtml (Select config) =
                 Just htmlId ->
                     [ A.id htmlId ]
 
+        valueAttributes : List (H.Attribute msg)
+        valueAttributes =
+            case List.head (List.filter .selected config.options) of
+                Just option ->
+                    -- Reapply the model's selection after a native change,
+                    -- even if the model still selects the same option.
+                    [ A.value option.value ]
+
+                Nothing ->
+                    []
+
         chevron : String
         chevron =
             "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23"
@@ -148,9 +159,10 @@ toHtml (Select config) =
                 , Css.property "background-image" chevron
                 , Css.property "background-repeat" "no-repeat"
                 , Css.property "background-position" "right 0.75rem center"
+                , S.focusVisible [ S.outlineYellow5 ]
                 ]
             ]
     in
     H.select
-        (attributes ++ idAttributes)
+        (attributes ++ valueAttributes ++ idAttributes)
         (List.map optionToHtml config.options)

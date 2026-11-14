@@ -1,16 +1,14 @@
 # Repository instructions
 
-Read [README.md](README.md) for the project overview and quick start. Read
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for development commands and tool
-workflows. Consult [docs/PLAYING.md](docs/PLAYING.md) for detailed game behavior
-and [docs/MAPS.md](docs/MAPS.md) for map authoring and catalog behavior.
-Before changing code, read [CODE_STYLE.md](CODE_STYLE.md) and follow its
-conventions. Read [ARCHITECTURE.md](ARCHITECTURE.md) for state ownership and
-cross-module data flow. Before presenting code changes, apply
-[CODE_REVIEW.md](CODE_REVIEW.md) to the diff. For UI changes, also read
-[DESIGN_SYSTEM.md](DESIGN_SYSTEM.md). For server configuration or hosting
-changes, also read
-[DEPLOYMENT.md](DEPLOYMENT.md).
+Read [CODE_STYLE.md](CODE_STYLE.md) before changing code and apply
+[CODE_REVIEW.md](CODE_REVIEW.md) to the diff. Use the
+[architecture source map](ARCHITECTURE.md) to find the owning code and the
+relevant cross-module constraints.
+
+- For setup and tools, see the [README](README.md) and [development guide](docs/DEVELOPMENT.md).
+- For gameplay or map work, consult the [player guide](docs/PLAYING.md) or [map guide](docs/MAPS.md).
+- For UI changes, read the [design system](DESIGN_SYSTEM.md).
+- For server configuration or hosting changes, read the [deployment runbook](DEPLOYMENT.md).
 
 - Keep changes focused and preserve unrelated work.
 - Treat `old/` as reference material. Do not change it unless explicitly asked.

@@ -1,1529 +1,287 @@
 # Design system
 
-A living guide for FightLines UI work, adapted from People's
-`DESIGN_SYSTEM.md`. Read it before changing the interface and update it when
-the design direction changes. User feedback takes precedence.
+FightLines uses compact Windows 98-inspired panels and detailed, painted
+1980s anime battlefield art. Use this guide for visual and interaction decisions.
+See the [player guide](docs/PLAYING.md) for rules and controls and
+the [asset catalog](public/assets/README.md) for approved artwork.
 
-## Principles
+- [Foundations](#foundations) · [Shared controls](#shared-controls) · [UI sound](#ui-sound)
+- [Home, matchmaking, and lobbies](#home-matchmaking-and-lobbies) · [Game board](#game-board)
+- [Combat and playback](#combat-and-playback) · [Turn dialogs](#turn-dialogs) · [Chat](#chat)
+- [Admin and replay](#admin-and-replay) · [Authoring tools](#authoring-tools)
 
-- Make the screen's purpose and next action clear. Keep instructions short and
-  explain later actions on the screen where they become available.
-- Let appearance explain behavior: inset fields invite input, outset buttons
-  perform actions, and links navigate.
-- Reuse `src/Style.elm` tokens, generic `src/View/` controls, and game-specific
-  `src/Game/View/` components. Keep page composition
-  in the page module. Keep generic utilities and palette tokens in `Style`;
-  component-specific styling belongs in the component module.
-- Verify real content, focus, loading, errors, and narrow layouts in the browser.
+## Foundations
+
+- Make the current action clear. Inset fields invite input, outset buttons
+  perform actions, and links navigate. Keep copy short and place it near the
+  action or state it explains.
+- Use the Chadtech palette in [`Style.elm`](src/Style.elm). Use forest green
+  backgrounds, warm gray card bodies, gray title bars, square corners, and crisp
+  inset/outset bevels. Reserve gold for primary actions and selection. Use red
+  for destructive actions and errors that need emphasis.
+- Use Ubuntu Mono Regular at 1rem and normal weight for most text. Distinguish
+  roles with spacing, placement, and color. Keep app copy lowercase and preserve
+  the original casing of names, URLs, and identifiers in stored data.
+- Call unit instructions **orders**. Use **cancel order** for an unfinished
+  plan and **revoke order** for a saved order.
+- Place generic tokens and helpers in `Style`, reusable controls in
+  [`View`](src/View/), game views in [`Game.View`](src/Game/View/), and page
+  composition in its page. Verify real content, keyboard focus, request
+  failures, and narrow layouts in the browser.
+
+## Shared controls
+
+- Use `Card` for surfaces and `CardHeader` for separate title bars and header
+  actions. Align title and body content. Bounded panels keep titles and actions
+  visible while their bodies scroll. Page layouts own placement and width.
+- Use shared button variants and let labels size ordinary buttons. Give
+  icon-only controls accessible names. Keep touch actions comfortably tappable
+  with a 44px minimum target for compact controls. Preserve focus through
+  text, surface, bevel, or underline treatment.
+  Keep keyboard focus distinct from gameplay selection.
+- Put labels above form fields with tighter spacing than the gap between groups.
+  Use native selects and text inputs through the shared components.
+- Use `Tabs` for keyboard navigation and its accessible tab/panel relationship.
+  Use vertical tabs for sidebars and horizontal tabs for panel headers.
+- Use native dialogs with an appropriate initial focus and a clear return
+  target. Escape follows the dialog's close or cancel action. Phone dialogs
+  fill the viewport, with long content scrolling between the title and actions.
+  Keep visible actions reachable at short heights.
+- Show request failures near the affected action, with useful text and retry
+  where supported. Preserve edits and prevent duplicate submissions in flight.
+  Use the muted danger card with its ordinary gray title bar for battlefield
+  request failures. Preserve orders on submission failure and clear polling
+  errors when polling recovers.
+- Honor reduced motion for pulses, shine, sprites, camera movement, and
+  transitions. Preserve visible status and playback controls.
 
 ## UI sound
 
-Keep a small, borderless speaker icon in the upper-left corner of both apps.
-Use an 18px gray icon, a transparent 36px click target (44px on touch), and no
-visible label. Clicking toggles all audio; the muted state uses a crossed speaker.
-Keep its accessible label, pressed state, tooltip, and keyboard focus clear.
-The control stays in the same viewport position inside native dialogs.
-Remember mute in local storage across reloads and both apps, and synchronize
-open tabs. Audio starts unmuted when no preference has been saved.
+Use short physical-switch recordings for affirm, cancel, and confirm. Use the
+recorded radio cues for valid chat sends and newly received messages, and the
+distinct roster cues for joins and departures. The matchmaking cue plays once
+on entering **get ready**. Initial history and duplicate poll responses stay
+silent. Keep continuous input and background updates quiet. Source and timing
+details live with the [audio assets](public/audio/README.md) and
+[development guide](docs/DEVELOPMENT.md#audio-manager).
 
-Use short recordings of physical switches for tactile UI feedback. Affirm
-uses the desk-lamp switch press, cancel its release, and confirm the more
-substantial old-switch audition A. Preserve their recorded texture and original
-pitch, with short edge fades. Runtime files and source credits are documented in
-`public/audio/README.md`.
+On larger layouts, keep the small borderless speaker and quiet version label
+at the upper left, including on native dialogs. The speaker retains its
+accessible name and pressed state. Mute and volume settings persist across
+reloads and synchronize across tabs.
 
-Incoming lobby/game chat uses the approved recorded radio cue: one beep followed
-by a short crackle (233.5ms). Play once per newly received batch from another
-sender, using the interface volume channel. Sending a valid message plays the
-higher third beep from the same Cobra recording, followed by the identical
-cutoff crackle (220ms). Play it immediately when a send or retry begins, for both
-Enter and the send button. Blank or blocked submissions, send responses, initial
-history, and the player's own poll echoes stay silent.
+## Home, matchmaking, and lobbies
 
-Lobby roster additions play the approved two-beep fire-pager recording (210ms);
-removals play the store-scanner beep with its decay (300ms). Both use the
-interface volume channel. Initial loading, unchanged polls, side swaps, and
-the transition into a game stay silent. Adding or removing an AI also changes
-the roster and plays the corresponding cue.
-
-Matchmaking plays its approved three-second retro welcome cue once when entering
-the get-ready step, using the interface volume channel. Countdown updates and
-the subsequent game navigation stay silent.
-
-## Typography and copy
-
-Both apps show a quiet `v<integer> · YYYY-MM-DD HH:mm:ss utc` label beside the
-speaker in the upper-left viewport corner, including while a native dialog is
-open. Use a shared row with a small gap and center the label vertically against
-the speaker's click target,
-including its larger touch target. Keep the label and gap passive so they do not
-intercept pointer input. On screens up to 400px wide, place the row below the
-battlefield header and recent chat messages below the row. The dev panel also
-identifies the compiled frontend version and its release timestamp.
-
-- Call unit instructions **orders** throughout the UI, guide, and gameplay code.
-  Use **orders** for the menu, **cancel order** while planning, and **revoke order**
-  for a saved order.
-- All visible UI text is lowercase: titles, labels, buttons, instructions,
-  status messages, and errors. Write application copy in lowercase; the global
-  CSS reset also renders dynamic text and field values in lowercase.
-- Casing is a presentation choice. Preserve the underlying spelling of player
-  names, identifiers, and invite URLs; never lowercase stored data or link
-  destinations to implement the visual rule.
-- Interface text stays at 1rem and normal weight (400), including headers and
-  controls.
-  The home-page quotation is larger, as described below. The About portrait's
-  caption uses 0.875rem text.
-  Use placement, spacing, grouping, and color to distinguish roles.
-- Use Ubuntu Mono Regular at weight 400. The unmodified TrueType font is
-  bundled in `public/ubuntu-mono-regular.ttf` and loaded by both
-  `public/index.html` and `dev-tools/index.html`. Its Ubuntu Font Licence 1.0
-  and pinned upstream revision are in
-  `public/ubuntu-mono-LICENSE.txt`.
-  Both apps use the same font URL so the browser can reuse its cached copy.
-  Fall back to SFMono-Regular, SF Mono, Menlo, Monaco, Consolas, Liberation Mono,
-  then generic monospace.
-
-## Color and surfaces
-
-The direction is a compact Windows 98-inspired window with square corners,
-warm gray surfaces, and crisp inset/outset borders. Use the Chadtech palette
-tokens in `Style.elm` for interface colors.
-
-| Role | Helper | Value |
-| --- | --- | --- |
-| Page background | `bgNightwood2` | `#082208` |
-| Card body | `bgGray1` | `#2C2826` |
-| Text field surface | `bgNightwood3` | `#142909` |
-| Text field text | `textGray5` | `#E0D6CA` |
-| Default text | `textGray4` | `#B0A69A` |
-| Title bar background | `bgGray3` | `#807672` |
-| Title bar text | `textGray0` | `#131610` |
-| Text field bevel light edge | `indentStrong`, internal `gray3Color` | `#807672` |
-| Primary button background | `bgYellow2` | `#5A4F0E` |
-| Primary button text | `textYellow5` | `#E3D34B` |
-| Primary hover/pressed text | `textYellow6` | `#F1E9A5` |
-| Primary bevel light edge | internal `yellow3Color` | `#87772D` |
-| Primary bevel dark edge | internal `yellow1Color` | `#302507` |
-
-Use gold sparingly for primary actions. Bevels reverse when buttons are pressed.
-Secondary buttons use a gray1 face with gray3 light edges and gray0 shadow
-edges (`outdentStrong`, reversed with `indentStrong` when pressed). Their faces
-brighten to gray2 on hover and press, with gray4 labels brightening to gray5.
-Disabled buttons retain their gray1 face and gray3 text.
-Use `Button.danger` for cancellation actions that need red emphasis. It uses a
-red0 face with gray5 text and a red bevel: red1 light edges and dark red
-(`#300C10`) shadow edges through `redOutdent` and `redIndent`. It brightens on hover and press,
-reverses its bevel when pressed.
-Regular buttons use 1rem horizontal and 0.75rem vertical padding.
-Use `Button.small` for compact text controls: 0.25rem padding on every side,
-line-height 1, and a 1.625rem minimum height.
-Use `Button.large` for prominent actions: 1rem horizontal and vertical padding
-with a 3.5rem minimum height. The turn submit button uses this size at full width.
-All three sizes retain the normal text size and color variant.
-Use `Button.iconOnly accessibleName` for icon controls. It requires an accessible
-name and replaces text-button sizing with a 1.625rem-wide footprint, a matching
-minimum height, and no padding. Height remains automatic: camera controls stay
-square, while header close buttons stretch to fill their action area. Containers
-own action alignment, camera group grids, and spacing.
-`Button.attention` adds the ready pulse and shine;
-`Button.highlighted` retains gold text while waiting. `Fightlines` mounts `Button.styles`
-once for the animation keyframes. Apply these through the button API rather than
-parent or descendant selectors.
-The primary button uses the original yellow palette shifted up one step in all
-states. Yellow3 interpolates yellow2 and yellow4; yellow6 interpolates yellow5
-and white. Retain the other palette tokens for reuse.
-Suppress focus outlines throughout both apps, including text-entry controls,
-buttons, links, tabs, and battlefield targets. Focusing a control must not add
-a yellow ring or another enclosing outline. Keep existing text, surface, bevel,
-and underline focus treatments. Selection and gameplay highlights remain
-independent of focus. Communicate errors with text as well as color.
-Text fields use `indentStrong`: dark gray0 top/left edges and lighter gray3
-bottom/right edges, retaining the shared 1px border width.
-Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion point visible.
-
-## Admin dashboard
-
-The third Elm app at `/admin` uses the ordinary forest-green shell, Ubuntu Mono,
-beveled cards, and shared controls. Password login leads to one dashboard with a
-compact controls card containing server status, refresh, and logout. Place the
-three summary counts in one card, each in its own green depression with an inset
-bevel. Follow with games in progress, waiting lobbies, and compact feedback/recording
-lists beside one another on wide screens. Stack the lists and summary depressions
-on narrow screens, and let the controls wrap inside their card. Game rows expose
-name/map, turn, status, and last activity;
-expanding a row shows players and readiness without navigation. Busy rows label
-their last completed update. Feedback expands inline and longer lists paginate
-in place. A recording opens the shared battlefield replay viewer with an explicit
-return to the dashboard. Keep logout visible on the dashboard and replay screens.
-Use regular-sized text buttons throughout the Admin app, including refresh, row
-expansion, list browsing, pagination, and logout.
-Use the shared speaker/version controls and ordinary lowercase copy throughout.
-
-## Home page
-
-The home page is a compact centered FightLines logo on the ordinary forest-green
-page background, with a compact menu card beneath it. Use the transparent
-`public/assets/fightlines-logo-v1.png` artwork, preserving its tall italic ivory
-lettering, thick yellow underline, flush g descender, and small explosion.
-The logo scales proportionally up to 40rem wide with viewport gutters, centered
-slightly above the viewport midpoint with the menu beneath it. Its image
-supplies the accessible heading. The ordinary beveled card has no title bar
-and contains a full-width primary `match making` button followed by secondary
-`create a lobby`, `feedback`, and `about` buttons. Keep it at most
-24rem wide with viewport gutters. `create a lobby` opens the existing form at `/new`.
-On short landscape screens (at most 500px high and 1023px wide), center the
-logo, subtitle, and quotation in a left column beside the menu. Tighten the
-vertical spacing and keep the four menu actions stacked in the right column.
-About opens a wide reading dialog
-(64rem, capped by the viewport gutters) with titled game, intro, contact, code, pacifism, and privacy policy sections
-and the creator portrait. Contact addresses and account names are real
-links using the shared link style; web links open a new tab or window and email
-opens the configured mail handler. Group the portrait and its small caption in
-one figure, with the caption beneath the image. Float the figure to the left so
-text wraps beside it and continues across the full width below it. At widths of
-600px and below, place the figure above the text to keep the reading column usable.
-Put the content in a bounded scrolling panel with the inset `indentStrong` bevel,
-`bgNightwood3` green background, and `p3` padding. Preserve paragraph breaks and
-wrap long text. Keep the title bar and bottom close button outside the scrolling
-panel and visible within the viewport. The bottom close button and Escape dismiss
-it and restore focus to the About button or the game menu button. About is also
-available from the game menu; the privacy policy appears only as its subsection.
-On entry, fade the logo in while lowering it from 2rem above its resting position
-over 900ms with an ease-out curve. Reduced motion shows it immediately in place.
-Omar Bradley's monochrome portrait sits behind the logo and navigation, fitted
-within the viewport and anchored to its far left edge. Composite the image at
-24% opacity over an opaque page-green backing, masking the whole group with the
-portrait's silhouette. This retains its subtle green tone while preventing
-screenshots from bleeding through his face and uniform; the surrounding cutout
-stays transparent.
-Its 1600ms fade begins at 1000ms, after the logo finishes. The decorative
-portrait ignores pointer input and is hidden from assistive technology. Reduced
-motion shows both images immediately.
-The quote “amateurs talk strategy. professionals talk logistics.” appears on the
-right at 1.5rem, with a 1rem “general omar bradley” attribution, and shares the
-portrait's fade timing. At widths of 720px and below, use 1.25rem for the quote.
-At widths of 1200px and below, place it below the menu to keep the logo and
-navigation clear. Reduced motion shows the quote immediately as well.
-
-After the portrait and quote finish, fade in the centered subtitle “a logistics
-and supply turn based strategy game” beneath the logo over 900ms, beginning at
-2700ms. Use ordinary 1rem gray4 text and reserve its space throughout the entrance
-so the layout stays still. Reduced motion shows the subtitle immediately.
-
-After the entrance finishes, three supplied battlefield screenshots emerge from
-the green background in a staggered 54-second cycle, beginning at 4, 22, and 40
-seconds. Each scene slowly rises and grows while fading in and out, with a quiet
-gap before the next reveal. Keep them monochrome green and dark, with broad
-elliptical feathering that completely dissolves their rectangular edges. Place
-each image by its center, randomly between 64–78% of viewport width and 42–58%
-of viewport height, with a slight random rotation. Pick fresh positions on entry
-and on each image's next cycle while it is invisible, so reveals stay near the
-right side without visibly jumping. Keep these center bounds on narrow screens too.
-Place them behind the portrait, logo, menu, and quotation; clip their drift to the
-viewport. They ignore pointer input and assistive technology. Reduced motion
-omits this decorative cycle and retains the original green background.
-
-## Cards, spacing, and layout
-
-The `/match-making` page uses a centered, headerless `Card.simple`. Its entry
-form contains only **user name** and the gold **find a game** action. Waiting
-shows **finding a game…**, the existing `View.LoadingBar`, a quiet **last game
-started … ago** line, and a full-width secondary **cancel** button. With no
-recorded match since startup, show **no games started yet**. Do not add a page
-header, title bar, explanatory paragraphs, or an estimated wait. Errors appear
-near the action; pending join/cancel requests disable duplicate actions.
-When paired, keep the same headerless card for a **get ready** step with the
-opponent's name, an inert map preview and name, and **starting in …** counting
-down from 16 seconds. Open the game automatically when the countdown ends.
-Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
-
-- Pass title bars separately with `Card.withHeader (CardHeader.simple title)`;
-  keep the header out of the body content list. `Card` owns their positioning.
-- Headers sit 2px from the card edges. `CardHeader`'s local `headerPadding` aligns their text
-  with the body's `p3` inset while keeping vertical padding at `p1`.
-  Dialogs and the order menu use the same inset and title padding. Keep header
-  actions inside the title bar; a close button does not change its outer spacing.
-  Use `CardHeader.withActions` for title-bar controls and `Button.iconOnly` for
-  close buttons. The header stretches its actions vertically within the padding.
-  `CardHeader.withHtmlId` labels dialog titles; `focusOnOpen`
-  focuses reading and workspace titles without including their actions.
-- Card bodies use `p3` padding and `g3` gaps. Headerless cards retain that layout.
-- Use `Card.danger` for an error card's muted `red0` body and `gray5` text.
-  Keep the standard gray title bar, ordinary bevel, and secondary action buttons.
-- Cards own their surface, body spacing, and optional header. Page containers
-  own width and placement; use `S.wFull` and `S.maxW96` on a surrounding element
-  for a 24rem card. `Card.panel` additionally fills a bounded layout slot, with
-  a fixed header and scrolling body when headered.
-- Labels sit above their fields with a smaller `g1` gap. Use larger gaps between
-  groups and between fields and actions.
-- Build selects with `Select.new`, apply modifiers, then render with
-  `Select.toHtml`. The constructor takes the selected value, labeled options,
-  and change callback; the component handles DOM values and event decoding.
-  Selects start enabled with no HTML ID. Use `Select.disabled condition` for
-  controls that need to be disabled and `Select.withHtmlId` when a separate
-  label or another element refers to the control. Wrapping labels need no ID.
-- Buttons size to their labels and align to the start of the form.
-- Build vertical side tabs with `View.Tabs`. Supply typed options, the selected
-  value, HTML IDs, and click/navigation callbacks to `Tabs.new`; render the
-  navigation with `Tabs.toHtml` and its content with `Tabs.panel`. The component
-  owns tab styling, ARIA links, and Up/Down/Home/End navigation. The caller owns
-  selection, keyboard focus effects, content spacing, and the surrounding layout.
-  Use `Tabs.horizontal` and `Tabs.toHeader` for horizontal tabs inset into a
-  panel header, as in the landscape lobby and mobile selection panel.
-- The spacing unit is 0.25rem: `p1`/`g1` are 0.25rem, `p2`/`g2` are 0.5rem,
-  and `p3`/`g3` are 0.75rem. `p2px` is a literal 2px inset.
-- The joined lobby is a full-width workspace bounded by the viewport, without
-  page scrolling. Center a compact
-  raised gray panel flush with the top of the screen, containing the existing
-  FightLines logo at 4rem wide and the lobby name. Keep the panel clear of the
-  corner mute and version controls; long names wrap and push the content down.
-  Omit the `game lobby` label and any floating lobby title. Keep the map library's
-  existing clear strip for the corner controls.
-  Use two equal-width columns in the space between the header and action bar.
-  The left card retains its `battlefield` title bar and fits the complete map
-  to its available width and height while
-  preserving the authored proportions. Put the map name, dimensions, and
-  host-only `choose map` button in a gray footer below the preview, with no
-  overlays on the map. The right column stacks compact `players` and `chat`
-  cards; let player settings scroll within their area on short screens. Put a
-  separate action card below
-  both columns, with `start game` at the left and its blocking reason immediately
-  beside it. Put secondary `home` and host-only red `close lobby` controls on the
-  right, wrapping on narrow screens. Closing opens a native confirmation dialog
-  explaining that everyone loses access and the invite link stops working.
-  Focus `cancel` initially; Escape, cancel, and the title-bar close return focus
-  to `close lobby`. Disable duplicate requests while closing, retain errors in
-  the dialog for retry, and return home on success.
-  Below 720px, stack battlefield, players, and chat inside a scrolling workspace
-  while keeping the header and action bar visible. In short landscape, keep
-  the battlefield beside one card with fixed players and chat tabs in its header.
-  Open on players and scroll the settings beneath the tabs. Let the chat
-  transcript scroll within its panel. Keep
-  the chat composer visible, mark unread messages with a dot on the chat tab,
-  and have C select chat and focus the composer.
-  Keep creation and joining as centered compact forms.
-  The players card contains `copy invite link`; show a selectable URL and useful
-  error text there if clipboard copying fails.
-- `choose map` opens a separate full-width library screen at `/lobby/:id/maps`,
-  using one card headed `choose map` with the lobby name as its caption. Put
-  all thumbnail choices in one scrollable left column, and the selected map's
-  large preview in a closely fitted inset surface beside its dimensions,
-  starting-player legend, and description in the right column. Stack preview and
-  details below 1100px, and stack the library columns below 720px. In short
-  landscape, keep the map list, preview, and details side by side. Thumbnails
-  use saved PNG images of the actual terrain, buildings, and starting units with
-  still water. Generate these from the shared preview renderer when saving maps;
-  keep the large selected preview as SVG. The map list sits in one inset surface with alternating green row backgrounds. The
-  previewed row has a brighter gray background, gold outline, and checkmark. The
-  footer contains the gold `use this map` action followed by `back to lobby`, both
-  aligned left, with no explanatory text or back arrow.
-  Bound the library to the viewport, with its title and footer actions visible.
-  Fit the selected preview into the available space and scroll the map list and
-  details internally. Bound the map list's height when stacked on narrow screens.
-  Omit the preview hint and theme label. Browsing does not save; applying
-  returns to the lobby, while back navigation discards the preview. Disable
-  duplicate saves and show failures on the library screen without losing the
-  preview. Guests see the saved map in the lobby and have no change-map action.
-- Keep `start game` visible for the host and disable it until both slots are
-  filled or while a setup change or start request is pending. Background lobby
-  updates keep the button enabled. Clicking during an update queues one start
-  until that update succeeds, then rechecks the refreshed lobby before starting.
-  A failed update cancels the queued start and shows the update error for retry.
-  Derive availability and adjacent explanatory text from the same blocking reason,
-  including a queued start.
-  Show `waiting for another player` when the human slot is empty; omit routine
-  readiness or success text.
-  Lobby updates are automatic; show `retry` only after an update fails.
-- Show two numbered player slots, including the empty human slot, as flat rows
-  on the card’s ordinary warm gray surface with a quiet divider. Put the player
-  name or `waiting for player` beneath the slot label and a compact controller
-  column at the right. Reserve inset green surfaces for editable controls.
-  Label sides `player 1 (red)` and `player 2 (blue)` and place occupants according
-  to their assigned side. The host’s side reads `human`; the host can select
-  `human` or `ai` for the other side. The AI evaluates tactics using one-turn
-  simulations, tests advancing enemy responses, and revisits allied choices.
-  Keep these choices in the existing controller selector. Disable that selector once a human joins.
-  The host sees a red `kick` button beneath a joined guest's controller selector
-  before starting. Disable it during a pending request and show `kicking…` while
-  removing that player. Failure preserves the roster and uses the action card's
-  error text; success opens the slot and returns the guest to the join page on
-  their next update. Guests see controller types as read-only text. Put the
-  occupied count in the players title bar. Below the slots, show each member a
-  compact `your side` select using the shared inset control. Explain that
-  switching sides also moves the opponent. Keep host and own-player labels on
-  their occupants when assignments change. Side changes lock at game start.
-- Use `Card.simple` for the centered creation form, inside a page-owned container
-  that fills available width up to 24rem. Preserve useful gutters and allow
-  content to wrap. Show creation errors, including lobby-name validation, in a
-  padded dark-red (`bgRed0`) area with light (`textGray5`) text and status semantics.
-- Use a separate join page for invite visitors with the same card and page-owned
-  width constraint. Show the name field and join action before membership;
-  show the roster, invite link, and
-  waiting status or host controls only after joining. Keep the invite URL the
-  same across both pages. The join form does not poll or disable the name field.
+- Center the logo and compact menu. Keep **match making** primary and **create
+  a lobby**, **feedback**, and **about** secondary. In short landscape, place
+  the branding beside the stacked menu and keep all actions visible.
+- Keep the Bradley portrait and battlefield screenshots as subdued decoration,
+  behind the controls and hidden from assistive technology. The portrait
+  backing blocks screenshots from showing through it. The About dialog uses
+  a scrollable reading pane with a portrait and caption, and fixed close
+  controls. Its privacy policy is a subsection.
+- Use one headerless card for matchmaking. The waiting step shows activity,
+  recent match activity, and **cancel**. The ready step shows the opponent,
+  selected map, and shared countdown. Avoid a predicted wait.
+- Keep the joined lobby's title and action bar visible around a bounded
+  workspace. Put the map in its own card and show its name, dimensions, and
+  host's map action below the preview. On short landscape screens, put the
+  map beside a combined players/chat card with tabs. Keep the composer
+  reachable and mark unread messages on the chat tab.
+- Show two numbered side slots with red/blue labels. Keep host and viewer
+  labels attached to the players when their sides change. Keep the blocking
+  reason beside **start game**, and show a selectable invite URL if copying
+  fails. Focus the safe action first in the close-lobby confirmation.
+- The map library separates browsing from saving. Fit the selected SVG preview
+  and show its details alongside the scrollable thumbnail list. Keep **use
+  this map** and **back to lobby** visible. Failed saves retain the preview.
 
 ## Game board
 
-Use the minimal phone layout on Android, iOS, and compact viewports with a
-short edge up to 600px and a long edge up to 1023px.
-Use a thin full-width header and a task rail over the battlefield's right edge.
-Opening or closing the rail preserves the map's size and position.
-Put **surrender** at the far left of the top bar and the gold,
-shining **submit turn** button at the far right. Center the menu, logo, turn, and
-chat group on the screen between equal-width outer columns, directly on the
-top bar without a surrounding border or bevel. Both actions reuse
-the ordinary submission and surrender flows. Scroll the task area independently
-and pin **close** below it; close deselects without removing saved orders.
-When nothing is selected, omit the entire rail, including close. The battlefield
-always fills the width beneath it. Do not show an idle selection prompt.
-Order choices and route/direction instructions replace one another in that area. A selected friendly unit opens horizontal **orders** and **details**
-tabs. Depots, terrain tiles, enemies, and locked turns show details only.
-New friendly unit selections open
-orders. Tab changes preserve the selected unit and unfinished orders. Keep the
-close action in the rail footer; omit a second × in the tab header. Keep the
-orders/details tabs at stable, equal widths. Place ⓘ beside the orders label
-within its visual tab area, as a separate sibling button with its own 44px tap
-target. Keep it visible while details is selected. The label selects orders;
-only ⓘ opens the order guide. Never nest the buttons; details reuse the inspector's unit, resource,
-cargo, and terrain help. Keep the tab header fixed above the scrolling content.
-In portrait, cover the entire view, including open dialogs, with
-a phone and curved arrow above **turn your phone for landscape orientation**.
-Animate the phone from portrait to landscape once as the prompt opens. With
-reduced motion enabled, show the phone in landscape immediately. Keep selection
-and draft orders across rotation. Omit the floating version/audio overlay in
-this minimal layout.
-When mobile view is active, every dialog fills the viewport, including the orders
-reference and dev panel. Keep the title and close control visible, scroll long
-content within the dialog, and preserve each dialog's ordinary focus and cancel
-behavior. Desktop dialogs keep their usual sizes.
+### Layout and input
 
-- Float a compact header over the battlefield, centered flush with the top edge.
-  Keep the surrounding area transparent and let map interaction reach it.
-  Place the existing FightLines logo at 4rem wide between the menu and turn label.
-  Use columns capped at 4.5rem, 6rem, 4.5rem, and 4.5rem, allowing them to shrink
-  on narrow screens.
-  Put a raised gray `menu` button on the left and a passive inset turn number
-  after the logo so their different roles are clear. Use `Button.small` for the
-  menu button; keep the turn label at a 1.875rem minimum height.
-  Put a raised gray `chat` button after the turn label, using `Button.small`.
-  Disable chat throughout playback and while another dialog is open.
-  Keep the menu button raised when disabled, including while the menu is open.
-  Open a centered native menu dialog
-  with `settings` at the top and a primary `close` action at the bottom;
-  Escape also returns to the battlefield.
-  In mobile landscape, center the menu actions in two columns with taller
-  buttons. Center `close` below the grid at the width of one column.
-  Enable `settings` to open the settings workspace described below.
-  Keep surrender out of the menu. Both the turn strip's `surrender` and the menu's
-  `home` require confirmation before surrendering an active game.
-  Title the confirmation `surrender?`, explain that the opponent wins and the action
-  cannot be undone, and focus the gold `keep fighting` button first. Use a red
-  `surrender` confirmation (`surrender and go home` when leaving).
-  Keep fighting or Escape returns to the originating controls and restores focus.
-  Surrender opens the existing game-over card for both players, naming the winner
-  and explaining that the game ended by surrender.
-  Add a secondary `home` action that surrenders an active game before navigating
-  home, waits for success, and stays in the game on failure. Disable it while
-  surrender is pending; finished games navigate directly home.
-  Disable the menu
-  during playback and other dialogs, and close it when new playback starts.
-- The game is a full-viewport workspace. Render the board directly on the page
-  background, without a containing card or border. Center the board at 92% of
-  the viewport width or 98% of its height, whichever is smaller. Overlay the
-  controls without reserving a row beneath the map. Allow it to pan freely.
-  Use the controls' measured height as the playback camera's bottom inset so
-  automatic framing keeps action above the floating strip.
-- Use a full-height right panel for selection details and unit-specific actions,
-  with a warm gray body and an outset bevel only
-  on its left edge. Place selection at the top. The panel is 15.5rem wide, capped
-  at 45vw on narrow screens, and scrolls when needed. Hide it entirely when there
-  is no selection, with no floating inspection hint. Overlay it on the battlefield
-  so opening it does not shift the map sideways. Keep bottom controls clear of
-  its width. On narrow screens, keep the centered header above the inspector
-  and start inspector content below it. Its footer contains a full-width secondary
-  `close` button, using regular padding to match the size of `revoke order`.
-  Omit the roster and other floating cards.
-  Use gold primary buttons for unit actions in this panel, including
-  revoke order. Keep cargo rows focused on stock, without unload coordinates;
-  omit the adjacent-square instruction and skip button while choosing cargo exits.
-  Use a full-width red `cancel order (esc)`
-  button to abandon the current order preview and clear selection, matching Escape.
-  Place cancel order and revoke order in the same action slot directly below
-  the unit portrait, spanning the available panel content width, before resource
-  gauges. Show the action appropriate to the current planning state.
-- The bottom-left control panel is flush with the screen's bottom and left edges,
-  floating over the battlefield. Use a short horizontal strip
-  sized to its content, capped by the available width, with a bevel on its top
-  and right edges, 0.5rem vertical padding and 0.75rem horizontal padding.
-  Keep desktop controls within 45rem. Use regular-size buttons for submit and
-  surrender, with the map toolbar between them. Use the secondary style for
-  surrender and enable it during active planning and after submitting orders.
-  Disable it during playback, dialogs, and finished games. Show disabled
-  `surrendering…` while its request is pending.
-  Put the pan arrows in a row, followed by zoom out, a centered zoom percentage,
-  zoom in, and reset view. Use 2rem icon buttons for pan and zoom on desktop.
-  Allow groups to wrap when space is limited.
-  On compact viewports, the zoom percentage doubles as the reset button.
-  After two minutes without meaningful input in a human game, show a private
-  native **inactivity warning** dialog with a remaining-seconds timer and the
-  gold **i’m still here** action. It takes priority over other dialogs without
-  losing the player's drafts. Escape also confirms presence. Keep the warning
-  visible until the server acknowledges activity, disable duplicate confirmation,
-  and show failed confirmation text in the dialog. Do not show opponent inactivity
-  before the game ends. Timeout victories use the ordinary gold conclusion, with
-  **victory due to opponent inactivity** for the winner and **you lost due to
-  inactivity** for the loser.
-  Request failures appear in a persistent `Card.danger` above this strip, with
-  a header naming the failed action, the server or connection message, and
-  regular-size `try again` / `dismiss` buttons. Use a 24rem maximum width and 0.75rem gutters;
-  wrap long messages and scroll within 40% of viewport height. The card overlays
-  the battlefield without resizing it and stays clear of an open inspector.
-  Submission errors reassure that orders remain. Poll errors say they retry
-  automatically and clear on recovery; dismissing suppresses repeated notices
-  during the same outage. Keep the card quiet: no warning icon, bright red
-  border, animation, or automatic dismissal of action failures.
-  Submit stays gold with a gentle brightness pulse and sweeping highlight throughout
-  planning, including while units still need orders. Keep it enabled while planning
-  and disable it while orders are locked. Submitted turns retain gold text. While waiting
-  for the opponent, show a 1.25rem-high inset track beneath submit with a solid
-  gray bar moving smoothly left to right.
-  It fully exits the right edge before
-  looping from outside the left edge;
-  this is an activity indicator, not a completion percentage. Reduced-motion
-  preferences keep the button and loading bar steady. Keep textual status
-  alongside animation and preserve keyboard focus.
-  Submitting with unassigned units opens a modal warning with keep planning and
-  submit anyway actions; confirmation fills missing orders with holds.
-  Place a `skip this dialog` checkbox beside these actions and remember its
-  Boolean in local storage. Checking it leaves the current warning open for
-  confirmation; later submissions fill missing orders with holds directly.
-- Below 768px, reserve a full-width bottom row for turn controls and a bounded,
-  internally scrolling selection panel immediately above it. Keep the map in
-  the remaining space. Arrange submit, zoom, and surrender in two columns;
-  omit the directional pad, use finger dragging to pan, and let the zoom
-  percentage reset the view. Keep camera insets based on actual overlap.
-  On short landscape screens (at most 500px high and 1023px wide), put inspection
-  beside the map and reserve the full-width turn strip below both. Use three
-  control columns from 640px wide and two below it.
-  In portrait, limit selection details to 28vh and controls to 35vh, preserving internal
-  scrolling. Use a compact unit portrait so order actions are easy to reach.
-  Place the order menu at the map's lower edge in two columns; keep it outside
-  the map's gesture surface so its contents can scroll. Buttons have at least
-  44px height on narrow screens or coarse pointers; icon buttons also have at
-  least 44px width. Keep the short version label and hide its timestamp below
-  768px, retaining release details in its accessible title.
-  One finger pans and two fingers pinch-zoom around their midpoint. While
-  choosing a move or attack move, one finger traces the route and lifting it on
-  a reachable destination confirms the route. Ordinary taps select units and
-  commit highlighted destinations. Panning, pinching, and cancelled touches
-  leave destinations unconfirmed. Keep native page zoom available outside
-  the map, and preserve desktop mouse, wheel, and keyboard controls.
-- Selected objects supply their own titles; omit a generic selection/status heading.
-  Units show their type and owning player’s name on one line, spaced to opposite
-  edges, above their illustration in a nightwood3
-  inset screen, without position coordinates. Display
-  authoritative hit points (out of 16), supplies (using each unit's authoritative maximum), and fuel (out
-  of 512) (for tanks and trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
-  25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
-- Stack complete inspection rows for the selected tile: unit and its actions,
-  depot, ground freight, then terrain. Separate rows with quiet rules and let the
-  full-height panel scroll without compressing portraits or gauges. Freight shows
-  its illustration, resource gauge, inline explanation, and `last seen` when remembered.
-  Terrain uses a muted `terrain: forest [i]` row with a themed tile portrait below it.
-  Selecting an empty tile shows the terrain inspection. The outlined info marker
-  and row open a reference dialog with terrain visibility descriptions, with no
-  per-unit movement-cost list. In the dialog, place the themed tile portrait on
-  the left with its terrain name underneath, and the description on the right.
-  Stack the portrait above the text on very narrow screens. Mouse focus has no
-  enclosing outline; keyboard focus underlines the terrain row. Keep it tied to
-  the selected object (or a passenger's carrier), and clear it with selection.
-- Unit, supply, fuel, cargo, and terrain info markers open centered native reference dialogs
-  with the existing explanations, a title-bar close button, and a secondary
-  `close` action. Escape dismisses help while preserving selection and order
-  planning. Keep the inspector layout stable when help opens. Use the shared
-  `View.InfoMarker`: a centered `i` inside a circular outline, also used in
-  the order menu, terrain, and depot details. Unit hit points have no info marker.
-  Building HP and depot stock markers open the same reference dialogs, with a
-  scrollable body and a bottom close action in fullscreen mobile view. Resource
-  gauges show the server-provided current
-  and maximum values. Enemy resources are withheld from the selection panel
-  and have no gauges there. Live games and replays use the same inspector help;
-  opening help during a replay pauses playback.
-  Below each unit description, show a compact inset table of supply costs per
-  turn, tile moved, attack, and readiness. Include fuel costs only for units that
-  use fuel, plus applicable indirect-fire, digging, and cargo details. Keep costs
-  concise, omit redundant gauges and movement/readiness explanations, and keep
-  current enemy resources private.
-- While planning, selecting your own unit shows illustrated order rows in a
-  popup beside it on the battlefield. Anchor passenger orders beside their
-  truck. Keep the popup at a fixed display size as the board zooms, constrain it
-  inside the battlefield edges, and scroll its contents when the viewport is
-  shorter than the menu. The title bar reads `orders`, with a dark circular info
-  icon on a transparent button followed by a gray beveled close (×) button at the
-  right. Info has subtle text-color hover feedback. Close clears selection
-  while preserving saved orders. Order available rows as move, attack move,
-  ambush, hold position, indirect fire, stand ground, dig in, then sabotage.
-  Keep dig in and sabotage together at the bottom as specialized actions.
-  The guide and keyboard navigation follow the same sequence.
-  Carried units have no order popup.
-  Rows are flat at rest; hover and keyboard focus add an outset bevel, and
-  pressing reverses it. Unimplemented orders are disabled. Tab enters the
-  list; up/down arrows or W/S cycle enabled orders whenever the popup is open, including
-  before list focus, and Enter/Space chooses the focused order. Cancel and
-  Escape clear selection while preserving saved orders.
-  On desktop, append the shortcut in parentheses to each order name: `move (m)`,
-  `hold position (h)`, `attack move (a)`, `ambush (b)`, `stand ground (g)`,
-  `indirect fire (i)`, `dig in (d)`, and `sabotage (x)`. Show `cancel (esc)`.
-  In the mobile orders rail, show only the order names.
-  Plain letter keys immediately activate enabled orders only while the popup
-  is open, including before list focus. Preserve W/S navigation and the normal
-  route/facing controls after choosing an order.
-  Move closes the popup and keeps `cancel order (esc)` in the inspector. Omit the
-  destination prompt, movement cost/budget, and attack-move explanation while
-  previewing a route. Saving a destination or choosing hold position replaces
-  the popup with the chosen order and revoke order in the side panel. Revoking
-  keeps the unit inspected with the popup closed. Clicking it again reopens
-  orders when eligible. Do not show orders and a saved order simultaneously. Locked orders cannot
-  be revoked. Keep resource explanations in the expandable gauge help.
-- Primary-button dragging pans after a 6px threshold. During move or attack move
-  destination selection, dragging traces the route. Clicking otherwise inspects
-  units, depots and terrain. Scroll zooms around the cursor,
-  with a minimum of 35% of the overview scale. Match maximum tile size across
-  maps using Supply Point at 300% on desktop and 600% on mobile as the reference.
-  Open at 100%, centered on the whole map.
-  Reset restores that centered overview at 100%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
-  arrows or WASD pan through game-page window commands while the order popup is closed
-  and movement and ambush selection are inactive,
-  without requiring battlefield focus.
-  Plus/minus zoom through game-page window commands without requiring battlefield
-  focus. Home resets the view while the battlefield is focused.
-- Use smooth image rendering for the battlefield at every zoom level so the
-  illustrated sprites remain readable. SVG scales the board to the camera width
-  and handles selection events directly in Elm.
-- Use highly detailed 1980s anime OVA terrain with fine ink contours, richly
-  layered painted shading, botanical detail and textured rock faces within
-  broad readable shapes.
-  Render one grass image per 16px cell, including under hills and forests; match
-  ground texture scale across the board. Hills fill the square with one larger
-  rounded hill surrounded by four smaller hills, two in front and two behind,
-  in a balanced, approximately
-  symmetrical cluster. Match the ground palette, soften slope shading, and avoid
-  directional grass streaks or bright outer fringes. Keep rounded crowns, scattered rocks,
-  pointed tree crowns and trunks exaggerated enough to read at 30px display size.
-  Terrain features stay inside their own cells. Keep tile hit targets separate
-  from the artwork and use subtle square grid strokes to clarify cell boundaries.
-- Maps have a visual theme independent of terrain rules. `Game.View.TerrainTile`
-  renders each grass, hill, or forest cell with its map's theme. GreenForest uses
-  the green artwork; Desert uses a sandy SVG floor and dedicated sandy hills,
-  with warm-tinted forests; Snow uses a pale ground, dedicated snow-covered hills,
-  and desaturated, brighter forests. Hill sprites use no extra theme filters. Fog applies
-  after theme styling. BloodGulch uses GreenForest, including ordinary forest
-  artwork for its hiding spots. Arabia and ElAlamein use Desert. Tile inspection and
-  movement costs continue to use the underlying plain, hills, and forest rules.
-- Unseen terrain and known depots use 18% saturation with a black SVG overlay
-  at 42% opacity, preserving the artwork's internal shading. Draw the darkness
-  independently of CSS filters so fog stays visible on mobile browsers when
-  filtering is unavailable. Keep visibility boundaries crisp at tile edges,
-  with units, routes, and target highlights above the fog.
-  After the final turn's playback, lift fog across the entire battlefield for
-  victory and draw results. Show all remaining units, freight, and resource stocks
-  at normal visibility, including when viewing a finished game after refresh.
-- Keep comparable square footprints with transparent padding. Illustrated
-  infantry, tanks, trucks and field guns fit within 232 x 232px bounds in 256px
-  cells, preserving each master’s aspect ratio. Keep side-profile vehicles, a substantial tank turret and thick barrel,
-  and tall truck cab/canopy so their bulk reads as clearly as the infantry.
-- Field-gun combat-theater figures and right-panel portraits use a separate
-  elongated 5:2 canvas with realistic long barrels and grounded split trails,
-  in the same detailed 1980s illustrated anime style and red/blue palettes.
-  Preserve the full silhouette, mirror with sprite facing, and stagger the wider
-  theater figures within the scene. The map keeps its compact animated sprites.
-- Render terrain below depots and units, with a thin, muted gold square inset inside the selected
-  tile. Keep its entire stroke within that cell, without a fill or animation. Identify ownership as player 1 and player 2, independently of map position. Show player labels and
-  selected-unit details so color is not the only identifier.
-- Selecting your own unit shows orders without enabling movement.
-  Choosing move highlights reachable squares with inset gold outlines
-  and a faint fill. While choosing a move or unload destination, dim unavailable
-  terrain and depots to 60% of their normal brightness, preserving existing fog
-  shading. Keep available destinations and the selected tile at their normal
-  brightness; units and route markers remain readable above the terrain.
-  Planned routes use dashed gold lines and a destination dot.
-  A solid gold line previews the hovered route before saving; preserve traced
-  squares, trim on backtracking, and connect gaps from the path tip. If the trace
-  cannot reach a square within budget, fall back to an affordable route from the
-  unit. Saving ends hover editing and hides reachable-square highlights;
-  reselecting the unit and choosing move restores both.
-  Keep the selected unit active while choosing a destination. Show the chosen
-  destination/cost and revoke order after saving in the right panel.
-  Arrow keys or WASD extend or retrace the
-  previewed route without panning; clicking a destination or focusing it and
-  pressing Enter/Space saves that route. Enter also confirms a keyboard-traced
-  route. C opens chat without changing the preview.
-  Reachable tiles support Tab and Enter/Space.
-  Units with saved orders render their board artwork at
-  60% brightness until the order is revoked or the turn resolves. Keep facing
-  markers and selection outlines bright and readable.
-- Units and depots support keyboard focus and Enter/Space activation in live games.
-  Illustrated
-  unit sprites face right for east and mirror left for west, following stored direction
-  during movement and ambush previews. North/south movement and ambush retain the last horizontal sprite facing,
-  including after refresh. Profiles start right for player 1 and left for player 2;
-  trucks also follow horizontal travel and retain their last profile vertically. The facing marker
-  shows the full four-way direction. Overlay a small illustrated crimson striking
-  arrow only for units choosing or maintaining an ambush, including playback.
-  Use dark ink contours, painted red shading, and a compact ivory impact glint.
-  Keep the arrow 5.4 logical pixels wide and 8 pixels tall, with its tip protruding 5.2 pixels
-  beyond the cell edge. Selected units brighten the red artwork by 25%.
-  Trucks have no stored direction or facing marker.
-  Markers show the ambush's north/east/south/west direction. Movement and idle units have no marker. Ambush previews stay steady;
-  saved ambush markers use a two-second
-  brightness pulse that fades to zero, pauses invisibly, then returns in unison
-  across ambushing units. Keep marker size fixed and ignore pointer events.
-  Reduced-motion preferences keep markers fully visible and steady.
-  Use four-frame rigid-part idle
-  loops: infantry crouches through bending knees with small head adjustments,
-  keeping the rifle angle steady;
-  truck and tank bodies bounce on their suspension above fixed wheels/tracks.
-  Keep the tank barrel elevation. Preserve part shapes without pulsing or scaling.
-  Stagger unit phases by stable ID. Keep feet, wheels and tracks planted. Use light sky blue and
-  moderately light warm orange-red uniform and vehicle paint while preserving
-  skin, metal, wheels and canvas.
-  Use the approved `artwork/units/illustrated/rigged/tank-red.png` and
-  `tank-blue.png` masters as the base team-color references for future illustrated
-  assets. These painted colors are separate from the UI palette's swatches.
-  Field guns use four drawn elevation poses in strict side profile. Keep barrel
-  dimensions consistent, the carriage planted, and the operator moving naturally
-  at the rear controls. A tall wheel and solid shield give the unit a square footprint.
-  Supply depots are static concrete buildings with a distinctive rounded barrel-vault
-  roof seen head-on with slight elevation, detailed 1980s anime ink work and painted shading. They fill a comparable
-  square cell with neutral material colors and no ownership outlines or team labels.
-  Buildings are separate from terrain and units.
-  Ground supply crates use a nearly square stack of three closed wooden military
-  boxes: two on the ground and one of equal size on top. Keep the view almost
-  directly side-on, with shallow visible tops and minimal side depth. Fill the
-  sprite square in both dimensions. Assemble the boxes from
-  rough planks and nailed wooden battens for transport.
-  Preserve detailed 1980s anime ink work and painted shading in neutral material
-  colors, with a 232px footprint inside a transparent 256px cell. Render the
-  crate at 75% scale, centered in its map tile so it reads as portable cargo.
+- Keep the battlefield full width. On desktop, overlay the compact menu/logo/
+  turn/chat header, bottom-left controls, and right inspector. Opening the
+  inspector keeps the map at the same size and position.
+- On phones, landscape uses the thin header and right selection rail. Put
+  **surrender** at the left and gold **submit turn** at the right, with the
+  central controls centered. Editable friendly units get **orders** and
+  **details** tabs with a separate order-guide button. Keep the tabs fixed,
+  scroll their content, and put **close** in the rail footer. Hide the rail
+  when nothing is selected. Preserve orders while switching tabs or closing.
+- Mobile portrait shows a rotate prompt. Keep drafts and selection through
+  rotation. On regular compact layouts and in replay, account for panels
+  that reserve space separately from panels that overlay the map.
+- The [mobile layout](src/Fightlines/View/MobileBattlefield.elm) and
+  [battlefield workspace](src/Game/View/BattlefieldWorkspace.elm) own
+  dimensions and breakpoints.
+- Center the overview by default. Pan and zoom around the pointer or pinch
+  midpoint. Single-finger drags pan except during route selection, when they
+  trace the route. Taps and keyboard activation use the same destinations.
+  Keep scrollable controls outside the map's gesture area.
+- Keep **submit turn** gold during planning, with a quiet pulse and shine.
+  Waiting uses clear text plus the shared activity bar. Confirmation for
+  surrender or leaving an active game focuses **keep fighting** first.
 
-- Allied squares become ordinary move destinations once their occupants have
-  saved moves away. Shared final destinations stay unavailable. Revoking a
-  departure also revokes plans depending on its freed square.
-- Compatible loading squares appear with ordinary move destinations. Clicking
-  an occupied loading square saves the selected unit's move, including keyboard
-  Enter/Space, and preserves that unit's selection. During route preview and on
-  saved loading orders, show a large passenger → truck diagram using the units'
-  existing team-colored portraits over nightwood3. Its caption reads `boards truck`
-  and `when both arrive`, at the ordinary interface text size. Use one muted
-  yellow2 block around the artwork and behind the caption, without a contrasting
-  border or bevel. Omit the loading order's coordinate/movement summary and the
-  receiving-cargo explanation. Keep unload summaries and other order details.
-- Truck status shows `cargo: current / capacity` above a nightwood inset passenger
-  list. Each selectable row reuses the unload dialog's small portrait, kind name,
-  and compact health and supply meters. Rows stay flat, with visible hover and
-  keyboard focus; selecting one opens its inspection details.
-  Trucks carrying passengers show a gold square badge with a dark green border
-  and head-and-shoulders silhouette in the tile's lower-right corner. Carried supply
-  crates show a matching turquoise (`blue1`) badge with a dark green crate graphic
-  in the lower-left corner. Mixed cargo shows both badges; each counts only its
-  own cargo type. Each badge is about five logical pixels tall (40% larger than
-  the original). Two passengers or two crates widen their respective badge
-  slightly and add `2`. Both badges pulse in unison over two seconds
-  between full and 65% opacity, remaining visible during the dim phase and above
-  ordered-sprite dimming. Reduced-motion preferences keep it steady. Derive cargo
-  from current passenger locations and projected supply cargo, so loading and
-  unloading update the badges during playback. Empty trucks have no badge; concealed enemy cargo stays hidden.
-  The badge ignores pointer events; the truck's accessible label includes its cargo count.
-  Passenger selection shows inspection details. Choosing hold position on a loaded
-  truck opens the unload checklist for its current square, including with zero fuel.
-  Saving a loaded truck's move
-  destination opens a modal titled `unload`. Arrange cargo cards side by side
-  when they fit and stack them at narrower widths. Passengers have a large
-  portrait beside their kind, health, and supply. Crates and drums show their
-  artwork and remaining stock. Use the usual red/yellow/green passenger resource
-  thresholds and include numeric values plus a `low` label below 25%.
-  The entire card toggles its native checkbox, which sits in the upper-right
-  corner and retains visible keyboard focus. Selected cards have a gold
-  border and checkmark background. On mobile, let the cards scroll above
-  the action at the bottom of the dialog. A single action
-  says `proceed without unloading` when nothing is checked and becomes the gold
-  `choose unload squares` action when cargo is checked. Canceling the checklist or
-  leaving unload-square selection discards the truck plan and chosen exits;
-  proceeding without unloading or skipping remaining cargo explicitly keeps them.
-  Checked passengers and crates choose adjacent squares around the truck's
-  planned destination one at a
-  time. Passengers require distinct free squares; crates may share with allies
-  and passenger exits, but not enemies or other crates. Disable unchecked cargo
-  when adding it would prevent a complete placement, and explain unavailable
-  space or insufficient supplies beneath the checklist. Checked cargo stays enabled
-  so it can be deselected. While choosing each exit, inspect the current passenger
-  or show the current crate or drum's illustration and resource gauge, using the
-  same freight details as ground selection. Advance the inspector with each cargo
-  item. In mobile orders, show the current cargo's sprite, name, and unload count
-  in a green inset bevel above **cancel order**. Extend a solid gold branch from
-  the truck's destination dot to an outlined diamond on each saved unloading square. Keep
-  these markers visible above unit artwork and preserve tile interaction.
-  The selected passenger's exit uses a larger filled gold diamond with a bright
-  ivory tile outline, following selection while issuing infantry orders.
-  Passengers appear after truck movement during
-  resolution. Carried units do not have independent board sprites or focus targets.
+### Inspection and orders
 
-## Decision log
+- Title the inspector with the selected object. Show unit, building, freight,
+  then terrain when they share a tile. Use authoritatively supplied current
+  and maximum values in labeled gauges. Show help with the shared info marker.
+  Keep private or out-of-sight values concealed, and mark remembered freight
+  **last seen**. Keep cancel and revoke in the same action slot near the
+  unit portrait.
+- Display illustrated order rows in a board-anchored desktop menu or as
+  embedded mobile orders. Keep the desktop menu readable at every zoom.
+  Show shortcut labels on desktop. Keep visible keyboard focus and retain
+  ordinary gameplay shortcuts and the order guide during changes.
+- Ordinary move previews are solid gold and saved paths dashed gold.
+  Attack moves use red paths and show the chosen endpoint facing.
+  Ambush previews use dotted coverage and an illustrated red direction arrow.
+  Stand ground shares the arrow and uses one dotted square for facing.
+  Indirect-fire targeting uses the open-center ivory and crimson marker.
+  Keep route and facing overlays passive and above board dimming.
+- Preserve cargo and infantry order choices as one truck-planning interaction.
+  Use selectable illustrated cargo cards with numeric stock or passenger gauges.
+  Keep the checklist action visible on phones. Show distinct exit markers and
+  emphasize the currently selected passenger's exit.
+- Use the **order unloaded infantry** portrait picker and provide **hold
+  remaining infantry** and **cancel truck order**. Choosing a portrait opens
+  ordinary orders at the planned exit. Cancel clears the unfinished truck plan
+  and its dependent orders. After the sequence completes, Escape clears selection.
+  Keep freight load and pickup choices consistent with the supply and fuel
+  resource being handled.
 
-- 2026-10-04: use bundled Ubuntu Mono Regular for the interface, embedding the font data directly in the HTML.
-- 2026-11-06: extract the unchanged font into one shared TrueType asset used by both HTML entry points.
-- 2026-10-04: keep equal-size, normal-weight monospace typography; use a separate
-  inverted gray title bar, nightwood text fields, brighter primary actions, and
-  lowercase presentation throughout the interface.
+### Artwork and status
 
-- 2026-10-07: use a free-floating, pannable and zoomable game board with fixed
-  floating cards for roster, selection and view controls.
+- Use smoothly scaled sprites with readable red and blue teams. Keep feet,
+  wheels, and tracks planted in idle animation. Stagger unit phases. Field
+  guns use elongated inspector and theater portraits with their silhouettes intact.
+- Keep terrain inside its cell and tile hit targets independent of artwork.
+  Themes change artwork. Use desaturation and a dark overlay for fog.
+  Preserve the final reveal after normal final-turn playback.
+- Keep water cells synchronized, reduced motion on a still frame, and shore
+  overlays static. Cliff profiles use a consistent southern viewpoint. Beaches
+  blend sand into themed ground and show shallow water and foam at the edge.
+  Reuse the board's terrain artwork in inspection and authoring.
+- Use distinct health, supply, fuel, passenger, and freight markers. Keep
+  warnings grouped at the top and cargo in the lower corners. Keep numeric
+  values and accessible warning text available alongside color and animation.
+  Exhaustion identifies a living unit with an illustrated skull and a remaining
+  resupply warning. A death uses separate loss feedback.
+- Show known depot stock with a thin, independently selectable bar. Empty
+  stock has a steady red outline and supply glyph. Keep building HP separate
+  from stock, and keep wreckage inspectable. Use the fog treatment for
+  remembered objects and omit unknown stock values.
 
-- 2026-10-07: replace game floating cards with a full-height right panel, beveled
-  only on the left edge, containing selection details and view controls.
+## Combat and playback
 
-- 2026-10-09: move zoom controls to a fixed-size, flush bottom-left control panel
-  with a larger left-aligned submit button and inline turn number. Keep selection
-  and resolution information on the right; omit view-opening shortcuts for now.
+- Let the camera hold while projected action fits. Frame visible movement and
+  encounters with breathing room and measured panel overlap. Ease back to the
+  saved pan and zoom after playback. Keep unseen origins, positions, and future
+  sightings out of framing.
+- Freeze and spotlight the observable combatants before opening the theater.
+  Use beveled cards with terrain-specific backdrops and formations facing one
+  another. Combine reciprocal shots in one display and preserve the firing
+  and impact order. Use the **flank bonus** chip only when recorded shot
+  metadata grants it.
+- Use the approved firing drawings and synchronize audio to the shared
+  presentation clock. Anchor figures to the ground across posing and
+  impacts. Use recorded health transitions for casualties and show impacts
+  even when figure count stays the same. Keep infantry, trench, and bazooka
+  scenes steady. Other scenes can shake briefly at impact, with reduced
+  motion using a steady backdrop.
+- Use displayed environments for theater ambience. Matching environments share
+  a centered recording. Blend different environments quietly. A concealed
+  firing origin contributes neither a portrait nor a sound layer. An
+  unconfirmed indirect landing can show its impact without suggesting a
+  confirmed hit.
+- The theater offers **continue**, **see map**, and remembered **automatically
+  close**. Holding **see map** peeks at the battlefield and postpones automatic
+  closing. Releasing its pointer or keyboard action restores the card without
+  continuing. Keep timed firing and impact cues tied to playback across pauses.
+- Building hits use a separate strike over their terrain after any occupant
+  exchange. Sabotage shows a demolition charge beside the building and then
+  wreckage. Use the same theater controls.
+- Use an explosion, disappearance, and skull marker for observable combat
+  losses on the map. A carrier and its lost passengers share one acknowledgment
+  at the carrier tile. Supply exhaustion uses the separate skull-and-crossbones
+  theater without an incoming hit. Keep **continue** and **skip this dialog**
+  available even if a loss caption cannot be rendered. Skipping loss dialogs
+  preserves the map feedback and casualty pause.
 
-## Movement encounters
+The [combat theater](src/Game/View/CombatTheater.elm),
+[formation renderer](src/Game/View/CombatFormation.elm), and
+[playback presentation](src/Game/PlaybackPresentation.elm) own exact timings,
+placements, and cues.
 
-Turn playback follows the server's shared arrival timeline. Multiple units can
-advance at one boundary. Interpolate each unit continuously between its own
-arrivals, spanning intervening arrivals by other units using the supplied durations.
-Fog and selection occupancy change at boundaries. A departing enemy moves only
-to the edge of its last visible square while fading out. Hidden destinations and
-remaining paths stay concealed; loss of sight alone does not imply movement.
-The right panel omits turn
-summaries. Saved planning paths describe intent;
-playback and final positions reflect only the route actually traveled.
+## Turn dialogs
 
-- 2026-10-11: flatten the game controls into a short horizontal strip, with a pulsing
-  gold ready action and a solid smooth activity bar while submitting, waiting, or playing.
-
-## Low resource indicators
-
-On-board living units with visible resources show a square health warning badge
-below 75% of maximum health. Supplies and fuel show warning badges at 25% of
-their maximum or below. Pack only active badges horizontally
-from the tile's upper-left corner, in health, supplies, fuel order. Each square
-is 4.8 logical pixels wide (30% of a tile), inset 0.64 pixels with 0.24-pixel gaps.
-Use a red (`red1`) heart on light gray (`gray5`), a dark brown (`yellow1`)
-`ø` on gold (`yellow5`) with an opaque near-black (`gray0`) border, and a red
-(`red1`) `E` on near-black (`gray0`). Draw symbols as vector
-shapes so they remain clear and the fuel symbol stays uppercase.
-At zero supplies, replace the gold `ø` badge with an ivory (`gray5`) outline skull
-on a burgundy (`red0`) square with an opaque ivory border.
-Keep the living unit visible, and use `exhausted` in its accessible warning label.
-The shared inspector shows `exhausted · resupply within 2 turns`, decreasing to
-`1 turn` on the final rescue turn. Keep the countdown private with resource gauges.
-Replenishment must leave supplies after upkeep to clear exhaustion; a unit that
-first exhausts at the end of turn 5 dies at the end of turn 7 if still unsupplied.
-Blink the badges together on a two-second cycle: one second visible, one second
-hidden. Reduced-motion preferences keep them steady. Combat and unit-loss focus
-pause the animation with the surrounding interface. Ignore pointer events and
-render above ordered-sprite dimming. Leave the lower corners for cargo and preserve ambush arrows around
-the tile. Unit accessible labels include active warnings. Concealed resources,
-absent fuel, healthy resources, and dying units show no warning badges.
-
-## Unit death feedback
-
-Each observable unit loss pauses playback and opens a beveled `unit lost` dialog
-below the battlefield. Darken the other map tiles and surrounding controls while
-leaving the casualty's physical tile illuminated with a gold outline. Replace the
-unit with the theater's six-frame illustrated explosion over 600ms, fading its
-sprite beneath the blast from 120ms to 300ms. The explosion plays once, including
-while the dialog holds playback. Then fade in an illustrated skull and crossbones
-over 200ms and keep it on the tile until the casualty pause or dialog finishes.
-Passengers focus their carrier's tile without separate sprites or explosions. Freeze surrounding unit
-and interface animations and block battlefield interaction during the dialog.
-
-Name the lost unit and show whether the lethal shot was an `ambush` or `attack move`,
-alongside the attacker portrait, type, and owning player's name. Supply exhaustion
-first opens an `out of supplies` theater: slowly flicker an illustrated skull and
-crossbones over each figure three times in sync over three seconds. Keep figures
-full-size and opaque until they vanish together at the end of the last flicker,
-leaving the backdrop empty without incoming projectiles, explosions, or camera shake. Use the normal theater controls;
-automatic close waits for the final figure to disappear plus half a second.
-Reduced motion keeps skull markers steady until removal. The subsequent loss dialog
-reads `ran out of supplies`; passengers lost with a carrier identify that carrier
-and its loss cause. Use projected playback data so concealed casualties never
-appear on the map or in the loss queue.
-
-If an owner name is missing from the roster, replace all loss information with
-an `unable to display unit loss` error identifying the missing player number.
-Keep `continue` and the skip checkbox available so playback can proceed.
-
-Place `continue` and the `skip this dialog` checkbox together below all information.
-The checkbox defaults to unchecked and remembers its Boolean in local storage.
-Checking it dismisses the current dialog and skips future loss dialogs, preserving
-the explosion, disappearance, and skull marker. Continue acknowledges one loss event.
-A carrier and its lost passengers share one dialog naming every casualty and
-showing the carrier’s cause once; independent
-simultaneous losses appear in sequence. Enter activates the focused action, and Escape continues.
-After acknowledgment, keep the existing server-timed casualty pause before removing
-the unit and resuming movement. Long animation ticks stop at unacknowledged losses.
-Reduced-motion mode briefly shows a steady peak-impact frame, removes the sprite
-at 300ms without fading, and retains the steady skull and tile highlight.
-
-## Ambush planning and playback
-
-Choosing ambush uses a cardinal direction picker. Pointing
-previews facing and a firing area; clicking or an arrow/WASD key saves the order.
-Ambush selection omits cardinal text labels on the board; highlighted squares
-show the chosen direction.
-Red dotted inset squares with a stronger red fill indicate the one-square infantry/tank
-line or five-square field-gun plus sign: three squares forward and one on each
-side of the middle square. Saved ambush coverage and facing remain
-visible while planning. The right panel explains range, damage, and separate
-readiness/firing supply costs, then shows the saved direction and revoke action.
-Insufficient readiness supplies disable the order with an explanatory tooltip.
-
-Server-projected volleys render quick expanding bursts on target units, without
-attacker flashes, connecting lines, or floating damage numbers.
-Combat deaths use a slower map explosion, sprite removal, and a skull marker; public
-destroyed state supports observable enemy deaths without exposing their resource gauges.
-
-Every volley involving your units opens the theater, including concealed enemy
-combatants. Direct shooters become visible on the map at the opening spotlight
-and remain revealed through the following turn. Other encounter portraits do not
-add concealed units to the battlefield.
-Before a projected volley, freeze the pre-hit battlefield, unit idle sprites, and
-interface animations. For 300ms, darken every other board tile and outline the two
-participants in gold with a brief moving shine. Direction markers live in a final
-overlay above depots, units, ambush coverage, and direction-selection sectors.
-A dim overlay then covers the workspace while one beveled card headed `ambush`
-shows inward-facing formations on the illustrated backdrop matching each
-combatant's terrain and map theme. Road terrain uses a sunbaked freeway backdrop
-on grass and desert maps, with a matching snowy variant on snow maps. Both look
-across the lanes with nearby concrete barriers and minimal distant scenery.
-Supply and fuel depot tiles use a shared industrial yard, with a snowy variant
-on snow maps. Both show warehouses, crates, drums, and storage tanks against
-open sky, with no distant terrain. Leave the paved yard open for the formations,
-with packed snow in the winter variant. Use the same yard for indirect-fire impacts on depots;
-entrenched infantry use two small transparent trench segments over the same backdrop. Fortress tiles use their own
-concrete casemate courtyard with thick sloped blast walls, firing slits, a steel
-door, and sandbagged parapets. Keep the foreground fighting deck open for unit
-formations; snow maps use the matching snow-covered fortress courtyard. Infantry
-on fortress tiles use ordinary formations without occupied or empty trench
-overlays, even when their recorded status is entrenched.
-Omit visible unit/player labels. The western participant appears
-left, facing right; the eastern participant appears right, facing left. For a
-vertical encounter, the northern participant appears left.
-When a recorded shot benefits from hitting a ready defender's flank or rear,
-show a static `flank bonus` chip over the firing formation's outer top corner:
-top left for the left formation, top right for the right. Use a square yellow1
-surface, yellow6 text, and a gray4 border with `px2`/`py1` padding and a `p2`
-corner inset. Keep the chip outside the rumbling artwork and clear of pointer
-events. Return fire retains its own bonus; both formations may show a chip.
-The server supplies this shot metadata without exposing orders or supplies.
-When only one scene is shown, center it at the same width and aspect ratio as
-one scene in the paired layout, including concealed-gun impacts and depot damage.
-The card opens with a 200ms expansion and slight overshoot. Every unit kind
-uses staggered figures. Full-health infantry has one two-man machine-gun team,
-three prone riflemen, two kneeling riflemen, and one standing rifleman, using
-team-colored pose artwork. Keep the gun team together as a four-HP group and
-each rifleman as a two-HP figure. Use three columns and three depth rows:
-standing / kneeling / prone in the rear; empty / machine-gun team / prone in
-the middle; kneeling / empty / prone in the front. Preserve the larger gun team
-and prone riflemen and the slightly smaller kneeling riflemen.
-Exposed infantry that actually fire alternate their existing team-colored poses
-with matching muzzle-flash frames for a 1920ms burst. Keep flashes brief (40ms),
-with independent offsets and 160-200ms rifle cadences so repeated poses fire out
-of sync; the machine-gun team fires faster, every 90ms. Preserve the original
-figure pixels, scale, and footing while allowing the flash beyond the idle canvas.
-Recorded return fire retains its 45ms offset. Pause the flicker with the theater
-clock and hold ready afterward. Start impacts 100ms after the burst's midpoint,
-so infantry keep firing while targets are hit. Keep the theater open until both
-firing and impacts finish, then apply the ordinary automatic-close delay.
-Reduced motion keeps the ready drawing; trenches retain their existing artwork.
-When infantry fire at tanks, including recorded return fire, show four two-person
-bazooka teams in two depth rows at full health. Each pair represents four HP;
-retain partially intact pairs. Use the existing red and blue standing-shooter /
-kneeling-loader artwork and infantry backdrop calibration. This formation also
-replaces the static trench soldiers during anti-tank fire. Infantry that do not
-fire retain their ordinary formation.
-Paint figures from back to front while keeping their casualty identities stable.
-Anchor every pose to the ground and mirror the whole formation toward its opponent. Other kinds have four figures at 13–16 HP, three at 9–12,
-two at 5–8, one at 1–4, and none at zero. Partially intact figures remain visible.
-Field-gun formations use one full-size gun centered in the foreground and three
-smaller guns scattered horizontally behind it, with shallow vertical variation.
-Keep their placements stable through impacts and paint from back to front.
-Hold the scene for one second after the opening animation finishes before combat
-begins. Attacking tank figures fire once, 90ms apart, using red and blue color edits
-of the approved ten poses. Hold the ready drawing until the flash, then begin
-a sharp backward hull rock 30ms later. Keep the same barrel bitmap at its full
-length and thickness, rotating and translating with the turret without scaling
-or retracting. Return the hull directly to level by 370ms without anticipation
-or forward overshoot. Let the track-end dust spread and thin through 1050ms,
-then hold the matching final rest drawing. Keep the track anchor aligned
-with the static portrait's center and footing. Recorded return fire begins 45ms after the primary formation; receiving a
-shot alone never triggers firing. Firing field guns use red and blue color edits
-of the approved eight complete drawings, mirrored toward the opponent.
-The chief signals, the four crew members brace and react, and the barrel and
-breech recoil amid the flash, smoke, and dust. Use 320ms of preparation before
-the flash and 840ms for the complete signal/recoil/recovery sequence, staggering
-figures by the same 90ms. Keep the wheel aligned with the static portrait and
-hold the final pose after recovery. Observable indirect-fire guns use this same
-sequence. Wait for all firing figures to finish (1050ms per tank, 840ms per field
-gun) and a 100ms travel beat before any participant hit. Unsupported unit kinds
-retain the existing timing until their attack artwork is added. Reduced motion
-keeps the original still portraits while preserving this sequence's timing.
-Use the server's per-pair before/after health, including
-observable enemies, without theater HP bars. Lost figures play a six-frame illustrated horizontal projectile impact over 100ms,
-beginning at 1200ms plus any firing phase, with losses staggered by 120ms. Draw impacts above the entire formation so neighboring figures cannot obscure
-the projectile. The moving projectile approach and contact each get 10ms, followed by a 30ms impact
-flash and 30ms pressure blast. Only 20ms remains for the two clearing frames. The shockwave blows
-apart and vanishes, with no ember or lingering smoke phase. Each casualty fades
-beneath the blast between 20ms and 50ms. Mirror the strike from the opponent's side. Survivors
-remain in place. Infantry scenes stay steady through firing and incoming hits,
-including trenches and bazooka teams. Other unit scenes shake their backdrop
-and formation together on contact, with a sharp translation and slight rotation
-that decays to rest over 160ms.
-Start at impact, after the 20ms projectile approach; later contacts kick again.
-Overscan backdrop artwork to avoid exposed edges, keep the card controls still,
-and suppress the shake for reduced motion. Damage within a count band shows an impact without inventing
-a casualty. Supplies and fuel stay concealed.
-Play the original small-explosion sound variants at each projectile contact,
-after the 20ms approach, including the later building strike and sabotage.
-Unconfirmed indirect landings use the same generic sound without implying a
-hidden hit. Supply exhaustion has no explosion sound. Live games and replays
-share timing; paused clocks and map peeks do not repeat cues.
-Under the theater, use the approved real outdoor ambience: Oklahoma prairie
-choice C, forest canopy, snowstorm wind, Atacama wind and Atlantic surf. Blend
-different displayed environments quietly with gentle left/right positioning.
-Matching environments share one centered recording, keeping total background
-energy consistent across scene counts. Fade starts, changes and exits over 350ms.
-Map peeks and held cards keep the environment running; replay pause silences it.
-The building follow-up changes to its destination environment alone. Concealed
-firing origins never contribute an ambient layer.
-The card offers an `automatically close` checkbox beside its actions. It defaults
-to unchecked and remembers its Boolean in local storage. When checked, the card
-continues 500ms after its last impact and camera shake finish. Each encounter
-keeps its animation and casualty pause; holding `see map` postpones closing.
-The card remains open when unchecked, with a `continue` button. Enter also continues, without
-an explanatory keyboard prompt. Holding `see map` makes the whole card completely transparent
-and clears the backdrop while darkening all board tiles except the combatants,
-whose shine repeats while held; mouse release or leaving the button restores it.
-Keyboard users hold Enter or Space on `see map`; releasing restores the card
-without continuing combat. Moving keyboard focus away also restores the card.
-Keep the battlefield camera still while projected action fits the current view,
-including when another visible unit starts moving or combat begins. When action
-leaves the viewport, pan with a 1.2-second ease-in-out transition. Settle the
-initial view and stationary encounters before advancing; camera adjustments
-during travel keep movement and engine audio running. Include one tile of
-breathing room when reframing; reduce zoom only when simultaneous subjects
-cannot fit together.
-Keep subject tiles in the navigation surface between the header and bottom
-controls, and clear of the inspector's measured width when it is open.
-Frame the upcoming currently visible route before travel starts, stopping lookahead
-at combat, transport, or a gap in sightings. Future sightings and newly revealed
-tiles must not steer the camera. Track interpolated movement for any further
-necessary pan. Idle frames retain the last playback view. Combat, casualty
-pauses, and projected indirect-fire impacts use the same visibility rule.
-Ease back to the saved pan and zoom when playback finishes. Reduced motion makes
-camera changes immediate. Concealed combatants remain absent from the
-battlefield and do not affect camera framing.
-Combine reciprocal shots into one display. After continuing each theater, show
-its casualties vanishing in quick explosions. Keep the server-provided death
-pause on the cleared tiles, then remove those units before the next theater.
-Reciprocal casualties share a pause. Reveal the remaining volley map feedback
-after all pairs have appeared, then resume the server timeline.
-The combat overlay blocks battlefield interaction and camera shortcuts. Reduced
-motion uses steady impacts and figure removal after the hit, without pop, fade, or shine
-motion. The automatic-close option uses the same animation timing with reduced motion.
-
-## Attack move
-
-Infantry and tanks reuse movement tracing for attack move. Render a solid red
-preview and a dashed red saved path. Choosing the destination by drag release,
-click, or Enter opens the cardinal direction picker centered on that destination.
-Three dotted squares highlight the allowed cardinal directions around the destination.
-Omit the direction pointing back along the route's final segment; pointer and
-keyboard input cannot select it.
-Pointing or focusing a square turns it red and previews final facing in the endpoint
-arrow; clicking, Enter/Space on a square, or an arrow/WASD key saves the attack move.
-The chosen red square remains beside the saved destination. The inspector explains
-the direction step and offers cancel order. The saved arrow shows final facing independently of the
-last route segment. Keep orders revocable and preserve
-selection after saving. Enemy squares are legal destinations; allies remain
-passable, and attack move offers no loading or unloading choices.
-
-Encounters use the existing combat theater with an `attack move` heading.
-Reciprocal shots appear together. Preserve concealed encounter portraits and
-authoritative health transitions without revealing enemy resources or routes.
-
-
-## Supply logistics
-
-Keep automatic replenishment passive. A selected depot uses a unit-style inspector:
-its name and info marker, the illustrated building on an inset nightwood screen,
-a `supplies` gauge with server-provided `current / maximum` values, and the terrain
-row. Use the unit gauge's red/yellow/green thresholds, with `low` below 25% and
-`empty` at zero. Keep depot and stock explanations behind their info markers;
-omit separate replenishment, vehicle fuel, and supply crate sections. Unseen depot
-stock reads `stock outside sight`, with no numeric value or gauge. Switching
-inspected objects closes expanded explanations. Ground crates retain their stock
-and delivery timing.
-Truck cargo counts include passengers and crates. The selected truck inspector
-shows passengers and freight together in one inset nightwood cargo list, with
-subtle dividers between rows. Each freight row shows its illustrated sprite, name,
-stock beneath the name, and a slim gold fill bar; saved unloading destinations
-appear beneath that stock. Keep the shared slot count in the cargo heading and
-replenishment help in a native info dialog. Passenger rows retain their
-inspection action and resource details. An empty cargo tray reads `empty`.
-Saving a truck destination on a depot opens a modal titled `load supply crates`
-asking `how many crates would you like to load?`, with compact `none`, `1`, and
-`2` buttons in a horizontal row. Omit counts that exceed stock or shared cargo
-room. Put depot stock above the question, then quantities and two quiet gold
-cargo fill bars below each numbered button. Partial cargo fills only part of
-its bar; omit separate full/partial explanations. Empty depots show a short
-explanation. Full trucks skip the loading dialog. Unknown stock reads
-`stock outside sight`, shows `?`
-for quantities, and omits cargo fill bars. Give buttons descriptive accessible
-labels with their count and known quantity.
-Dismissal keeps the move without loading.
-Ground crates and fuel drums are neutral. After saving a move or hold on visible
-ground freight with room aboard, show a native modal titled `pick up supply crate`
-or `pick up fuel drums`. Show the freight in an inset nightwood cargo box using
-the side panel's illustrated freight row, resource quantity, and gold fill bar, with a
-primary `pick up` button and secondary `leave on ground` button. Dismissal keeps
-the route and leaves the freight. Full trucks skip this choice. Offer ground
-pickup before depot loading when freight shares a depot square; a turn handles
-one freight action. Save the route first, then add unloading. These controls
-are absent in locked phases. A saved supply run shows its destination and load/unload
-counts alongside revoke. Planned crate exits use quiet gold dotted outlines.
-Ground crates use the illustrated neutral supply-box asset and support pointer and
-keyboard inspection through their tile. Previously seen crates and fuel drums remain
-in fog using the terrain's darkened, desaturated treatment. Their accessible label
-and inspector mark them `last seen`; stock remains the last observed amount. Seeing
-the square again refreshes the freight or removes it if absent. Empty crates disappear
-on replenishment only when observable.
-
-Depot tiles show a thin stock bar along their bottom edge, above units and route
-artwork. Known stock uses green while healthy, yellow with a two-second blink at
-25% or below, and a steady red outline with a vector `ø` when empty. Keep its
-click target present throughout blinking; reduced motion shows a steady bar.
-Clicking the bar or activating it with Enter/Space opens the depot inspector,
-even on occupied tiles. A selected on-board unit standing on a depot also shows
-the complete depot inspection beneath its own row. Unknown stock has no map bar
-or numeric value; the inspector row says `stock outside sight`.
-
-Treat a truck move, its unload choices, and its infantry orders as one planning
-sequence. Once exit and freight-loading choices are complete, open the native
-`order unloaded infantry` dialog on desktop and mobile. Explain that the infantry
-can move or attack after unloading and show a portrait button for each infantry awaiting an order.
-Choosing a portrait centers its unload square and opens the ordinary orders.
-Show `unloaded infantry` above the mobile options, with progress when there is
-more than one. Advance to the next infantry on the board as orders are saved.
-The dialog offers compact `hold remaining infantry` and `cancel truck order`
-buttons. Hold saves orders at the chosen exits. Cancel and Escape clear the
-truck order and its dependent orders while the sequence is unfinished.
-After every unloading infantry has an order, Escape only clears selection and
-keeps the completed plan. Trucks unloading only field guns or freight complete
-the sequence when their final cargo choice is saved.
-
-## First-game briefing
-
-Before a player's first active game, show a wide native reading dialog titled
-`before your first turn`, ahead of the ordinary turn introduction. Use a
-normal-size gold `welcome to fightlines!` greeting on an inset nightwood3 strip
-with a gentle diagonal glare every 4.8 seconds; reduced motion keeps it still.
-Explain that resupply is a core game mechanic and units can be lost without it,
-including supply consumption while holding position. Illustrate the depot →
-truck → front-line delivery loop with the existing game artwork and three short
-steps. Show a small cross-shaped example of resupply reach, the separate role of
-fuel, and the two-turn deadline for exhausted units. Keep the close and play
-actions outside the scrolling content so they stay visible on short screens.
-
-The title-bar close, Escape, and `got it — let's play` all remember dismissal in
-browser storage across games and reloads. Keep this preference separate from
-turn-introduction skipping; closing the briefing continues to the normal turn
-introduction, when enabled. Omit any “only appears once” caption.
-
-## Turn introduction
-
-Introduce each planning turn with a centered, wide beveled modal over a dimmed
-battlefield. A plain `bgNightwood3` panel with `indentStrong`, matching text fields and unit
-portraits, carries a large gold two-digit turn numeral. Keep its background free
-of scanlines, gradients, and decorative nested borders; retain the drifting shine. This decorative numeral is an exception
-to the usual 1rem typography; its accessible equivalent is the ordinary title.
-The card fades in over 320ms while its central panel pops in with a small
-overshoot. Keep transforms off the dialog itself so fixed viewport controls stay
-anchored to the screen. A diagonal shine drifts
-across the panel every 4.8 seconds. Place `begin turn` first, beside the remembered
-`skip this dialog` checkbox. Checking skips and dismisses; Escape also begins.
-Offer a secondary `replay turn` button beside `begin turn` when the previous
-turn has playback frames. Replay returns to this same card; beginning the turn
-or skipping the dialog removes access. Omit replay on the first turn and game
-conclusions.
-The native modal traps focus and blocks battlefield input. Use viewport gutters
-and a compact layout at short heights; reduced motion removes fade, pop, and shine.
-
-For turns after the first, replace the waiting caption with an inset previous-turn
-report: `your units lost`, `confirmed enemy losses`, `known damage inflicted` in HP,
-and `your supplies consumed`. Use four quiet metric cells in two columns, wrapping
-to single rows on narrow screens. Reduce the decorative numeral to leave space
-for the report. Keep these figures viewer-specific and retain zero totals.
-
-Fuel depots use the illustrated fuel-storage tank sprite, the same selection
-behavior, inspector, stock bars, low/empty warnings, and fog treatment as supply
-depots. Their copy names fuel and describes automatic vehicle refilling.
-Fuel depots open the same available-load dialog titled `load fuel drums`,
-asking `how many drum loads should this truck take?`, with fuel quantities
-below the numbered buttons. Fuel freight uses the red three-drum stack in ground rendering and cargo choices,
-with a red drum badge on trucks. Mixed supply/fuel freight uses separate
-lower-left badges and shares the same capacity and unloading rules.
-
-## Depot destruction and sabotage
-
-Fortresses use `fortress-illustrated-v2.png`, with solid concrete walls and an
-open roof fighting deck. Place them from the editor's `buildings` group alongside
-supply and fuel depots. Reuse building selection, inspector, HP gauge, shell
-impacts, sabotage animation, fog memory, and destroyed-building wreckage.
-Show `8 / 8` HP initially and explain the 75% damage reduction for occupying
-units, with a minimum 1 HP per hit. Show no resource stock bar, gauge, or loading
-dialog. The destroyed inspector reads `destroyed · no defense bonus`.
-
-Infantry already occupying a surviving depot also receive a `sabotage` order
-with the transparent illustrated red demolition charge and brass-plunger icon.
-Its saved order retains revoke and explains the whole-turn action, normal upkeep,
-and completion after combat if the infantry survives. Hide it away from depots,
-on destroyed depots, and during dismounting; disable it when upkeep is unaffordable.
-Depot inspectors show HP separately from resource stock. Fuel depots start at
-1 HP and supply depots at 3 HP. Both destroyed depot kinds use the same illustrated
-crater and building wreckage at full opacity. Give the wreckage a square foundation
-footprint and anchor its front edge near the bottom of the sprite cell. Depots
-remain inspectable and explain that replenishment and loading have stopped.
-Fog retains the last observed condition
-and its normal artwork filter. Shell impacts
-show the attacker and occupant hit first, then replace those scenes with one
-centered depot map sprite taking its own strike. Use the building sprite to make
-clear that the whole depot is hit; place it over the tile's terrain backdrop,
-matching the map theme, and omit the depot HP text from the theater.
-Destroyed depots switch to the same wreckage sprite as on the board. Automatic
-close waits for this follow-up strike to settle. Sabotage opens a single theater
-scene over the tile’s terrain backdrop, matching the map theme. Show a demolition
-charge beside the structure without an infantry sprite; the existing burst then
-replaces the structure with wreckage. The structure is the only casualty; units
-and freight remain unharmed.
-Use the standard theater controls and wait for the blast to settle before automatic
-close. Retain the existing map burst after continuation.
-
-## Stand ground
-
-Stand ground opens the same cardinal direction picker as ambush. Pointer hover
-previews facing with the same illustrated direction arrow and one dotted red square
-directly ahead. Keep the square while choosing and on saved orders, including
-infantry planning from a truck's unload square. A click or arrow/WASD
-key saves the chosen direction. Keep the arrow on saved orders and during playback,
-including logged replays. Show the saved order, revoke action, defensive readiness
-explanation, and normal upkeep plus readiness supply cost in the inspector,
-including the cost while choosing direction. Disable it when readiness plus upkeep
-is unaffordable. The red square indicates facing; stand ground does not fire.
-
-## Mountain terrain
-
-Use the approved pointed mountain overlay, preserving the grassy hill artwork's
-fine ink work, painted shading and exposed rock faces. Green, snow and desert
-themes use their own transparent sprites without extra theme filters. Keep the
-terrain inside its cell, over the existing themed ground. Terrain inspection
-explains +2 sight, infantry's extra movement point, and vehicle impassability.
-
-## Water terrain
-
-Use the approved painted crest lifecycle animation as an opaque tile in every
-map theme. Crests advance, break into foam, and dissolve over a 1.92-second loop;
-keep adjacent cells synchronized and clip artwork inside each cell. Reduced
-motion holds the first frame. Existing fog and combat/loss dimming still apply.
-The editor brush and inspector reuse the board artwork. Explain that every
-current unit is blocked, including passenger unloading, and sight remains clear.
-
-Water beside ordinary land gets an illustrated rocky bank, contact shadow,
-and foam. Use a fixed southern viewing direction: water south of land exposes
-a tall cliff face; water north of land shows a thin sharp rim. Side banks stay
-narrow, and front/rear corners follow the same perspective. Mirror side artwork
-instead of rotating its vertical faces. Derive the bank from neighboring terrain, including exposed diagonal
-corners, and keep it inside the water cell so tile targeting remains accurate.
-Beach is an explicit sandy land tile: blend its inland edges into themed ground,
-and use a shallow turquoise wash and delicate foam along adjoining water instead
-of cliffs. Bend the straight-edge sand and foam profile around beach corners so
-both ends join the adjacent shore. Reuse the same neighbor-aware artwork in the inspector and editor.
-Keep the approved water animation beneath these static shore overlays. Shore
-artwork uses the tile's existing fog, dimming, and selection lifecycle.
-
-## Development map editor
-
-Roads use the approved transparent straight, corner, T-junction, and crossroads
-sprites over the map's themed ground. Each authored road terrain selects a fixed
-sprite and rotation; battlefield rendering never infers its connections from
-neighbors. Keep the straight tile's narrow gravel shoulders and lane-marking
-alignment at junction exits. The editor offers one road brush, deriving and
-storing each orientation while painting or removing adjoining terrain. Board,
-editor previews, and terrain inspection share the same artwork and fog styling.
-
-Contain all editor content in beveled cards within the viewport; the page itself
-does not scroll. The top editor card contains map selection, undo/redo, the gold
-save action, play navigation, release status, theme, dimensions, resize, and live
-save feedback. The release status select offers **draft** and **released**; changes
-apply when saving, and new maps start as drafts.
-Place a secondary **new map** button beside the map actions. It reveals an inline
-map-name field with **create draft** and **cancel**, with validation beside the
-field. A new draft starts with a blank 17 × 17 board and uses the existing theme,
-resize, and save controls. Keep gold reserved for **save map**.
-Let controls wrap, with internal scrolling on short or narrow screens.
-
-Use one tools card with a fixed title bar and scrolling body beside a headerless
-workspace card. Choose terrain, starting units, or depots first, then show the
-relevant brushes in a regular grid with artwork previews. Use inset, pressed
-choices with accessible pressed state for selected tools; reserve gold for save.
-Show player and facing with unit tools. Keep brush size and mirror painting in
-the tools card. Fit the board to the workspace's actual available space by default;
-the canvas pans freely inside its clipped inset surface. Primary dragging paints;
-the hand tool, Space-drag, or middle dragging pans without changing the brush or
-undo history. Show a grab cursor while the hand tool or Space is active and a
-grabbing cursor during panning. Scroll zooms around the pointer. Keep minus,
-percentage, plus, and fit map controls beneath the canvas, alongside the active
-brush and shortcut hints. Clicking the percentage restores 100% (32 pixels per
-tile) around the current view center; fit map centers the whole map with breathing
-room and follows workspace resizes. Plus/minus zoom, arrow keys pan, and Home fits
-the map outside form fields. Tile keyboard activation uses Enter; Space is reserved
-for temporary panning. On narrow screens, bound the tools
-card's height and put the workspace below it. Mirror painting swaps unit players
-and reflects horizontal facing.
-
-## Indirect fire
-
-Field guns enable the existing indirect-fire order. Choosing it highlights all
-in-range tiles, including fog, with the existing quiet gold tile outlines. Tile
-buttons say `fire indirectly at (x, y)` and support Tab and Enter/Space. Saving
-keeps the gun selected, shows target coordinates and revoke, and leaves the
-illustrated targeting sight on the board.
-Hovering or focusing a legal tile previews the same open-center ivory and crimson
-gunsight above units and depots; leaving the board or aiming outside range clears
-the preview. Saving briefly contracts the sight with a red flash, then holds it
-steady until revocation or the turn leaves planning. Saved sights use 50% opacity
-when their firing unit is no longer selected, returning to full opacity when that
-unit is selected again. Reduced motion removes the
-lock animation. The pointer uses a crosshair while selecting a target. The
-inspector explains final-occupancy
-resolution, friendly fire, uncertain fog hits, the 12-tile radius, and readiness
-and shot costs. Projected tile landings reuse the combat burst even on empty or
-fogged squares. Confirmed hits use the theater and unit-loss dialog headed or
-labeled `indirect fire`. Landings without a confirmed target open a scene headed `indirect fire impact`,
-with the observable firing gun beside the target terrain, the existing explosion
-animation, and theater controls. Preserve horizontal map order. If the firing gun
-is concealed, omit its portrait and origin. Show any observed target with its
-authoritative health transition and the `indirect fire` heading; preserve trench
-artwork over its terrain backdrop. Entrenched infantry receiving indirect fire
-show empty trench segments with no soldiers or weapons, implying they are
-sheltering underground. Retain their calibrated placements and impact timing.
-When no target is confirmed outside sight, cover the
-target terrain with a fog overlay and a centered question mark. Keep clear terrain
-for unconfirmed landings on tiles within sight.
-Below the scene and above the controls, explain that an enemy
-field gun fired from an unknown location at this space; for an observable gun, explain
-that a field gun fired indirectly at this space. For an observed target, state
-whether it was hit or destroyed. Otherwise state that no target
-or damage could be confirmed and show no hit/miss claim. Loss dialogs retain
-indirect fire as their cause without an attacker portrait or location.
-
-## Infantry digging and entrenchment
-
-Enable the existing `dig in` menu action only for unentrenched infantry that
-can afford the server-provided digging cost plus upkeep. Keep it disabled on roads,
-depots, fortresses, building wreckage, and during a planned dismount.
-Saving shows `dig in`, its supply cost, the end-of-turn
-completion, and the standard revoke action. Infantry cannot fire while digging.
-An entrenched unit uses its approved red or blue dug-in sprite on the board,
-in the inspector, with existing facing mirroring. In the combat theater, show two
-team-colored trench segments side by side over the terrain backdrop. Each segment
-defaults to 35% of the panel width; mirror the pair toward the opponent. The
-backdrop’s infantry calibration independently controls each trench’s size and
-bottom position. Resize each around its own bottom edge, keeping a horizontal
-gap between them. Use the revised infantry artwork and existing team palettes.
-Preserve existing impact timing; hits follow the trench placement with bursts at
-2.5 times the ordinary figure scale. When all health groups in either segment
-are lost, switch it to the empty trench and briefly fade a skull and crossbones
-over it. Once the whole unit is destroyed, hold one centered skull until the
-encounter closes. Wait for segment markers to finish before automatic close.
-Name the selected unit `entrenched infantry` and include this status in its
-accessible label. Changing facing preserves the sprite; successful movement
-restores the ordinary infantry sprite, and leaves no terrain graphic behind.
-
+- The **before your first turn** briefing explains the depot → truck → front-line
+  loop with the existing artwork, a short example of resupply reach, and the
+  distinction between supplies and fuel. Remember acknowledgment independently
+  of the turn-introduction preference.
+- Use a gold turn numeral and a restrained shine inside a plain green inset
+  for turn introductions. The previous-turn report shows viewer-specific
+  losses, confirmed enemy losses, known HP damage, and supplies consumed.
+  Retain zeros. At short heights, prioritize fitting the result, report, and
+  actions over the numeral. Keep **begin turn** and optional **replay turn**
+  together. Replay returns to the introduction.
+- The unassigned-orders warning keeps **keep planning** and **submit anyway**
+  visible below its scrolling list. Checking **skip this dialog** applies to
+  later warnings. The current turn still requires confirmation.
+- Make the inactivity warning actionable above other dialogs without losing
+  drafts. Use the viewer's countdown, a gold **i’m still here** action, and
+  inline retry feedback. Explain the outcome privately in the ordinary
+  game conclusion.
+- Settings uses **dialogs** and **audio** side tabs, with immediate persisted
+  changes and reachable **done**. On phones, keep **done** below the side tabs
+  and let the settings pane scroll independently. Retain volume levels while muted. Keep
+  feedback in a native form with initial text focus, draft preservation on
+  dismissal or failure, and an inline result. The conclusion pairs secondary
+  **give feedback** with primary **return to battlefield**.
 
 ## Chat
 
-C on the live battlefield or **chat** in the always-visible battlefield header
-opens a compact native dialog in the center of the screen with a transparent
-backdrop. Disable both entry points throughout turn playback. Starting playback
-closes an open composer while preserving its draft. Focus its inset green text
-field, preserve planned orders, and suspend gameplay shortcuts while it is open.
-In the lobby, C focuses its always-visible chat field. Ignore the shortcut in text
-fields, native select controls, and other dialogs. Enter retains ordinary
-activation and movement-path confirmation outside chat. Enter sends. Escape and
-the bottom **close** button dismiss the dialog. On desktop, keep the field full
-width. Group gold **send** and **close** on the left below the field and align
-the **message history** toggle to the right of the same row.
-On mobile, keep history visible and let it fill and scroll within the space
-above a single row. Place **close** on the left with a wider gap before the
-message field and **send** on the right. Omit recipient labels and keyboard
-hints. Disable browser autocomplete suggestions on the message input.
-Show sender names and
-message text without timestamps in lobby chat, game history, and replay history.
-Disable repeat submissions
-while sending. Sending immediately closes the game dialog; failures retain the
-draft and appear in the same floating error card as other HTTP failures, with
-retry and dismiss actions. Errors stay outside the chat box, including when the
-dialog is open.
+Keep sender names and chronological text without timestamps in lobby, game,
+and replay history. Keep the lobby composer visible. Game chat is a native
+dialog with a transparent backdrop on desktop. On phones, show scrollable
+history above the composer. Preserve drafts across dismissal and playback,
+and keep failed-send retry accessible outside the chat box. Open history at
+the bottom and preserve position while the reader scrolls back.
 
-Show up to three recent messages briefly over the upper-left battlefield. Use
-readable red/blue player names with ordinary ivory message text and a dark text
-shadow. Messages do not intercept map input. On desktop, history expands above
-the input, with a bounded scroll area in a beveled green depression. Show the complete
-conversation in chronological order, newest at the bottom, grouped by turn and
-lobby. Opening history starts at
-the bottom. New messages stay in view while the reader is at the bottom; scrolling
-up preserves the reader's position.
-Closing game chat leaves no persistent conversation panel. The lobby instead
-has a dedicated chat card below the players, with a bounded, scrollable
-message list in an inset green depression and an always-visible input beside
-the send button. The transcript fills the available space and scrolls internally;
-keep the composer visible when vertical space is limited. Lobby
-messages stay inside that card; sending clears its
-field while retaining the panel. Recorded replays have a read-only
-**message history** dialog containing the entire recorded conversation.
-When a player enters a running game, show the latest in-game messages on the map
-after its turn introduction. Keep those messages available throughout the intro
-before starting their display timeout.
+Recent game messages float over the map without intercepting input. Server
+shutdown reminders use the same presentation and history as chat. Keep the
+map free of a persistent shutdown timer.
 
-Deployment shutdown reminders arrive as ordinary chat messages from `server` at
-ten minutes, five minutes, one minute, and thirty seconds remaining. Use the same
-neutral sender color, incoming radio cue, temporary battlefield display, and
-history as chat. Keep the battlefield free of a persistent shutdown countdown.
+## Admin and replay
 
-## Logged games and replay
+Use the ordinary shell and compact beveled dashboard cards. Put status,
+refresh, and logout together, with summary metrics in a green inset. Expand
+game details, feedback, and analytics event data in place. Keep list pagination
+and retry controls near their results. Label analytics logs by UTC day and
+server. Show an unreadable recording's ID and error in place of its details.
 
-Use an ordinary beveled card for the logged-game list, with flat separated rows
-showing the name, UTC start time, map, both players/controllers, completed turns,
-and outcome. Each readable row links to its replay. Unreadable archive rows show
-only the archive ID and error, without placeholder game details or a replay link.
-Keep refresh navigation above the rows, with explicit empty/loading
-and failure states.
+Replay uses the same battlefield and inspector as live play, with turn,
+player-view, playback, and camera controls. **Fog of war** starts checked
+and **show orders** starts unchecked. Overlays remain passive and selecting
+a unit emphasizes its recorded order. Keep order, defensive readiness, and
+weapon availability distinct, using the appropriate recorded instant and
+viewer projection. Include an explicit return to the archive list or dashboard.
 
-Replay reuses the full-viewport battlefield and inspection panel. Replace the
-submission controls with the game name, back link, previous/play/pause/next,
-turn and player-view selectors, and the existing camera controls. Keep order
-entry unavailable. Bound the replay control panel to 40% of viewport height,
-with internal scrolling when its controls wrap on narrow or short screens. Turn
-zero shows the starting board. Include a checked-by-default `fog of war` checkbox
-below the turn and view selectors. Unchecking reveals the complete recorded
-board and playback; retain the setting across turn and player-view changes.
-Preserve combat/loss dialogs and the normal final reveal when fog is enabled.
+## Authoring tools
 
-Place an unchecked `show orders` checkbox below `fog of war`. It toggles the
-selected turn's recorded routes during playback, pauses, and after completion,
-and retains its value across turn and player-view changes. Reuse gold movement
-routes and red attack routes; show stationary order labels, final facing, unload
-routes, indirect-fire targets, and `stopped` at interrupted destinations. Selecting
-a unit emphasizes its order and fades the others. Keep overlays passive so they
-do not intercept battlefield inspection. With fog enabled, show only the viewed
-player's orders; disabling fog shows both sides.
-
-Replay unit inspection and combat portraits show three text rows: `order`,
-`defense`, and `weapon`. Defense distinguishes ready, unready, and always-exposed
-units; weapon status distinguishes can fire, already fired, insufficient supplies,
-not ordered to fire, aboard transport, destroyed, and unarmed. Keep defensive
-readiness separate from permission to fire. Use the state before each volley in
-combat portraits and the displayed snapshot's state in the inspector. Conceal
-enemy readiness while fog is enabled, including in combat portraits.
-
-
-## Backdrop calibration review
-
-The development backdrop review page has one scene editor. Place backdrop/unit
-selectors and an unchecked **face left** checkbox above the exact gameplay scene,
-then four sliders:
-front footing position, row separation, front unit size, and rear size relative
-to the front. For infantry, expose an **infantry position** selector. Choosing
-**entrenched infantry** replaces those sliders with independent **y position**
-and **size** sliders for **trench 1** and **trench 2**. Trench 1 is behind trench 2
-in the direction the infantry face; smaller y values move that trench higher.
-Size is each segment’s width as a percentage of the panel (10–45%). Keep the preview unobstructed and use the sliders for adjustments.
-Keep unit size changes anchored on ground contact. The checkbox switches the
-preview between right-facing (unchecked) and left-facing (checked), using the
-same calibration. Each backdrop/unit pair retains its independent draft. Keep save state
-and errors beside **save calibration**, preserve drafts after errors, and disable
-repeat saves while one is pending. Secondary team/health/custom-path
-controls live under **more preview options**. Unconfigured backdrops begin with
-an explicitly unsaved suggested preview; gameplay keeps legacy placements until
-that backdrop has been saved.
-
-
-Place a **copy calibrations** card to the right of the wider scene card, aligned
-at the top. Stack it below the scene on narrow screens. Include saved source
-and destination selectors, a **unit type** selector, and an unchecked **all unit types**
-checkbox. Require an explicit unit selection before enabling a single-unit copy;
-checking **all unit types** disables the selector and enables copying all saved
-unit settings. The action label names the selected type or says **copy and save
-all unit calibrations**. State that copying replaces matching destination settings
-and uses saved source values. Disable a single-unit copy if the source lacks saved
-settings for that type. Show completion and failures beside the action. Disable
-copying to the same backdrop and prevent concurrent copy/save requests.
-
-## Combat chart
-
-The DevTools combat chart uses three ordinary beveled cards: controls, the
-comparison table, and selected-hit details. Arrange controls in three columns on desktop,
-wrapping into two or one at smaller widths. Group defenders into inset green table
-headers, with attacker rows and readiness/facing column groups. Compare open
-ground with hills/forest side by side; contain horizontal overflow in the table
-on narrow screens. Label terrain explicitly. Damage cells show a numeric hit
-and a small fill proportional to defender health; red surfaces identify lethal
-hits and a gold border identifies selection. Keep keyboard focus visible and
-include damage and remaining HP in each cell's accessible label.
-
-For indirect fire, omit attacker aim and directional columns and show only
-field-gun rows. Field guns and trucks always appear exposed, with em dashes in
-ready columns. Keep health and protection controls available. Selected-hit
-details show damage, remaining HP, and expandable factors. Refreshes clearly
-identify previous results and disable damage cells; failures retain settings
-and previous results beside a retry action.
-
-## Settings
-
-The game menu opens a wide native settings dialog with `dialogs` and `audio`
-side tabs. Tab buttons are flat: the selected tab has a muted yellow2 fill and
-yellow5 text across its full area, with no bevel or edge marker. Inactive tabs
-use the ordinary surface and brighten on hover. Preserve visible keyboard focus;
-Up/Down and Home/End navigate the tabs. Keep the side navigation on narrow screens.
-
-The dialogs tab exposes the existing skip preferences for turn introductions,
-unit loss dialogs, and the units-without-orders warning. The audio tab contains
-mute, master volume, combat, movement, ambience, and interface volume sliders.
-Disable the sliders while muted and retain their levels. Apply and remember
-changes immediately on this device. `done`, the title-bar close button, and
-Escape close settings and return focus to the game menu button.
-On mobile, omit the title-bar close button. Keep `done` at the bottom of the
-left rail below the tabs. The inset settings pane fills the height beside the
-rail and scrolls independently.
-
-
-## Feedback
-
-The home and game menus offer `feedback`. Open a native form dialog with a
-labelled inset textarea, `submit feedback`, and `close`. Focus the textarea when
-opening. Escape and the bottom `close` button dismiss and restore menu focus.
-In fullscreen mobile view, let the textarea fill the space above the actions.
-Keep drafts when dismissed. Block blank or oversized submissions and disable
-repeat submits while saving. Keep the submitted text read-only during the
-request. Failures retain the draft and show an error beside the action; success
-clears the field and confirms that feedback was saved.
-
-Game conclusions invite feedback with a short note that FightLines is a new game
-in development. Place secondary `give feedback` beside primary `return to
-battlefield`. Feedback opens the existing form; closing it returns to the game
-conclusion. Returning to the battlefield dismisses the conclusion for this visit.
-Both actions use large buttons with equal widths and heights, stacking at narrow
-viewport widths.
+- The map editor uses a tools card with a scrolling body beside a canvas.
+  Keep the brush, player, and facing controls discoverable, and let viewport
+  navigation preserve the current brush and undo history. See the
+  [map guide](docs/MAPS.md) for its authoring workflow.
+- The backdrop reviewer uses the gameplay renderer. Adjust the scene through
+  sliders while keeping the preview clear, maintain the ground anchor, and keep
+  retained drafts and failures beside the save action. Put copying in its own
+  card. Require an explicit unit scope and name what the copy will replace.
+  See [backdrop review](docs/DEVELOPMENT.md#backdrop-review) for the controls.
+- The combat chart separates controls, the comparison table, and selected-hit
+  details. Group by defender, label terrain and readiness, and keep the
+  table's overflow within its own card. Show numeric damage and remaining HP
+  with lethal styling and accessible labels. Preserve settings and label old
+  results while refreshing or retrying.

@@ -46,7 +46,6 @@ import LobbyId
         )
 import LocalStorage exposing (LocalStorage)
 import Ports.Js.From as FromJs
-import Ports.Js.To as ToJs
 import SessionId
 import Shared
 import Style as S
@@ -174,32 +173,6 @@ init value url key =
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
-
-
-{-| Open the selected dialog when page state or shared state changes its priority.
--}
-syncDialog : Page -> ( Page, Eff Msg ) -> ( Page, Eff Msg )
-syncDialog previous ( page, effect ) =
-    let
-        previousHtmlId : Maybe String
-        previousHtmlId =
-            dialog previous |> Maybe.map Dialog.htmlId
-    in
-    case dialog page of
-        Just activeDialog ->
-            if previousHtmlId /= Just (Dialog.htmlId activeDialog) then
-                ( page
-                , E.batch
-                    [ effect
-                    , E.toJs (ToJs.OpenDialog { htmlId = Dialog.htmlId activeDialog })
-                    ]
-                )
-
-            else
-                ( page, effect )
-
-        Nothing ->
-            ( page, effect )
 
 
 getKey : Page -> Navigation.Key
@@ -374,7 +347,8 @@ handleRoute : Shared.Model -> Maybe Route -> ( Page, Eff Msg )
 handleRoute shared route =
     case route of
         Just Route.Home ->
-            ( Home (Home.init shared), E.none )
+            Home.init shared
+                |> Tuple.mapBoth Home (E.map HomeMsg)
 
         Just Route.NewLobby ->
             ( NewLobby (NewLobby.init shared), E.none )
@@ -410,7 +384,7 @@ handleRoute shared route =
 superUpdate : Msg -> Page -> ( Page, Eff Msg )
 superUpdate msg page =
     update msg page
-        |> syncDialog page
+        |> Dialog.openOnChange dialog page
         |> E.andThen (recordAnalytics (track msg))
 
 
@@ -871,32 +845,11 @@ update msg page =
                 Just shared ->
                     let
                         ( newShared, effect ) =
-                            Shared.superUpdate subMsg shared
-
-                        viewportChanged : Bool
-                        viewportChanged =
-                            shared.screenSize /= newShared.screenSize
+                            Shared.update subMsg shared
                     in
-                    case ( page, viewportChanged ) of
-                        ( Game id model, True ) ->
-                            let
-                                layoutChanged : Bool
-                                layoutChanged =
-                                    Shared.isMobileView shared
-                                        /= Shared.isMobileView newShared
-                            in
-                            GamePage.setShared newShared model
-                                |> GamePage.resize
-                                    { layoutChanged = layoutChanged }
-                                |> Tuple.mapBoth
-                                    (Game id)
-                                    (E.map (GameMsg id))
-                                |> E.and (E.map GotSharedMsg effect)
-
-                        _ ->
-                            ( setShared newShared page
-                            , E.map GotSharedMsg effect
-                            )
+                    ( setShared newShared page
+                    , E.map GotSharedMsg effect
+                    )
 
                 Nothing ->
                     page
@@ -912,20 +865,23 @@ update msg page =
 view : Page -> Browser.Document Msg
 view page =
     let
+        shared : Maybe Shared.Model
+        shared =
+            getShared page
+
         overlayContent : List (Html Msg)
         overlayContent =
-            if Maybe.map Shared.isMobileView (getShared page) == Just True then
-                []
-
-            else
-                [ AppControls.toHtml audioContent ]
+            [ AppControls.toHtml
+                (Maybe.map .operatingSystem shared)
+                audioContent
+            ]
 
         audioContent : List (Html Msg)
         audioContent =
-            case getShared page of
-                Just shared ->
+            case shared of
+                Just model ->
                     [ AudioMute.toHtml
-                        { mute = shared.audioMute
+                        { mute = model.audioMute
                         , onClick = GotSharedMsg Shared.audioMuteButtonClicked
                         }
                     ]
@@ -935,14 +891,18 @@ view page =
 
         dialogContent : List (Html Msg)
         dialogContent =
-            case dialog page of
-                Just activeDialog ->
+            case
+                ( dialog page
+                , shared
+                )
+            of
+                ( Just activeDialog, Just model ) ->
                     [ activeDialog
                         |> Dialog.withOverlay overlayContent
-                        |> Dialog.toHtml
+                        |> Dialog.toHtml model.operatingSystem
                     ]
 
-                Nothing ->
+                _ ->
                     overlayContent
 
         content : List (Html Msg)
@@ -960,22 +920,16 @@ dialog : Page -> Maybe (Dialog Msg)
 dialog page =
     case getShared page of
         Just shared ->
-            let
-                activeDialog : Maybe (Dialog Msg)
-                activeDialog =
-                    if shared.devPanelOpen then
-                        DevPanel.dialog
-                            (Shared.devPanelErrors shared)
-                            shared.features
-                            shared.devPanel
-                            |> Dialog.map (Shared.devPanelMsg >> GotSharedMsg)
-                            |> Just
+            if shared.devPanelOpen then
+                DevPanel.dialog
+                    (Shared.devPanelErrors shared)
+                    shared.features
+                    shared.devPanel
+                    |> Dialog.map (Shared.devPanelMsg >> GotSharedMsg)
+                    |> Just
 
-                    else
-                        pageDialog page
-            in
-            activeDialog
-                |> Maybe.map (Shared.adaptDialog shared)
+            else
+                pageDialog page
 
         Nothing ->
             Nothing
@@ -1111,6 +1065,9 @@ pageSubscriptions : Page -> Sub Msg
 pageSubscriptions page =
     Sub.batch
         [ case page of
+            Home _ ->
+                Home.subscriptions |> Sub.map HomeMsg
+
             MatchMaking model ->
                 MatchMaking.subscriptions model
                     |> Sub.map (MatchMakingMsg (MatchMaking.visitId model))

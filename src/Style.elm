@@ -350,6 +350,7 @@ module Style exposing
     , pr4
     , prSafeArea
     , pre
+    , preserveTextCase
     , pt0
     , pt1
     , pt10
@@ -3067,6 +3068,11 @@ overflowHidden =
 outlineNone : Css.Style
 outlineNone =
     Css.outline Css.none
+
+
+preserveTextCase : Css.Style
+preserveTextCase =
+    Css.textTransform Css.none
 
 
 textLeft : Css.Style

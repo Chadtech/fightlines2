@@ -1,7 +1,6 @@
 module Shared exposing
     ( Model
     , Msg
-    , adaptDialog
     , addError
     , audioMuteButtonClicked
     , devPanelErrors
@@ -15,15 +14,15 @@ module Shared exposing
     , setAudioMute
     , setAudioVolumes
     , setDevPanelOpen
+    , setScreenSize
     , setSeed
     , subscriptions
-    , superUpdate
+    , update
     )
 
 import ApiRequest
 import Audio
 import Browser.Dom
-import Browser.Events
 import Browser.Navigation as Navigation
 import Deployment
 import DevPanel
@@ -46,13 +45,11 @@ import KeyCmd exposing (KeyCmd)
 import LocalStorage exposing (LocalStorage)
 import OperatingSystem exposing (OperatingSystem)
 import Ports.Js.From as FromJs
-import Ports.Js.To as ToJs
 import Random
 import ScreenSize exposing (ScreenSize)
 import SessionId exposing (SessionId)
 import Time
 import Url exposing (Url)
-import View.Dialog as Dialog exposing (Dialog)
 
 
 
@@ -65,7 +62,7 @@ import View.Dialog as Dialog exposing (Dialog)
 `now` is the latest browser clock sample, initialized by JavaScript and refreshed
 by the shared clock subscription. `origin` contains the scheme, hostname, and
 optional port for constructing complete application links. `screenSize` is the
-required startup viewport size, refreshed by the shared resize subscription.
+viewport size from startup flags or the last page to measure it.
 -}
 type alias Model =
     { deployment : Deployment.Model
@@ -88,8 +85,6 @@ type alias Model =
 
 type Msg
     = CurrentTimeReceived Time.Posix
-    | WindowResized ScreenSize
-    | WindowVisibilityChanged Browser.Events.Visibility
     | GotLocalstorage LocalStorage
     | GotFromJsError FromJs.Error
     | AudioErrorReceived Error
@@ -163,19 +158,7 @@ init now seed sessionId operatingSystem screenSize localStorage url key =
 -}
 isMobileView : Model -> Bool
 isMobileView model =
-    OperatingSystem.isMobile model.operatingSystem
-        || ScreenSize.isMobileSize model.screenSize
-
-
-{-| Adapt every dialog, including shared dev tools, at the application boundary.
--}
-adaptDialog : Model -> Dialog msg -> Dialog msg
-adaptDialog model activeDialog =
-    if isMobileView model then
-        Dialog.fullscreen activeDialog
-
-    else
-        activeDialog
+    ScreenSize.usesMobileLayout model.operatingSystem model.screenSize
 
 
 audioMuteButtonClicked : Msg
@@ -206,6 +189,11 @@ setAudioMute audioMute model =
 setAudioVolumes : Audio.Volumes -> Model -> Model
 setAudioVolumes audioVolumes model =
     { model | audioVolumes = audioVolumes }
+
+
+setScreenSize : ScreenSize -> Model -> Model
+setScreenSize screenSize model =
+    { model | screenSize = screenSize }
 
 
 setSeed : Random.Seed -> Model -> Model
@@ -400,31 +388,6 @@ planningErrorDetails violation =
 ----------------------------------------------------------------
 
 
-{-| Check shared transitions after every shared message. Page dialog restoration
-belongs to each app; Shared only opens its own dev panel.
--}
-superUpdate : Msg -> Model -> ( Model, Eff Msg )
-superUpdate msg model =
-    let
-        ( updated, effect ) =
-            update msg model
-
-        panelOpened : Bool
-        panelOpened =
-            not model.devPanelOpen && updated.devPanelOpen
-
-        result : ( Model, Eff Msg )
-        result =
-            ( updated, effect )
-    in
-    if panelOpened then
-        result
-            |> E.and (E.toJs (ToJs.OpenDialog { htmlId = DevPanel.htmlId }))
-
-    else
-        result
-
-
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
@@ -432,26 +395,6 @@ update msg model =
             ( { model | now = now }
             , E.none
             )
-
-        WindowResized screenSize ->
-            ( { model
-                | screenSize = screenSize
-              }
-            , E.none
-            )
-
-        WindowVisibilityChanged visibility ->
-            let
-                eff : Eff Msg
-                eff =
-                    case visibility of
-                        Browser.Events.Visible ->
-                            E.now CurrentTimeReceived
-
-                        Browser.Events.Hidden ->
-                            E.none
-            in
-            ( model, eff )
 
         AudioMuteButtonClicked ->
             let
@@ -592,11 +535,7 @@ handleDevPanelMsg msg model =
 
 subscriptions : Sub Msg
 subscriptions =
-    Sub.batch
-        [ ScreenSize.onResize WindowResized
-        , Time.every 1000 CurrentTimeReceived
-        , Browser.Events.onVisibilityChange WindowVisibilityChanged
-        ]
+    Time.every 1000 CurrentTimeReceived
 
 
 keyCommands : KeyCmd Msg

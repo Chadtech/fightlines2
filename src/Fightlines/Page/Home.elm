@@ -5,6 +5,7 @@ module Fightlines.Page.Home exposing
     , init
     , setShared
     , styles
+    , subscriptions
     , track
     , update
     , view
@@ -24,8 +25,8 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
-import Ports.Js.To as ToJs
 import Random
+import ScreenSize exposing (ScreenSize)
 import Shared
 import Style as S
 import View.Aria as Aria
@@ -50,6 +51,7 @@ type Msg
     | AboutDialogClosed
     | DialogButtonFocusReturned (Result Browser.Dom.Error ())
     | SceneCycleCompleted BackgroundScene
+    | WindowResized ScreenSize
 
 
 type alias Model =
@@ -94,7 +96,7 @@ type alias SceneArtwork =
 ----------------------------------------------------------------
 
 
-init : Shared.Model -> Model
+init : Shared.Model -> ( Model, Eff Msg )
 init shared =
     let
         ( snow, snowSeed ) =
@@ -106,13 +108,15 @@ init shared =
         ( logistics, nextSeed ) =
             Random.step scenePositionGenerator desertSeed
     in
-    { shared = Shared.setSeed nextSeed shared
-    , feedback = Feedback.init
-    , activeDialog = NoDialog
-    , snow = snow
-    , desert = desert
-    , logistics = logistics
-    }
+    ( { shared = Shared.setSeed nextSeed shared
+      , feedback = Feedback.init
+      , activeDialog = NoDialog
+      , snow = snow
+      , desert = desert
+      , logistics = logistics
+      }
+    , E.readScreenSize WindowResized
+    )
 
 
 
@@ -242,6 +246,9 @@ track msg =
         SceneCycleCompleted _ ->
             Analytics.none
 
+        WindowResized _ ->
+            Analytics.none
+
 
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
@@ -254,10 +261,7 @@ update msg model =
 
         FeedbackButtonClicked ->
             ( { model | activeDialog = FeedbackDialog }
-            , E.batch
-                [ E.toJs (ToJs.OpenDialog { htmlId = FeedbackView.htmlId })
-                , E.audio Audio.affirm
-                ]
+            , E.audio Audio.affirm
             )
 
         FeedbackMsg feedbackMsg ->
@@ -293,10 +297,7 @@ update msg model =
 
         AboutButtonClicked ->
             ( { model | activeDialog = AboutDialog }
-            , E.batch
-                [ E.toJs (ToJs.OpenDialog { htmlId = About.htmlId })
-                , E.audio Audio.affirm
-                ]
+            , E.audio Audio.affirm
             )
 
         AboutDialogClosed ->
@@ -315,6 +316,11 @@ update msg model =
 
         SceneCycleCompleted scene ->
             repositionScene scene model
+                |> E.withOut
+
+        WindowResized screenSize ->
+            model
+                |> setShared (Shared.setScreenSize screenSize model.shared)
                 |> E.withOut
 
 
@@ -685,3 +691,14 @@ styles =
             }
         """
         ]
+
+
+
+----------------------------------------------------------------
+-- SUBSCRIPTIONS --
+----------------------------------------------------------------
+
+
+subscriptions : Sub Msg
+subscriptions =
+    ScreenSize.subscription WindowResized

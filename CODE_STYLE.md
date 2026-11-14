@@ -54,7 +54,8 @@ prototype; do not update it unless the task explicitly requires that.
 
 ### Formatting and imports
 
-- Keep player pages in `src/Fightlines/Page/` and tool pages in `src/DevTools/Page/`.
+- Keep app pages in `src/Fightlines/Page/`, `src/Admin/Page/`, or
+  `src/DevTools/Page/`.
   Keep game domain/runtime modules in `src/Game/`, game-specific views in
   `src/Game/View/`, player-only views in `src/Fightlines/View/`, and generic
   controls in `src/View/`.
@@ -118,7 +119,8 @@ prototype; do not update it unless the task explicitly requires that.
   `update` to reuse another case's behavior. When multiple message cases need
   the same functionality, extract a shared helper and call it directly from
   each case.
-- Keep each app's top-level `Page` union in its entry point (`Fightlines` or `DevTools`).
+- Keep each app's top-level `Page` union in its entry point (`Fightlines`,
+  `Admin`, or `DevTools`).
   Pages own their models, messages, updates, and views; each page model carries
   the common closed `Shared.Model` from `Shared.elm`. Keep coordinated interaction
   state in the owning page. A view component may expose its own
@@ -280,10 +282,10 @@ prototype; do not update it unless the task explicitly requires that.
   APIs, and style helpers. Formatter and compiler checks do not enforce every
   convention here.
 - For code changes, run `make check`: Rust formatting, Clippy with warnings
-  denied, fast Rust tests, Elm format validation, and compilation of the application
-  and copied view modules.
-- Before the check-in workflow in `AGENTS.md`, run `make check-all` to include
-  slow simulations as well as routine checks.
+  denied, fast Rust tests, Elm format validation, behavior checks, and
+  compilation of all three apps and shared views.
+- The check-in workflow in `AGENTS.md` runs `make check-all` to include
+  slow simulations and visual tests alongside the routine checks.
 - Add focused tests for changed rules, validation, authorization, and state
   transitions. Verify changed UI behavior in a browser when compilation alone
   cannot establish it.

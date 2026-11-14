@@ -1,15 +1,23 @@
 # Recorded generation prompts
 
-The selected United States tank concept is [v24](concept-v24.png).
+The approved United States tank concept is [v32](concept-v32.png).
+It is the source for the United States battlefield idle atlas. The idle
+loop uses four 400 ms frames with suspension movement and a slight barrel
+lift. The exporter keeps the tracks planted and generates matching red
+and blue team frames.
 
-Both passes used the built-in ImageGen editor with transparent output.
-The finished static concept is [concept-v1.png](concept-v1.png).
+Both v1 passes used the built-in ImageGen editor with transparent output.
+The resulting draft is `concept-v1.png`.
+
+Intermediate drafts without links are local artwork. The neutral tank
+references are `tank-box-removal/tank-neutral-source.png` and
+`tank-neutral.png` under `artwork/units/illustrated/rigged/`.
 
 ## v1 draft
 
 Inputs, in order:
 
-1. [High-resolution neutral tank](../../../artwork/units/illustrated/rigged/tank-box-removal/tank-neutral-source.png), the edit target.
+1. High-resolution neutral tank, the edit target.
 2. [Approved United States infantry v3](../../infantry/united-states/concept-v3.png), for style and palette only.
 
 ```text
@@ -27,7 +35,7 @@ Render as a high-detail hand-drawn 1980s anime mechanical illustration: decisive
 Inputs, in order:
 
 1. The draft from the first pass, retained locally by ImageGen as `exec-7eee301d-2387-481b-b1e6-f4372d2c5372.png` in generation `01a1ce70-6ac2-7dc0-9a7c-fffef35ae187`.
-2. [High-resolution neutral tank](../../../artwork/units/illustrated/rigged/tank-box-removal/tank-neutral-source.png), the framing reference.
+2. High-resolution neutral tank, the framing reference.
 
 ```text
 Use case: precise-object-edit
@@ -40,17 +48,17 @@ Keep the hand-drawn high-detail 1980s anime mechanical illustration, strong dark
 ```
 
 The saved PNG is the final ImageGen output with its original alpha. The map-scale
-comparison uses the separate [256 px neutral map master](../../../artwork/units/illustrated/rigged/tank-neutral.png),
+comparison uses the separate 256 px neutral map master,
 with both canvases resized equally and without cropping.
 
 ## v2 stout barrel
 
 Built-in ImageGen edit using transparent output. Inputs, in order:
 
-1. [United States tank v1](concept-v1.png), the edit target.
-2. [High-resolution neutral tank](../../../artwork/units/illustrated/rigged/tank-box-removal/tank-neutral-source.png), for the barrel profile.
+1. United States tank v1, the edit target.
+2. High-resolution neutral tank, for the barrel profile.
 
-Output [concept-v2.png](concept-v2.png).
+Output `concept-v2.png`.
 
 ```text
 Use case: precise-object-edit
@@ -64,8 +72,8 @@ Keep input 1's angular turret cheeks, optics, turret roof, recessed dark mantlet
 
 ## v3 straight side profile
 
-Built-in ImageGen edit of [United States tank v2](concept-v2.png) using transparent output.
-Output [concept-v3.png](concept-v3.png).
+Built-in ImageGen edit of United States tank v2 using transparent output.
+Output `concept-v3.png`.
 
 ```text
 Use case: precise-object-edit
@@ -80,10 +88,10 @@ Preserve the very short, fat, cylindrical barrel from v2 with its large rounded 
 
 Built-in ImageGen edit using transparent output. Inputs, in order:
 
-1. [United States tank v3](concept-v3.png), the edit target.
-2. [High-resolution neutral tank](../../../artwork/units/illustrated/rigged/tank-box-removal/tank-neutral-source.png), for the viewing angle only.
+1. United States tank v3, the edit target.
+2. High-resolution neutral tank, for the viewing angle only.
 
-Output [concept-v4.png](concept-v4.png).
+Output `concept-v4.png`.
 
 ```text
 Use case: precise-object-edit
@@ -97,8 +105,8 @@ Keep the hull, armor skirts, tracks, wheels, and nearly square tile-filling comp
 
 ## v5 simplified turret roof
 
-Built-in ImageGen edit of [United States tank v4](concept-v4.png) using transparent output.
-Output [concept-v5.png](concept-v5.png).
+Built-in ImageGen edit of United States tank v4 using transparent output.
+Output `concept-v5.png`.
 
 ```text
 Use case: precise-object-edit
@@ -113,10 +121,10 @@ Edit the roof only. Preserve the main broad armored turret side, angular forward
 
 Built-in ImageGen edit using transparent output. Inputs, in order:
 
-1. [United States tank v5](concept-v5.png), the edit target.
+1. United States tank v5, the edit target.
 2. The user-supplied Abrams side-view screenshot (`Screenshot 2026-11-12 at 2.10.47 AM.png`), for hull and turret geometry.
 
-Output [concept-v6.png](concept-v6.png).
+Output `concept-v6.png`.
 
 ```text
 Use case: precise-object-edit
@@ -129,8 +137,8 @@ Keep v5's right-facing, almost side-on view, with only a tiny sliver of the muzz
 
 ## v7 thicker turret nose
 
-Built-in ImageGen edit of [United States tank v6](concept-v6.png) using transparent output.
-Output [concept-v7.png](concept-v7.png).
+Built-in ImageGen edit of United States tank v6 using transparent output.
+Output `concept-v7.png`.
 
 ```text
 Use case: precise-object-edit
@@ -143,8 +151,8 @@ Keep the barrel itself the same size, length, horizontal position, stout collar,
 
 ## v8 forward turret hatch
 
-Built-in ImageGen edit of [United States tank v7](concept-v7.png) using transparent output.
-Output [concept-v8.png](concept-v8.png).
+Built-in ImageGen edit of United States tank v7 using transparent output.
+Output `concept-v8.png`.
 
 ```text
 Use case: precise-object-edit
@@ -157,8 +165,8 @@ Make this a local roof edit. Preserve the original low hatch to the left, the ra
 
 ## v9 enlarged forward hatch
 
-Built-in ImageGen edit of [United States tank v8](concept-v8.png) using transparent output.
-Output [concept-v9.png](concept-v9.png).
+Built-in ImageGen edit of United States tank v8 using transparent output.
+Output `concept-v9.png`.
 
 ```text
 Use case: precise-object-edit
@@ -173,10 +181,10 @@ Keep the rest of v8 in place, including the sloping turret, thickened turret nos
 
 Built-in ImageGen edit using transparent output. Inputs, in order:
 
-1. [United States tank v9](concept-v9.png), for the hull and tracks.
-2. [High-resolution neutral tank](../../../artwork/units/illustrated/rigged/tank-box-removal/tank-neutral-source.png), for turret mass and barrel shape.
+1. United States tank v9, for the hull and tracks.
+2. High-resolution neutral tank, for turret mass and barrel shape.
 
-Output [concept-v10.png](concept-v10.png).
+Output `concept-v10.png`.
 
 ```text
 Use case: precise-object-edit
@@ -190,8 +198,8 @@ Keep the neutral's very short, fat cylindrical barrel and thick muzzle collar, p
 
 ## v11 taller turret and rear overhang
 
-Built-in ImageGen edit of [United States tank v10](concept-v10.png) using transparent output.
-Output [concept-v11.png](concept-v11.png).
+Built-in ImageGen edit of United States tank v10 using transparent output.
+Output `concept-v11.png`.
 
 ```text
 Use case: precise-object-edit
@@ -206,8 +214,8 @@ Keep the v10 hull, raised rear engine deck, segmented side skirts, wheels and tr
 
 ## v12 increased turret height
 
-Built-in ImageGen edit of [United States tank v11](concept-v11.png) using transparent output.
-Output [concept-v12.png](concept-v12.png).
+Built-in ImageGen edit of United States tank v11 using transparent output.
+Output `concept-v12.png`.
 
 ```text
 Use case: precise-object-edit
@@ -222,8 +230,8 @@ Preserve the complete lower body from v11, from the turret ring down, including 
 
 ## v13 v10 turret height adjustment
 
-Built-in ImageGen edit of [United States tank v10](concept-v10.png) using transparent output.
-Output [concept-v13.png](concept-v13.png).
+Built-in ImageGen edit of United States tank v10 using transparent output.
+Output `concept-v13.png`.
 
 ```text
 Use case: precise-object-edit
@@ -236,8 +244,8 @@ Lock the rest of the image to v10. Keep the same horizontal extents of the turre
 
 ## v14 rear turret bustle
 
-Built-in ImageGen edit of [United States tank v13](concept-v13.png) using transparent output.
-Output [concept-v14.png](concept-v14.png).
+Built-in ImageGen edit of United States tank v13 using transparent output.
+Output `concept-v14.png`.
 
 ```text
 Use case: precise-object-edit
@@ -250,8 +258,8 @@ Keep the taller v13 main turret body, forward cheek, height, roof hatch, mount a
 
 ## v15 level rear overhang and rail panel
 
-Built-in ImageGen edit of [United States tank v14](concept-v14.png) using transparent output.
-Output [concept-v15.png](concept-v15.png).
+Built-in ImageGen edit of United States tank v14 using transparent output.
+Output `concept-v15.png`.
 
 ```text
 Use case: precise-object-edit
@@ -268,10 +276,10 @@ Keep the central and forward turret armor, hatch, stout barrel, hull, skirts, wh
 
 Built-in ImageGen edit using transparent output. Inputs, in order:
 
-1. [United States tank v15](concept-v15.png), the edit target.
-2. [United States tank v9](concept-v9.png), for the rear armor plates and lower bevel.
+1. United States tank v15, the edit target.
+2. United States tank v9, for the rear armor plates and lower bevel.
 
-Output [concept-v16.png](concept-v16.png).
+Output `concept-v16.png`.
 
 ```text
 Use case: precise-object-edit
@@ -284,8 +292,8 @@ Use only the rear treatment from input 2. Keep input 1's taller main turret, ang
 
 ## v17 turret clearance
 
-Built-in ImageGen edit of [United States tank v16](concept-v16.png) using transparent output.
-Output [concept-v17.png](concept-v17.png).
+Built-in ImageGen edit of United States tank v16 using transparent output.
+Output `concept-v17.png`.
 
 ```text
 Use case: precise-object-edit
@@ -298,8 +306,8 @@ Keep the exact v16 turret proportions, level roof line, single hatch, two rear a
 
 ## v18 sight housing and spare track links
 
-Built-in ImageGen edit of [United States tank v17](concept-v17.png) using transparent output.
-Output [concept-v18.png](concept-v18.png).
+Built-in ImageGen edit of United States tank v17 using transparent output.
+Output `concept-v18.png`.
 
 ```text
 Use case: precise-object-edit
@@ -314,16 +322,16 @@ Keep v17's hull, tracks, turret proportions, level roof line, single closed hatc
 
 Built-in ImageGen edit using transparent output. This is a fresh run of the exact
 [v1 draft prompt](#v1-draft) and its two original inputs in the same order.
-Output [concept-v19.png](concept-v19.png).
+Output `concept-v19.png`.
 
 ## v20 neutral barrel on v19
 
 Built-in ImageGen edit using transparent output. Inputs, in order:
 
-1. [United States tank v19](concept-v19.png), the edit target.
-2. [High-resolution neutral tank](../../../artwork/units/illustrated/rigged/tank-box-removal/tank-neutral-source.png), for the exposed barrel.
+1. United States tank v19, the edit target.
+2. High-resolution neutral tank, for the exposed barrel.
 
-Output [concept-v20.png](concept-v20.png).
+Output `concept-v20.png`.
 
 ```text
 Use case: precise-object-edit
@@ -340,10 +348,10 @@ Initially selected in visual review. Superseded by v24.
 
 Built-in ImageGen edit using transparent output. Inputs, in order:
 
-1. [United States tank v20](concept-v20.png), the edit target.
-2. [High-resolution neutral tank](../../../artwork/units/illustrated/rigged/tank-box-removal/tank-neutral-source.png), for the turret viewing angle.
+1. United States tank v20, the edit target.
+2. High-resolution neutral tank, for the turret viewing angle.
 
-Output [concept-v21.png](concept-v21.png).
+Output `concept-v21.png`.
 
 ```text
 Use case: precise-object-edit
@@ -356,8 +364,8 @@ The barrel itself is locked to input 1. Preserve its exact horizontal aim, lengt
 
 ## v22 raised rear deck experiment
 
-Built-in ImageGen edit of [United States tank v21](concept-v21.png) using transparent output.
-Output [concept-v22.png](concept-v22.png).
+Built-in ImageGen edit of United States tank v21 using transparent output.
+Output `concept-v22.png`.
 
 ```text
 Use case: precise-object-edit
@@ -374,10 +382,10 @@ Keep v21's angular turret armor, low optics and hatches, neutral-style barrel wi
 
 Built-in ImageGen edit using transparent output. Inputs, in order:
 
-1. [United States tank v22](concept-v22.png), for the raised rear chassis deck.
-2. [United States tank v21](concept-v21.png), for the original height of the forward turret, barrel, and mount.
+1. United States tank v22, for the raised rear chassis deck.
+2. United States tank v21, for the original height of the forward turret, barrel, and mount.
 
-Output [concept-v23.png](concept-v23.png).
+Output `concept-v23.png`.
 
 ```text
 Use case: precise-object-edit
@@ -394,8 +402,8 @@ Keep the general v21 turret shape, armor planes and low optics, and keep the v22
 
 Built-in ImageGen edit using transparent output. Inputs, in order:
 
-1. [United States tank v21](concept-v21.png), the edit target.
-2. [United States tank v22](concept-v22.png), for the rear chassis slope only.
+1. United States tank v21, the edit target.
+2. United States tank v22, for the rear chassis slope only.
 
 Output [concept-v24.png](concept-v24.png).
 
@@ -406,4 +414,116 @@ Asset: United States tank concept v24, one static right-facing FightLines game s
 Keep the entire turret assembly of input 1 exactly as it looks and sits in v21, including the rear armor, level side-profile shape, roof, optics, mount height, and short stout barrel. Do not lift, tilt, slope, or reshape any part of the turret. Replace only the upper rear chassis contour beneath it, on the left, with the small raised deck and gentle diagonal ramp from input 2. Match input 2's short elevated shoulder above the rear tracks and the sloping line that descends toward the middle of the hull, confined to the left upper chassis above the side skirts. Preserve a slim shadow or seam where the raised deck meets the turret silhouette. The larger, darker exposed turret ring in input 2 is not part of the chassis change. Keep input 1's slim olive mount and original turret position.
 
 Keep v21's front hull, lower side skirts, wheels and tracks, placement and scale. Preserve its right-facing near side profile, olive and khaki colors, dark linework, and high-detail 1980s anime painted cel shading. Keep the complete silhouette on a square canvas with genuine alpha transparency. No scenery, ground shadow, lettering or effects.
+```
+
+## v25 longer barrel and shorter turret rear
+
+Built-in ImageGen edit of [United States tank v24](concept-v24.png) using
+transparent output. The v25 preview composites the edited
+turret ends over v24 to retain the original chassis, optics, and central armor.
+
+```text
+Use case: precise-object-edit
+Asset: neutral olive-khaki United States tank sprite for FightLines. The supplied concept-v24 PNG is the sole edit target. Make a surgical adjustment of the right-facing turret silhouette in this same image. Keep the exact square canvas, tank placement, chassis size and all original pixels below the turret assembly, including the raised left rear engine deck, every side skirt, rivet, scuff, light, wheel and track link. Keep the same cel-shaded anime artwork, slight near-broadside perspective, armor colors, outlines, blue-gray optics and hatches.
+
+Adjust the proportions at the two ends of the turret. On the RIGHT, lengthen the exposed barrel by about 25–30%, adding the length ONLY to the straight cylindrical middle between its two collars. Keep the barrel at its exact existing height, pointing right, preserving the existing diameter, stepped base, and broad original muzzle collar with its narrow dark muzzle lip. On the LEFT, tuck the turret rear end in slightly toward the center, by roughly 5% of the turret armor body's width. Keep a clearly extended, boxy Abrams-style bustle, with a near-vertical square rear face and the existing short corner bevels. Preserve both roof optics, hatches, large forward sloped cheek panel, low mounting ring and armor body height. Do not change the hull, perspective, original crop, paint scheme or level of detail. If the muzzle needs extra room at the right edge, faithfully keep the hull and chassis registration and add just enough transparent margin to include the full muzzle. Single sprite isolated with genuine transparency and no ground shadow.
+```
+
+## v26 taller and shorter turret armor
+
+Built-in ImageGen edit of [United States tank v24](concept-v24.png) using
+transparent output. The v26 preview combines the revised
+turret armor with the v24 chassis and original short barrel. The mounting
+seam and base collar blend the two sources.
+
+```text
+Use case: precise-object-edit
+Asset: revision v26 of the neutral olive-khaki United States tank sprite for FightLines. The supplied v24 sprite is the edit target. It is a right-facing near-broadside view. Produce a single visibly more compact, much taller central turret while keeping the entire original lower vehicle pixel-aligned.
+
+Measured silhouette change is the main objective. The MAIN TURRET ARMOR above the dark horizontal turret ring (exclude the optics and gun) currently spans approximately x=60–885, y=367–598 in the 1254px image. Make its body about 20% shorter front-to-back (around 660 px total) and 25% taller (around 290 px), with leftmost rear around x=170 and forward gun mount around x=830. Keep its base near its current height near y=598. Raise the upper armor shoulder to around y=310. Move the outline at BOTH ends inward. The resulting silhouette should read as a tall, compact armored mass centered on the chassis, with a raised, broad central shoulder and shorter side profile that reads distinctly at very small game-board size. Keep the left-rear bustle recognizably Abrams-like, with a substantial square vertical rear face and brief corner bevels. Keep the distinctive angular forward cheek. Express the taller, fuller silhouette in the armor itself, even when ignoring hatches and optics. Keep the two original blue-gray optic housings and details, repositioned with the taller turret roof.
+
+Preserve the EXACT short, stout v24 barrel artwork and proportions: the same roughly 330 px exposed length and the same diameter, stepped base collar, short middle section, and chunky muzzle with a narrow dark lip. Keep it horizontal, pointing right. Bring it back with the new gun mount as one rigid piece. The tip should move toward the center with the shortened turret; never stretch the barrel to fill the old footprint. Seat the new turret directly onto the original slim dark mounting band. Keep the chassis, raised rear deck, skirting, track and wheels locked at their existing size and position. Match the v24 olive and khaki coloring, ink lines and anime cel shading. Same square canvas, full silhouette, and genuine transparent alpha.
+```
+
+## v27 thicker barrel
+
+Built-in ImageGen edit of v26, with the standard neutral
+tank as a reference for barrel thickness. The v27 preview
+composites the thicker barrel at the original muzzle position and centerline.
+
+```text
+Use case: precise-object-edit
+Asset: neutral-color United States tank sprite for FightLines, revision v27.
+Input 1 is the exact approved American tank v26, the EDIT TARGET. Input 2 is the older standard neutral green tank, a REFERENCE ONLY for the chunky barrel proportions. Return a faithful barrel-only edit of input 1 on its same 1254px square registered canvas.
+Increase the vertical diameter of the exposed barrel substantially. Keep its existing horizontal axis and its original length and muzzle x-coordinate. Match the relative bulk of the thick short cylinder in image 2: the main, narrow middle cylinder of image 1 around x=902 is about 114 px tall. Make it about 157–168 px tall (roughly 40% thicker). The end collar of image 1 around x=1030 is about 180 px tall. Make it around 218–220 px tall (roughly 22% thicker). Thicken the round base collar near x=800 proportionately so the barrel seats naturally in the existing mantlet. Expand top and bottom around the same centerline at y=497. Retain image 1's large muzzle collar, stepped banding, horizontal pointing direction, cylindrical shading, subdued khaki-olive paint, and thin dark muzzle opening at the far right. The shaft and collar should read as one stout, mostly parallel-sided stepped cylinder at board scale.
+Everything else is locked to image 1: tall compact centered turret, squared Abrams-inspired rear, blue optics and hatches, angular turret armor, slim mount, hull, tracks, wheels, canvas placement and alpha. The second input contributes only barrel thickness. Preserve the transparent background and show the entire sprite.
+```
+
+## v28 simplified rear turret shoulder
+
+Built-in ImageGen edit of the attached v27 render. The v28 preview
+composites the shoulder edit onto that render, preserving its registered
+silhouette and pixels elsewhere.
+
+```text
+Use case: precise-object-edit
+Asset: one static, right-facing neutral American tank sprite for FightLines, v28. The attached approved sprite is the exact edit target. Make a very localized cleanup of the armor immediately behind and below the tall left roof optic and hatch stack. The marked point is (26.2%, 25.7%), roughly (329,322) on the 1254px canvas. In the current drawing this rear turret shoulder descends from the optic platform down to the square rear armor in a busy staircase of small stepped ledges, seams and little beveled blocks.
+Replace only that staircase with ONE clean, continuous diagonal armored shoulder with a single broad cel-shaded bevel. Run it from the existing upper rear roof line beneath the optic platform diagonally down-left to the existing square rear block. Remove the parallel horizontal ledge outlines within that shoulder so it reads as one broad armor surface at game-board size. Keep the original near-vertical squared Abrams rear face at the left, its lower bevel and hardware, and the substantial, compact turret volume. Keep the pointed angles, crisp ink outline, desaturated khaki/olive colors, fine wear and restrained cel shading. Do not make it round, lengthen the bustle, or make the entire turret smooth or featureless.
+The ONLY edit area is the stepped rear shoulder, roughly x=200–393 and y=255–407. Retain the exact position, shape and height of both roof optics and the upper hatch stack, the large side panels and forward cheek, the approved thick short barrel, mounting ring, hull and tracks. Preserve canvas registration, 1254px square format, and genuine alpha transparency.
+```
+
+## v29 squared upper rear corner
+
+Built-in ImageGen edit of the attached v27 render, followed by a corner
+refinement. The v29 preview composites the revised upper
+rear armor onto the v27 render.
+
+```text
+Use case: precise-object-edit
+Asset: v29 static right-facing neutral American tank sprite for the FightLines battlefield. The supplied v27 render is the exact base. Change only the upper back (LEFT) corner of the turret armor, near x=22.4%, y=23.3%. Make it more square with a short chamfer. Preserve the strong rectangular Abrams-style bustle, tall compact turret, and all original dimensions and placements, especially the exact prior leftmost rear and existing roof height.
+In side silhouette, take the original flat turret roof below the optics at y≈287–307 and extend that near-horizontal line farther toward the back (LEFT), to around x≈226–233 on the 1254px image. Form one SHORT corner chamfer from roughly (224,299) down-left to (186,341). From there, the rear edge should drop straight down at x≈186 and connect cleanly to its current two-bolt vertical rear face. The outline should read visibly like a squared upper-left corner: horizontal roof, 35–40 px chamfer, then vertical face. Fill in the space above the old diagonal/staircase with matching olive-khaki armor. Resolve the little ledges in this area into one restrained painted bevel and one broad armored plane. Keep the original diagonal seam on the adjacent large side plate if practical. No long diagonal shoulder, no rounded corner, no ledge stack, no bolt additions, no increase in the overall turret length or height.
+Keep the optic and hatch assembly completely intact at its current position and size. Keep the original front armor, thick short barrel, vertical rear hardware and lower bevel, mount band, hull and tracks, artwork registration, warm cel-shaded style, and square transparent PNG canvas. The edit is local to the upper back shoulder only.
+```
+
+```text
+Use case: precise-object-edit. This is an exact local refinement of the top LEFT corner of the turret on the attached game sprite. The new draft already has the right flat top but its diagonal corner is still too big. Give the turret a visibly BLOCKY square upper-back silhouette with only a tiny flat chamfer on its top-left corner. Paint in much of the transparent triangular notch above the current diagonal. The leftmost straight rear wall is at x=185 px (14.8% of the 1254 px canvas). Extend that exact vertical wall UP to y≈338 px (27.0%), keeping the rear wall at the exact same x. The main roof line is horizontal at y≈306 px (24.4%): extend it left until x≈217 px (17.3%). Connect those two points by a short 32 px chamfer. So the upper rear silhouette visibly looks like a rectangle with a small clipped corner. Preserve the full-width flat roof, single large armor panel, original mounting equipment and all detail elsewhere. Match the contour thickness and olive khaki cel shading. This is a small additive shape change strictly around the turret armor corner. Keep the square canvas and real transparency.
+```
+
+## v30 recessed rear antenna mount
+
+Built-in ImageGen edit of the attached v29 render. The v30 preview
+composites the antenna and its square mount onto that render.
+
+```text
+Use case: precise-object-edit
+Asset: v30 variant of the supplied v29 neutral American tank game sprite. Edit only the little area around the user's marked rear turret roof corner at (21.1%,25.9%) or x≈265 y≈325 in the 1254px canvas. Keep the newly approved, broad square turret rear, exact clipped upper-left corner and nearly level roof. Make the plain area directly under that roofline more visually interesting with ONE restrained functional detail: a small, squared mounting pocket with a short radio whip emerging from it.
+Place a small rectangular dark recessed pocket centered around x≈263, with a narrow warm khaki raised lip, along the rear roof edge around y≈310–350. Keep the front of the bracket subtly integrated with the existing armor plate, with depth indicated by a simple dark shadow and cel-shaded bevel. Seat a single little stepped antenna socket in the pocket, and a simple short charcoal antenna rising straight up or leaning very slightly to the left. The visible whip should be chunky enough for this drawn board-game sprite, roughly 7–10 px across including the outline, and its tip should sit around y≈234–245, well below the existing optic and hatch stack at y≈177. At map scale it should read as a small piece of rear roof hardware. Leave the existing rear-left chamfer and rear wall exactly in place. Keep the notch visually small and square, and do not add railing, boxes, extra antennas, new lines or bolts elsewhere. Keep exactly the original prominent optics, hatch stack, forward armor, thick gun, olive and khaki colors, ink outlines, hull, and tracks. Reproduce the same camera, alignment, 1254px square canvas and genuine alpha transparency.
+```
+
+## v31 taller antenna and rear stowage rack
+
+Built-in ImageGen edit of v30, using the supplied Abrams
+photo as a visual reference for the rear stowage rack. The
+v31 preview composites the rack and the taller antenna stem
+onto v30. The stem was registered to the original socket and sized to about
+twice the height of the v30 stem.
+
+```text
+Use case: precise-object-edit
+Asset: one static neutral-color American tank sprite for FightLines, v31. Image 1 is the exact right-facing illustrated sprite to edit. Image 2 is a photo reference ONLY for the empty rear turret stowage railing, which is visible on the RIGHT of the photo. Transfer this visual idea to the rear at the LEFT of image 1. Keep the illustration and viewpoint of image 1.
+Make the short existing charcoal antenna on the LEFT rear roof about twice as tall above its existing socket. The visible stem currently rises from y≈306 to y≈251 on the 1254 px image. Raise the tip to about y≈195–200. Preserve the exact socket at x≈267, existing stem thickness, dark gray shading and small rounded tip. It should remain a single antenna.
+Add one compact, empty open stowage railing around the left rear of the turret. Draw two horizontal olive-khaki bars with a few upright posts, outlining broad open rectangular gaps through which the original armor and transparency are still visible. The left end wraps subtly around the square back like the basket in the reference. In profile it should extend only about 40–55 px behind the existing rear wall at x≈185 and return along the visible side to around x≈330, below the rear roof at about y≈365–439. Keep it entirely above the hull and aligned with the rear turret, leaving the upper square corner and antenna socket clear. Use dark ink outlines and restrained khaki highlights in the original illustrated cel-shaded style. Make the rail substantial enough to read at battlefield scale. Simplify the photo into clean empty bars with no fine mesh, gear, flags, or other hardware. Keep the original square upper-rear armor silhouette readable above the rack.
+Lock the existing turret armor, optics, hatches, thick short barrel, hull, tracks, colors and all other details to image 1. Preserve exact alignment on the same 1254px square canvas with genuine alpha transparency.
+```
+
+## v32 close-fitting rear turret rails
+
+Built-in ImageGen edit of v31. The [v32 preview](concept-v32.png)
+composites the taller, shallower rails onto the v31 rear armor.
+
+```text
+Use case: precise-object-edit
+Asset: v32 of the attached neutral olive-khaki American tank sprite for FightLines. Change only the stowage railing on the rear of the right-facing turret, near the user's mark (23.6%,33.6%). Replace the short, conspicuous projecting basket with a tall, shallow, close-fitting open rail that covers nearly the entire height of the rear turret armor. The square rear is at the LEFT. The main rear armor roof is around y=315 px and the bottom is around y=592 px, on this 1254px canvas. Set the top rail just below the rear roof and antenna socket (around y=347–360), extend down to the lower bevel (around y=563–580), and add one subtle horizontal middle bar. This should span most of the vertical wall above the turret ring, with three slim horizontal bars and a few slim upright supports. Make the rails subtly follow the rear armor contour, including the lower corner bevel, with short attachment brackets. Keep the height of the main armor and square roof silhouette fixed.
+Pull the railing tight to the LEFT rear wall. The current basket projects about 55 px behind the rear wall at x≈185; the replacement should project no more than roughly 8–15 px, only enough to show the little wraparound and depth. The rail's run along the near side should stay within the left rear portion of the turret (ending around x=350–375). The flat armor behind it should remain clearly visible through large open rectangular spaces. Use thinner bars and more subdued highlights than the old railing, close to the original armor's khaki-olive tones, and restrained dark linework. The result should feel like low-profile stowage rails bolted to the armor. No bulky basket, gaps behind the rack, mesh, supplies, or other accessories.
+Keep the exact v31 antenna stem and socket, square rear silhouette, optics, hatch stack, armor, short thick barrel, chassis and tracks. Preserve the slight broadside perspective, scale, palette, 1254px square canvas registration and genuine transparency.
 ```

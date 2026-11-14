@@ -66,9 +66,10 @@ The first save creates a new catalog file; existing maps are never replaced by
 new-map creation. New drafts stay available in the map selector until refresh.
 
 Choose a map and paint terrain by clicking or dragging. Place starting units for
-either player, choose their facing, and place supply or fuel depots. Larger
-brushes, horizontal mirroring, themes, tile sizes, resizing, and undo/redo speed
-up authoring. Mirroring units swaps players and reflects east/west facing.
+either player, choose their facing, and place supply depots, fuel depots, or
+fortresses. Larger brushes, horizontal mirroring, themes, tile sizes, resizing,
+and undo/redo speed up authoring. Mirroring units swaps players and reflects
+east/west facing.
 Shrinking a map crops terrain and objects outside the new bounds; undo restores
 them. Drafts survive switching maps within the page, but refresh discards unsaved edits.
 
@@ -192,13 +193,12 @@ gun and trucks near the base. Depot squares stay clear.
   the northern and southern woods. Infantry can infiltrate the woods; tanks and
   loaded trucks trade fuel, time, and provisions for concealment. Two trucks per
   side allow fuel deliveries, supply runs, passenger transport, and escorts.
-  For example, between the northern loop's two corner junctions, the road takes
-  14 steps and costs a tank 70 fuel or an empty truck 14. Going two tiles north,
-  across the continuous forest belt, and back south takes 18 steps: 17 forest
-  entries and one road entry, costing 124 tank fuel or 35 empty-truck fuel.
-  A truck carrying two cargo slots spends 42 versus 105. These are one-way
-  movement costs before replenishment; the forest route also slows vehicles
-  and consumes more provisions. Roads provide no cover or concealment.
+  Between the northern loop's two corner junctions, the 14 road steps cost a tank
+  280 fuel, an empty truck 56, and a full truck 84. Detouring two tiles north,
+  across the forest belt, and back south takes 18 steps. The 17 non-road entries
+  and one road entry cost a tank 496 fuel, an empty truck 140, and a full truck
+  210. These totals span several turns and exclude replenishment. Forest also
+  slows vehicles.
 - **Lake of Pennsylvania**: an irregular lakeside battlefield with uneven
   starting armies, wooded shores, mountain defenses, and winding roads. Narrow
   land routes connect the bases around the water, while scattered supply and

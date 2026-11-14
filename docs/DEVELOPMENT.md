@@ -1,14 +1,14 @@
 # Development guide
 
-Commands, app boundaries, and tool workflows for local development.
-Read [architecture](../ARCHITECTURE.md) for state ownership and cross-module flow,
+Commands, app entry points, and tool workflows for local development.
+Use the [architecture source map](../ARCHITECTURE.md) to find code owners and constraints,
 [code style](../CODE_STYLE.md) before editing code, and
 [code review](../CODE_REVIEW.md) before presenting changes.
 
 - [Local setup](#local-setup)
-- [Apps and source layout](#apps-and-source-layout)
+- [Apps and source layout](#apps-and-source-layout) · [Admin](#admin-app)
 - [Development fixture](#development-fixture)
-- [Checks and builds](#checks-and-builds) · [generated API](#generated-api)
+- [Checks and builds](#checks-and-builds) · [check in workflow](#check-in-workflow) · [generated API](#generated-api)
 - [Visual regression testing](VISUAL_TESTING.md)
 - [Feature switches](#feature-switches) · [production and development bundles](#production-and-development-bundles)
 - [Artwork and runtime assets](#artwork-and-runtime-assets)
@@ -34,37 +34,34 @@ specific seed for debugging; see [deployment](../DEPLOYMENT.md#game-archives).
 
 ## Apps and source layout
 
-`src/Fightlines.elm` runs the player app (home, lobbies, and live games).
-`src/DevTools.elm` runs the separate map editor, game archive/replay, and backdrop
-review app under `/dev`, with its own `DevTools.Route` and `DevTools.Flags`.
-Both apps use the common closed model and browser infrastructure in `Shared.elm`.
+| App | Elm entry point | Browser entry files | Compiled Elm |
+| --- | --- | --- | --- |
+| Player, including matchmaking, lobbies, and live games | [`Fightlines.elm`](../src/Fightlines.elm) | `public/index.html`, `public/main.js` | `public/elm.js` |
+| Admin at `/admin` | [`Admin.elm`](../src/Admin.elm) | `tools/admin/index.html`, `tools/admin/main.js` | `public/elm-admin.js` |
+| DevTools at `/dev` | [`DevTools.elm`](../src/DevTools.elm) | `dev-tools/index.html`, `dev-tools/main.js` | `public/elm-dev-tools.js` |
+
+All three apps use the common `Shared`, `Effect`, and `ApiRequest` modules.
 Open [the tools index](http://127.0.0.1:8080/dev) for links to
 `/dev/map-editor`, `/dev/logged-games`, `/dev/backdrop-review`, and `/dev/combat-chart`.
-The apps use `Effect.Eff` and outgoing ports in `Ports.Js.To`. The player app
-uses `Route.navigate` and `Route.navigateReplacing` to choose the navigation
-effect from its deployment state. Admin and DevTools use `Route.pushUrl` for
-in-app navigation. `Route.load` loads a new document, and `Effect.loadUrl`
-does the same for a browser-provided URL. Player pages and app infrastructure live in
-`src/Fightlines/`, with pages in
-`src/Fightlines/Page/` and player-only views in `src/Fightlines/View/`. Tool pages
-live in `src/DevTools/Page/` under `DevTools.Page.*`. Both apps share
-modules under `src`. The game domain, player planning, and replay runtime live
-in `src/Game/`, with game-specific views in `src/Game/View/` and checks in `src/Game/Checks/`. Generic controls remain in `src/View/`.
+The player app uses `Route.navigate` and `Route.navigateReplacing` to account
+for deployment state. Admin and DevTools use `Route.pushUrl` for in-app
+navigation. `Route.load` loads a new document, and `Effect.loadUrl` does the
+same for a browser-provided URL.
+
+App-specific pages live under `src/Fightlines/Page/`, `src/Admin/Page/`, and
+`src/DevTools/Page/`. The game domain, planning, and shared replay runtime live
+in `src/Game/`. Game-specific views and checks live in `src/Game/View/` and
+`src/Game/Checks/`. Generic controls live in `src/View/`.
 
 ## Admin app
 
-`src/Admin.elm` is a separate application at `/admin`, built by `make frontend`
-in both production and development. It has its own `Admin.Route` and
-`Admin.Flags` and uses the common `Shared`, `Effect`, and `ApiRequest` modules.
 `Admin.Page.Login` owns password input; `Admin.Page.Dashboard` owns the single
 dashboard, selection, pagination, and polling. Game details and feedback expand
-in place. Archive playback opens `Game.Replay` at `/admin/recordings/<id>`;
+in place. Use **load analytics** to browse recorded player events.
+Archive playback opens `Game.Replay` at `/admin/recordings/<id>`;
 DevTools uses the same viewer with its own return URL. `Game.Archive` owns shared
 archive data and selections. The dashboard's logout button navigates to
 `/admin/sign-out`, which clears the admin session and returns to login.
-The Admin entry files are `tools/admin/index.html`
-and `tools/admin/main.js`, copied to `public/admin.html` and `public/admin.js`;
-Elm compiles to `public/elm-admin.js`.
 
 Configure `FIGHTLINES_ADMIN_PASSWORD_HASH` to enable login, using
 `cargo run --locked -- --hash-admin-password` and the private environment setup
@@ -76,7 +73,8 @@ its existing `--game-logs` flag separately enables the local DevTools archive AP
 
 For a ready-to-view test game, run `make dev` and open
 [http://127.0.0.1:8080/game/00000000000000000000000000000000](http://127.0.0.1:8080/game/00000000000000000000000000000000).
-This seeds the current Supply Point scenario with two dummy players and previews
+This seeds the first released map in the catalog (Supply Point in this checkout)
+with two dummy players and previews
 player 1 without creating a lobby, joining, or changing your identity
 cookie. Refresh or bookmark that URL as you work. Restart the server to reset
 the fixture and load scenario changes. Stop an existing server before switching
@@ -125,11 +123,10 @@ Run it before committing and pushing through the workflow below.
 
 Ask the agent to **check in all changes** to invoke the workflow in
 [AGENTS.md](../AGENTS.md#check-in-workflow). This includes staged, unstaged, and
-untracked project files from all current work. The agent reviews the changes,
-runs `make check-all`, and shows a high-level summary of added, modified, renamed,
-and deleted files, plus a proposed commit message. It then waits for your
-approval before committing and pushing to `main`. Defining this workflow does
-not itself commit or push anything.
+relevant untracked project files from all current work. The agent prepares or
+reuses one version bump, reviews the changes, and runs `make check-all` and
+`git diff --check`. It presents the version, file summary, check results, and
+proposed commit message for approval before committing and pushing to `main`.
 
 ### Generated API
 
@@ -142,11 +139,12 @@ callers to check that their selections still match the contract.
 
 `VERSION` contains the shared application version: a single positive integer.
 Rust embeds it at compile time; `make app-version` generates the committed
-`src/AppVersion.elm` constants for both frontend apps. `VERSION_RELEASED_AT` stores
+`src/AppVersion.elm` constants for all three Elm apps. `VERSION_RELEASED_AT` stores
 the version's release timestamp as `YYYY-MM-DDTHH:mm:ssZ`. Frontend builds and
 checks regenerate the constants without changing that timestamp. The label beside
 the upper-left speaker and the dev panel show the frontend's compiled version and
-release time as `YYYY-MM-DD HH:mm:ss utc`. Every structured server diagnostic
+release time as `YYYY-MM-DD HH:mm:ss utc`. The mobile layout hides the floating
+speaker and version label. Every structured server diagnostic
 includes the backend's compiled `version` field, so an old browser tab can be
 compared with the deployed server.
 
@@ -154,11 +152,10 @@ The check-in workflow runs `make bump-version` once before checks and approval:
 `1` becomes `2`, then `3`, and so on. This updates `VERSION`, records the current
 UTC time in `VERSION_RELEASED_AT`, and regenerates the Elm constants. The release
 time identifies when the version was prepared for check-in, rather than when a
-particular server deployed it. Version 4's initial timestamp comes from the commit
-that introduced that version. Cargo's package version is separate and does not
-change.
+particular server deployed it. Cargo has its own package version.
 Reuse a pending version bump when repeating checks or retrying a push. Ordinary
-builds and `git push` do not change source files or increment the version.
+builds can regenerate derived files. The version increments only with
+`make bump-version`.
 When checking in outside the agent workflow, run `make bump-version` before
 the release commit. Deploy the backend and frontend built from that commit.
 
@@ -181,20 +178,10 @@ sprites on the live board, including turn playback. If several army styles are
 checked, the first one listed in the Features tab wins. Turning off every army
 style restores the standard sprites.
 
-The minimal battlefield layout is automatic on Android/iOS or a viewport with
-a short edge up to 600px and a long edge up to 1023px. The viewport dimensions
-come from the startup flags and update on resize and rotation.
-Portrait shows a rotate prompt;
-landscape uses a thin header and a selection rail over the map's right edge.
-The battlefield retains its full width when the rail opens or closes. Surrender
-sits at the far left of the header, the menu/logo/turn/chat group is centered,
-and a gold submit button sits at the far right. These use the existing surrender
-confirmation and turn submission flow. The rail offers orders/details tabs for friendly units and details for enemies.
-Details reuse the desktop inspector, including unit resources, cargo, terrain,
-and their help dialogs. All dialogs, including the dev panel, fill the viewport
-while mobile view is active; desktop dialog sizes are unchanged.
-Switching tabs retains pending orders; the footer's
-close button deselects without removing saved orders.
+The minimal battlefield layout is automatic. See
+[touch navigation and narrow layouts](../ARCHITECTURE.md#touch-navigation-and-narrow-layouts)
+for how the shared viewport state drives it and the
+[design system](../DESIGN_SYSTEM.md#game-board) for the layout.
 
 ## Production and development bundles
 
@@ -213,15 +200,12 @@ also default to non-production. Override a command explicitly with
 `PRODUCTION=true` or `PRODUCTION=false` when needed.
 Production builds compile the player and Admin Elm apps with `--optimize`;
 development builds retain Elm's development mode.
-The generated `public/build-config.js` passes a required `isProduction` Boolean
-through JavaScript startup flags into the player app's flags decoder; shared state
-does not retain it, and DevTools does not decode or store it. Non-production
-builds emit
-`public/elm.js` for the player app plus `public/elm-dev-tools.js` for DevTools.
-DevTools has separate HTML and JavaScript sources in `dev-tools/`, copied unchanged
-to `public/dev-tools.html` and `public/dev-tools.js` during development builds.
-The player entry files are `public/index.html` and `public/main.js`; both apps use
-`public/elm-interop.js` for shared startup flags, dialogs, and browser storage.
+The generated `public/build-config.js` supplies the player app's
+`isProduction` startup flag. All three apps use `public/elm-interop.js` for
+shared startup flags, dialogs, audio, and browser storage.
+The frontend target copies the Admin entry files to `public/admin.html` and
+`public/admin.js` in every build. Development builds also copy the DevTools
+entry files to `public/dev-tools.html` and `public/dev-tools.js`.
 The player script handles clipboard commands; the tools script handles map
 thumbnail commands.
 The server serves the DevTools entry point for `/dev` and every path under
@@ -246,8 +230,8 @@ and blank lines create paragraph spacing. The privacy dialog shares that formatt
 The creator portrait source is `aboutPhotoSource`; its original proportions are
 preserved. Rebuild the frontend after editing.
 
-Edit the multiline `policy` string in
-`src/Fightlines/View/PrivacyPolicy.elm` to change the **privacy policy** dialog.
+Edit the `PrivacyPolicy` branch of `sectionBody` in the same module to update
+the privacy policy section.
 
 ## Artwork and runtime assets
 
@@ -258,12 +242,6 @@ Local asset URLs use document-relative paths (`assets/...`, `audio/...`, and
 `map-thumbnails/...`) so the server-supplied document base selects the deployment.
 Backdrop calibration keys use the same relative paths as the artwork catalog.
 The export scripts remain in `tools/`. Back up source artwork separately.
-
-- [Architecture](../ARCHITECTURE.md): state, frontend flow, GraphQL, and shared views.
-- [Code style](../CODE_STYLE.md): coding conventions and verification requirements.
-- [Design system](../DESIGN_SYSTEM.md): visual conventions, components, and UI copy.
-- [Agent instructions](../AGENTS.md): guidance for automated contributors.
-- [Deployment](../DEPLOYMENT.md): configuration, access from other devices, and hosting.
 
 ## Game archives and replay
 
@@ -278,10 +256,10 @@ readiness, and weapon availability. Enable **show orders** to overlay the select
 turn's routes, stationary orders, facing, unloads, targets, and interrupted moves.
 Selecting a unit emphasizes its order. Fog limits orders and readiness to the
 viewed player's units; disable **fog of war** to inspect both sides.
-These read-only pages work at the server's deployment address and are also enabled
-by `make dev`. When enabled, anyone who can reach the server can view recordings;
-operator password protection is not implemented yet.
-They remain available after restarting the server with the same archive directory.
+`make dev` also enables these pages. On a development server with `--game-logs`,
+anyone who can reach the server can view recordings. Production uses the
+authenticated [Admin dashboard](../DEPLOYMENT.md#admin-dashboard-and-password-setup).
+Recordings survive restarts when the server reuses its archive directory.
 
 ## Audio manager
 
@@ -289,16 +267,17 @@ Game images warm in the background on lobby entry and map-theme changes, and
 again on game entry (including direct links). `Game.Assets` gathers paths from
 the rendering modules, prioritizing battlefield artwork before combat sprites
 and theme-specific backdrops. No loading screen or readiness gate is involved.
-Both apps share one image/audio loader with four concurrent tasks, a 15-second
+Each app has one image/audio loader with four concurrent tasks, a 15-second
 timeout per attempt, and up to three attempts with brief backoff. Failed images
-warn in the console; failed audio also enters the dev panel. Later requests can
+warn in the console. Audio failures also enter shared diagnostics, visible in
+the player and DevTools dev panels. Later requests can
 retry exhausted failures. This reduces first-use pop-in without guaranteeing
 that every asset is ready on a slow connection.
 
-The floating speaker in the upper-left corner toggles all audio, including
-during native dialogs. `Shared` owns the typed mute state across routes in each
+On larger layouts, the floating speaker toggles all audio, including during
+native dialogs. `Shared` owns the typed mute state across routes in each
 app. The `audioMuted` Boolean in `fightlines.localStorage` remembers the setting
-across reloads and both apps, and storage events synchronize open tabs.
+across reloads and all three apps. Storage events synchronize open tabs.
 Audio port messages use `{ "tag": "audio", "event": ... }`; the shared interop
 passes `event` to the audio manager. `Audio.SetMute` uses `{ "muted": true }` or
 `{ "muted": false }` as its event. Muting zeros the master gain, stops active voices, invalidates
@@ -306,13 +285,13 @@ pending playback, and discards new playback requests. Unmuting restores the prev
 volume; current movement and ambience resume on the next playback snapshot.
 The game menu's settings dialog edits the existing skip preferences and audio
 levels. `audioVolumes` stores percentages for `master`, `combat`, `movement`,
-`ambience`, and `interface`. Both apps restore and synchronize them across tabs.
+`ambience`, and `interface`. All three apps restore and synchronize them across tabs.
 Missing values preserve the existing mix (50% master, 100% per channel); malformed
 mixes use that default and retain a diagnostic. `Audio.SetVolumes` updates master
 and channel gain buses without restarting active voices or changing playback timing.
 
 Updates can request audio with `E.audio Audio.affirm`, `Audio.cancel`, or
-`Audio.confirm`; `Audio.none` produces no sound. Both apps share a JavaScript
+`Audio.confirm`; `Audio.none` produces no sound. The apps share a JavaScript
 manager that loads and caches clips, unlocks
 audio after player interaction, and stops playback when the page is hidden.
 The three UI cues use physical switch recordings: a desk-lamp switch press for
@@ -379,13 +358,13 @@ and `public/audio/ambience/sources.json`.
 
 ## Dev panel
 
-Press backtick (`) in either the Fightlines or DevTools app to toggle the dev panel.
+Press backtick in the player app or DevTools to toggle the dev panel.
 The left navigation selects the errors tab, which lists shared session errors
 newest first. Choose **test error** to add an error to that same history.
 Press Escape, press backtick again, or choose **done** to close the panel.
 The panel preserves its selected tab and error history when it opens again.
-Audio-manager failures also enter this history in both apps through the shared
-JavaScript port. Entries include the audio operation and error details (including
+Audio-manager failures enter this history through the shared JavaScript port.
+Entries include the audio operation and error details (including
 a stack trace when available), and retain the browser console warning. Each
 operation is reported only once per audio-manager instance to avoid repeated
 playback failures filling the history.

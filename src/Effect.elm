@@ -12,6 +12,7 @@ module Effect exposing
     , none
     , now
     , pushUrl
+    , readScreenSize
     , replaceDocument
     , replaceUrl
     , request
@@ -34,6 +35,7 @@ import Graphql.Http
 import Json.Encode as Encode
 import Ports.Js.To as ToJs
 import Process
+import ScreenSize exposing (ScreenSize)
 import Task
 import Time
 
@@ -52,6 +54,7 @@ type Eff msg
     | Now (Time.Posix -> msg)
     | Focus { htmlId : String } (Result Browser.Dom.Error () -> msg)
     | Measure String (Result Browser.Dom.Error Browser.Dom.Element -> msg)
+    | ReadScreenSize (ScreenSize -> msg)
     | ScrollToBottom { htmlId : String } (Result Browser.Dom.Error () -> msg)
     | PushUrl String
     | ReplaceUrl String
@@ -140,6 +143,13 @@ focus =
     Focus
 
 
+{-| Read the current viewport on entry to a page that needs screen dimensions.
+-}
+readScreenSize : (ScreenSize -> msg) -> Eff msg
+readScreenSize =
+    ReadScreenSize
+
+
 {-| Scroll a rendered element to its newest content, preserving horizontal position.
 -}
 scrollToBottom : { htmlId : String } -> (Result Browser.Dom.Error () -> msg) -> Eff msg
@@ -200,6 +210,9 @@ map toMsg effect =
         Measure htmlId received ->
             Measure htmlId (received >> toMsg)
 
+        ReadScreenSize received ->
+            ReadScreenSize (received >> toMsg)
+
         ScrollToBottom element received ->
             ScrollToBottom element (received >> toMsg)
 
@@ -243,6 +256,17 @@ toCmd key effect =
         Measure htmlId received ->
             Browser.Dom.getElement htmlId
                 |> Task.attempt received
+
+        ReadScreenSize received ->
+            let
+                fromViewport : Browser.Dom.Viewport -> msg
+                fromViewport { viewport } =
+                    received
+                        { width = viewport.width
+                        , height = viewport.height
+                        }
+            in
+            Browser.Dom.getViewport |> Task.perform fromViewport
 
         ScrollToBottom element received ->
             let

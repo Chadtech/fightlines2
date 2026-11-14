@@ -6,7 +6,6 @@ module Fightlines.Page.GamePage exposing
     , init
     , keyCommands
     , load
-    , resize
     , setDepots
     , setShared
     , setUnits
@@ -148,6 +147,7 @@ import Point exposing (Point)
 import Ports.Js.To as ToJs
 import Preference
 import Random
+import ScreenSize exposing (ScreenSize)
 import Shared
 import Style as S
 import Svg.Styled as Svg
@@ -297,6 +297,8 @@ type Msg
     | InactivityWakeElapsed Time.Posix
     | InactivityWakeTimeReceived Time.Posix Time.Posix
     | InactivityRenewalResponseReceived Inactivity.Report (ApiRequest.Response PollStatus)
+    | WindowResized ScreenSize
+    | GotWindowSizeMeasurement ScreenSize
     | BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
     | FeedbackMsg FeedbackView.Msg
     | FeedbackResponseReceived Feedback.RequestId (ApiRequest.Response Bool)
@@ -454,7 +456,7 @@ init shared flags =
                 BattlefieldNavigation.init
                     |> BattlefieldNavigation.setMaxZoom
                         (maxBattlefieldZoom
-                            shared
+                            (Shared.isMobileView shared)
                             flags.snapshot.battlefield.map
                         )
             , battlefieldViewport = Nothing
@@ -479,6 +481,7 @@ init shared flags =
     , E.batch
         [ eff
         , measureWorkspace
+        , E.readScreenSize GotWindowSizeMeasurement
         , E.toJs (ToJs.PreloadImages (Assets.imagePaths model.map.theme))
         ]
     )
@@ -506,12 +509,12 @@ isMobileView model =
 
 {-| Match the tile size at maximum zoom on the 17-tile-wide Supply Point map.
 -}
-maxBattlefieldZoom : Shared.Model -> Map -> Float
-maxBattlefieldZoom shared map =
+maxBattlefieldZoom : Bool -> Map -> Float
+maxBattlefieldZoom mobile map =
     let
         supplyPointMaxZoom : Float
         supplyPointMaxZoom =
-            if Shared.isMobileView shared then
+            if mobile then
                 6
 
             else
@@ -543,37 +546,6 @@ stopPlaybackAudio model =
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
-
-
-resize : { layoutChanged : Bool } -> Model -> ( Model, Eff Msg )
-resize { layoutChanged } model =
-    if layoutChanged then
-        let
-            maxZoom : Float
-            maxZoom =
-                maxBattlefieldZoom model.shared model.map
-
-            navigation : BattlefieldNavigation.Model
-            navigation =
-                BattlefieldNavigation.setMaxZoom maxZoom model.navigation
-
-            currentTurn : CurrentTurn.Model
-            currentTurn =
-                model.currentTurn
-                    |> CurrentTurn.setPhase
-                        (limitPlaybackZoom maxZoom model.currentTurn.phase)
-        in
-        ( model
-            |> setNavigation navigation
-            |> setCurrentTurn currentTurn
-        , E.batch
-            [ measureWorkspace
-            , scrollChatHistory model.chat model.shared
-            ]
-        )
-
-    else
-        ( model, measureWorkspace )
 
 
 limitPlaybackZoom : Float -> Phase -> Phase
@@ -2485,7 +2457,14 @@ applyChatUpdate chat model =
         effects : Eff Msg
         effects =
             if chat.overlayVersion /= model.chat.overlayVersion then
-                E.batch [ chatExpiration next, scrollChatHistory next.chat next.shared ]
+                E.batch
+                    [ chatExpiration next
+                    , scrollChatHistory
+                        { mobile = isMobileView model
+                        , devPanelOpen = model.shared.devPanelOpen
+                        }
+                        chat
+                    ]
 
             else
                 E.none
@@ -2493,23 +2472,26 @@ applyChatUpdate chat model =
     ( next, effects )
 
 
-chatHistoryVisible : Chat.Model -> Shared.Model -> Bool
-chatHistoryVisible chat shared =
-    if Shared.isMobileView shared then
+chatHistoryVisible : Bool -> Chat.Model -> Bool
+chatHistoryVisible mobile chat =
+    if mobile then
         Chat.isOpen chat
 
     else
         Chat.historyVisible chat
 
 
-scrollChatHistory : Chat.Model -> Shared.Model -> Eff Msg
-scrollChatHistory chat shared =
+scrollChatHistory :
+    { mobile : Bool, devPanelOpen : Bool }
+    -> Chat.Model
+    -> Eff Msg
+scrollChatHistory { mobile, devPanelOpen } chat =
     let
         canFollow : Bool
         canFollow =
-            chatHistoryVisible chat shared
+            chatHistoryVisible mobile chat
                 && Chat.followsHistory chat
-                && not shared.devPanelOpen
+                && not devPanelOpen
     in
     if canFollow then
         E.scrollToBottom { htmlId = ChatView.messagesHtmlId } ChatScrollCompleted
@@ -2916,6 +2898,60 @@ renewInactivityTimer lobbyId now model =
         model |> E.withOut
 
 
+handleScreenSize : ScreenSize -> Model -> ( Model, Eff Msg )
+handleScreenSize screenSize model =
+    if screenSize == model.shared.screenSize then
+        E.withOut model
+
+    else
+        let
+            shared : Shared.Model
+            shared =
+                Shared.setScreenSize screenSize model.shared
+
+            usesMobileLayout : ScreenSize -> Bool
+            usesMobileLayout =
+                ScreenSize.usesMobileLayout model.shared.operatingSystem
+
+            mobile : Bool
+            mobile =
+                usesMobileLayout screenSize
+
+            layoutChanged : Bool
+            layoutChanged =
+                usesMobileLayout model.shared.screenSize /= mobile
+        in
+        if layoutChanged then
+            let
+                maxZoom : Float
+                maxZoom =
+                    maxBattlefieldZoom mobile model.map
+            in
+            ( { model
+                | currentTurn =
+                    model.currentTurn
+                        |> CurrentTurn.setPhase
+                            (limitPlaybackZoom
+                                maxZoom
+                                model.currentTurn.phase
+                            )
+              }
+                |> setNavigation (BattlefieldNavigation.setMaxZoom maxZoom model.navigation)
+                |> setShared shared
+            , E.batch
+                [ measureWorkspace
+                , scrollChatHistory
+                    { mobile = mobile
+                    , devPanelOpen = model.shared.devPanelOpen
+                    }
+                    model.chat
+                ]
+            )
+
+        else
+            ( setShared shared model, measureWorkspace )
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -2935,6 +2971,12 @@ track msg =
             Analytics.none
 
         InactivityRenewalResponseReceived _ _ ->
+            Analytics.none
+
+        WindowResized _ ->
+            Analytics.none
+
+        GotWindowSizeMeasurement _ ->
             Analytics.none
 
         BattlefieldSizeReceived _ ->
@@ -3308,7 +3350,13 @@ update lobbyId msg model =
         ChatScrollCompleted result ->
             case result of
                 Err error ->
-                    if chatHistoryVisible model.chat model.shared && not model.shared.devPanelOpen then
+                    let
+                        shouldReportError : Bool
+                        shouldReportError =
+                            chatHistoryVisible (isMobileView model) model.chat
+                                && not model.shared.devPanelOpen
+                    in
+                    if shouldReportError then
                         model
                             |> setShared (Shared.addError (Just (Error.ElementScrollFailed error)) model.shared)
                             |> E.withOut
@@ -3479,6 +3527,12 @@ update lobbyId msg model =
             )
                 |> updatePlaybackCamera
                 |> E.withOut
+
+        WindowResized screenSize ->
+            handleScreenSize screenSize model
+
+        GotWindowSizeMeasurement screenSize ->
+            handleScreenSize screenSize model
 
         BattlefieldSizeReceived result ->
             case result of
@@ -4052,6 +4106,12 @@ playAudio msg model =
             Audio.none
 
         InactivityRenewalResponseReceived _ _ ->
+            Audio.none
+
+        WindowResized _ ->
+            Audio.none
+
+        GotWindowSizeMeasurement _ ->
             Audio.none
 
         ChatMsg _ ->
@@ -4673,7 +4733,11 @@ handleChatMsg lobbyId msg model =
             in
             ( model
                 |> setChat newChat
-            , scrollChatHistory newChat model.shared
+            , scrollChatHistory
+                { mobile = isMobileView model
+                , devPanelOpen = model.shared.devPanelOpen
+                }
+                newChat
             )
 
         ChatView.HistoryClicked ->
@@ -4684,7 +4748,11 @@ handleChatMsg lobbyId msg model =
             in
             ( model
                 |> setChat newChat
-            , scrollChatHistory newChat model.shared
+            , scrollChatHistory
+                { mobile = isMobileView model
+                , devPanelOpen = model.shared.devPanelOpen
+                }
+                newChat
             )
 
         ChatView.SendPressed ->
@@ -7646,7 +7714,8 @@ subscriptions model =
                 Time.every 1000 PlanningErrorReportTick
     in
     Sub.batch
-        [ chatShortcut model
+        [ ScreenSize.subscription WindowResized
+        , chatShortcut model
         , combatEnterShortcut model
         , reportTicks
         , Time.every 1000 ChatPollElapsed

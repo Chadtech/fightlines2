@@ -117,6 +117,8 @@ directory is available. A fresh clone does not include that directory.
   animation clock and facing as the standard atlas. The infantry sheets are
   the team-colored exports from the army infantry idle artwork. The tank
   sheets are the board exports from the tank idle artwork in `design/tanks/`.
+  The United States atlas uses the approved
+  [v32 master](../../design/tanks/united-states/concept-v32.png).
 
 Terrain, buildings and units use smooth scaling. Selection corners use pixelated
 rendering. Eastern units are mirrored to face west. Depots have no ownership

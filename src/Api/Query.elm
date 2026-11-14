@@ -83,6 +83,28 @@ adminPlanningErrors requiredArgs____ object____ =
     Object.selectionForCompositeField "adminPlanningErrors" [ Argument.required "offset" requiredArgs____.offset Encode.int ] object____ Basics.identity
 
 
+type alias AdminAnalyticsOptionalArguments =
+    { logId : OptionalArgument String
+    , before : OptionalArgument String
+    }
+
+
+adminAnalytics :
+    (AdminAnalyticsOptionalArguments -> AdminAnalyticsOptionalArguments)
+    -> SelectionSet decodesTo Api.Object.AnalyticsPage
+    -> SelectionSet decodesTo RootQuery
+adminAnalytics fillInOptionals____ object____ =
+    let
+        filledInOptionals____ =
+            fillInOptionals____ { logId = Absent, before = Absent }
+
+        optionalArgs____ =
+            [ Argument.optional "logId" filledInOptionals____.logId Encode.string, Argument.optional "before" filledInOptionals____.before Encode.string ]
+                |> List.filterMap Basics.identity
+    in
+    Object.selectionForCompositeField "adminAnalytics" optionalArgs____ object____ Basics.identity
+
+
 type alias ChatRequiredArguments =
     { id : String
     , after : Int

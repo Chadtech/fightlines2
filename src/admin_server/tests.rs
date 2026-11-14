@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    game_archive, game_log, graphql,
+    analytics, game_archive, game_log, graphql,
     seed::Seed,
     store::Store,
     test_support::{FixtureValue, TestResult},
@@ -163,6 +163,7 @@ async fn endpoints_protect_private_data_and_keep_player_identity_separate() -> T
                 &server_logs,
                 &root.join("public"),
             )?))
+            .app_data(web::Data::new(analytics::Recorder::open(&server_logs)?))
             .route("/graphql", web::post().to(graphql::handle)),
     )
     .await;
@@ -182,6 +183,7 @@ async fn endpoints_protect_private_data_and_keep_player_identity_separate() -> T
         "{ adminFeedback(offset:0) { total } }",
         "{ adminRecordings(offset:0) { total } }",
         "{ adminPlanningErrors(offset:0) { total } }",
+        "{ adminAnalytics { records { data } } }",
         "{ loggedGames { __typename } }",
         "{ loggedGame(id:\"bad\") { id } }",
         "{ loggedTurn(id:\"bad\",turnNumber:0,playerNumber:PLAYER1) { id } }",
@@ -223,6 +225,37 @@ async fn endpoints_protect_private_data_and_keep_player_identity_separate() -> T
     .await;
     assert!(body.get("errors").is_none(), "{body}");
     assert_eq!(body["data"]["adminDashboard"]["concurrentGames"], 0);
+    let analytics_query = "{ adminAnalytics { logs { id day source } selectedLog records { name page data version receivedAt } unreadable older } }";
+    let recorded: Value = web_test::read_body_json(send!(
+        r#"mutation { recordAnalytics(input: { name: "page viewed", data: "{\"page\":\"home\",\"sessionId\":\"test-session\"}" }) }"#,
+        None,
+        "https://fightlines.test"
+    ))
+    .await;
+    assert_eq!(recorded["data"]["recordAnalytics"], true);
+    let response: Value = web_test::read_body_json(send!(
+        analytics_query,
+        Some(cookie.clone()),
+        "https://fightlines.test"
+    ))
+    .await;
+    assert!(response.get("errors").is_none(), "{response}");
+    let page = &response["data"]["adminAnalytics"];
+    assert_eq!(page["selectedLog"], page["logs"][0]["id"]);
+    assert_eq!(page["records"][0]["name"], "page viewed");
+    assert_eq!(page["records"][0]["page"], "home");
+    assert_eq!(
+        serde_json::from_str::<Value>(page["records"][0]["data"].as_str().fixture()?)?,
+        json!({ "page": "home", "sessionId": "test-session" })
+    );
+    let denied: Value = web_test::read_body_json(send!(
+        analytics_query,
+        Some(cookie.clone()),
+        "https://attacker.test"
+    ))
+    .await;
+    assert!(denied.get("errors").is_some(), "{denied}");
+    assert!(!denied.to_string().contains("test-session"));
     // Use the public game workflow to verify lobby -> game -> terminal counts.
     let response = send!(
         "mutation { createLobby(name:\"host\",lobbyName:\"admin test\") { id } }",

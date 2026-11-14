@@ -66,8 +66,24 @@ test('home keeps all menu actions visible in short landscape', interaction, asyn
   await page.setViewportSize({ width: 852, height: 393 });
   await about.tap();
   const dialog = page.getByRole('dialog', { name: 'about fightlines', exact: true });
+  await expect(dialog).toHaveCSS('height', '393px');
+  const mute = dialog.locator('button[aria-label$="all audio"]');
+  await expect(mute).toBeHidden();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).not.toHaveCSS('height', '900px');
+  await expect(mute).toBeVisible();
   await dialog.getByRole('button', { name: 'close', exact: true }).tap();
   await expect(about).toBeFocused();
+
+  // Resizing on the creation form must not leave Home with its old dimensions.
+  await page.getByRole('button', { name: 'create a lobby', exact: true }).tap();
+  await expect(page).toHaveURL(/\/new$/);
+  await page.setViewportSize({ width: 852, height: 393 });
+  await page.goBack();
+  await page.getByRole('button', { name: 'feedback', exact: true }).tap();
+  const feedback = page.getByRole('dialog', { name: 'feedback', exact: true });
+  await expect(feedback.locator('label')).toHaveCSS('flex-grow', '1');
 });
 
 test('short landscape lobby keeps setup, chat, and map selection reachable', interaction, async ({ page }) => {
@@ -83,6 +99,11 @@ test('short landscape lobby keeps setup, chat, and map selection reachable', int
 
   await expect(playersTab).toHaveAttribute('aria-selected', 'true');
   await expect(chat).toBeHidden();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(playersTab).toHaveCount(0);
+  await expect(chat).toBeVisible();
+  await page.setViewportSize({ width: 852, height: 393 });
+  await expect(playersTab).toHaveAttribute('aria-selected', 'true');
   await playersTab.focus();
   await page.keyboard.press('ArrowRight');
   await expect(chatTab).toBeFocused();
@@ -123,6 +144,12 @@ test('short landscape lobby keeps setup, chat, and map selection reachable', int
   await swipeUp(page, playerSettings);
   await expect.poll(() => playerSettings.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
   expect(await tabBar.boundingBox()).toEqual(tabBarBounds);
+
+  await page.getByRole('button', { name: 'close lobby', exact: true }).tap();
+  const closeDialog = page.getByRole('dialog', { name: 'close lobby?', exact: true });
+  await expect(closeDialog).toHaveCSS('height', '260px');
+  await closeDialog.getByRole('button', { name: 'cancel', exact: true }).tap();
+  await expect(closeDialog).toBeHidden();
 
   await page.getByLabel('player 2').selectOption({ label: 'ai' });
   await start.tap();

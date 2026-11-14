@@ -116,7 +116,6 @@ main =
         , update =
             \msg page ->
                 update msg page
-                    |> restorePageDialog page
                     |> E.andThen (withPlaybackAudio page)
                     |> Tuple.mapSecond (E.toCmd (getKey page))
         , view = view
@@ -161,33 +160,6 @@ init value url key =
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
-
-
-{-| Restore the page dialog only when the higher-priority dev panel closes.
--}
-restorePageDialog : Page -> ( Page, Eff Msg ) -> ( Page, Eff Msg )
-restorePageDialog previous ( page, effect ) =
-    let
-        panelClosed : Bool
-        panelClosed =
-            (Maybe.map .devPanelOpen (getShared previous) == Just True)
-                && (Maybe.map .devPanelOpen (getShared page) == Just False)
-
-        result : ( Page, Eff Msg )
-        result =
-            ( page, effect )
-    in
-    if panelClosed then
-        case pageDialog page of
-            Just activeDialog ->
-                result
-                    |> E.and (E.toJs (ToJs.OpenDialog { htmlId = Dialog.htmlId activeDialog }))
-
-            Nothing ->
-                result
-
-    else
-        result
 
 
 getKey : Page -> Navigation.Key
@@ -647,11 +619,12 @@ update msg page =
                 Just shared ->
                     let
                         ( newShared, effect ) =
-                            Shared.superUpdate subMsg shared
+                            Shared.update subMsg shared
                     in
                     ( setShared newShared page
                     , E.map GotSharedMsg effect
                     )
+                        |> Dialog.openOnChange dialog page
 
                 Nothing ->
                     page
@@ -667,20 +640,23 @@ update msg page =
 view : Page -> Browser.Document Msg
 view page =
     let
+        shared : Maybe Shared.Model
+        shared =
+            getShared page
+
         overlayContent : List (Html Msg)
         overlayContent =
-            if Maybe.map Shared.isMobileView (getShared page) == Just True then
-                []
-
-            else
-                [ AppControls.toHtml audioContent ]
+            [ AppControls.toHtml
+                (Maybe.map .operatingSystem shared)
+                audioContent
+            ]
 
         audioContent : List (Html Msg)
         audioContent =
-            case getShared page of
-                Just shared ->
+            case shared of
+                Just model ->
                     [ AudioMute.toHtml
-                        { mute = shared.audioMute
+                        { mute = model.audioMute
                         , onClick = GotSharedMsg Shared.audioMuteButtonClicked
                         }
                     ]
@@ -691,15 +667,17 @@ view page =
         dialogContent : List (Html Msg)
         dialogContent =
             case
-                dialog page
+                ( dialog page
+                , shared
+                )
             of
-                Just activeDialog ->
+                ( Just activeDialog, Just model ) ->
                     [ activeDialog
                         |> Dialog.withOverlay overlayContent
-                        |> Dialog.toHtml
+                        |> Dialog.toHtml model.operatingSystem
                     ]
 
-                Nothing ->
+                _ ->
                     overlayContent
 
         content : List (Html Msg)
@@ -717,21 +695,16 @@ dialog : Page -> Maybe (Dialog Msg)
 dialog page =
     case getShared page of
         Just shared ->
-            let
-                activeDialog : Maybe (Dialog Msg)
-                activeDialog =
-                    if shared.devPanelOpen then
-                        DevPanel.dialog
-                            (Shared.devPanelErrors shared)
-                            shared.features
-                            shared.devPanel
-                            |> Dialog.map (Shared.devPanelMsg >> GotSharedMsg)
-                            |> Just
+            if shared.devPanelOpen then
+                DevPanel.dialog
+                    (Shared.devPanelErrors shared)
+                    shared.features
+                    shared.devPanel
+                    |> Dialog.map (Shared.devPanelMsg >> GotSharedMsg)
+                    |> Just
 
-                    else
-                        pageDialog page
-            in
-            Maybe.map (Shared.adaptDialog shared) activeDialog
+            else
+                pageDialog page
 
         Nothing ->
             Nothing

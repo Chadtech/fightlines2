@@ -11,6 +11,8 @@ module View.Dialog exposing
     , map
     , onCancel
     , onOpened
+    , openOnChange
+    , priorityOverlay
     , reference
     , toHtml
     , withCloseButton
@@ -19,10 +21,15 @@ module View.Dialog exposing
     )
 
 import Css
+import Effect as E exposing (Eff)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
+import Html.Styled.Keyed as Keyed
 import Json.Decode as Decode
+import OperatingSystem exposing (OperatingSystem)
+import Ports.Js.To as ToJs
+import ScreenSize
 import Style as S
 import View.Aria as Aria
 import View.Button as Button
@@ -43,7 +50,8 @@ type Dialog msg
         , onOpened : Maybe msg
         , body : List (Html msg)
         , placement : Placement
-        , fullscreen : Bool
+        , size : Size
+        , priorityOverlay : Bool
         , showCloseButton : Bool
         , overlay : List (Html msg)
         }
@@ -57,6 +65,11 @@ type Placement
     | Article
     | Workspace
     | Form FormDensity
+
+
+type Size
+    = Windowed
+    | Fullscreen
 
 
 type FormDensity
@@ -86,6 +99,37 @@ htmlId (Dialog model) =
     model.htmlId
 
 
+{-| Open the visible dialog when its identity changes across an update.
+-}
+openOnChange :
+    (page -> Maybe (Dialog msg))
+    -> page
+    -> ( page, Eff msg )
+    -> ( page, Eff msg )
+openOnChange visibleDialog previous (( page, _ ) as result) =
+    case visibleDialog page of
+        Just activeDialog ->
+            let
+                activeHtmlId : String
+                activeHtmlId =
+                    htmlId activeDialog
+
+                previousHtmlId : Maybe String
+                previousHtmlId =
+                    visibleDialog previous |> Maybe.map htmlId
+            in
+            if previousHtmlId == Just activeHtmlId then
+                result
+
+            else
+                result
+                    |> E.and
+                        (E.toJs (ToJs.OpenDialog { htmlId = activeHtmlId }))
+
+        Nothing ->
+            result
+
+
 make : String -> String -> msg -> List (Html msg) -> Dialog msg
 make dialogHtmlId title canceled body =
     Dialog
@@ -95,7 +139,8 @@ make dialogHtmlId title canceled body =
         , onOpened = Nothing
         , body = body
         , placement = Centered
-        , fullscreen = False
+        , size = Windowed
+        , priorityOverlay = False
         , showCloseButton = False
         , overlay = []
         }
@@ -106,6 +151,14 @@ make dialogHtmlId title canceled body =
 withOverlay : List (Html msg) -> Dialog msg -> Dialog msg
 withOverlay overlay (Dialog model) =
     Dialog { model | overlay = model.overlay ++ overlay }
+
+
+{-| Give an overlay its own native modal so the browser runs autofocus when
+switching between it and a page dialog.
+-}
+priorityOverlay : Dialog msg -> Dialog msg
+priorityOverlay (Dialog model) =
+    Dialog { model | priorityOverlay = True }
 
 
 withCloseButton : Dialog msg -> Dialog msg
@@ -154,7 +207,7 @@ Long bodies scroll beneath the title.
 -}
 fullscreen : Dialog msg -> Dialog msg
 fullscreen (Dialog model) =
-    Dialog { model | fullscreen = True }
+    Dialog { model | size = Fullscreen }
 
 
 atBottom : Dialog msg -> Dialog msg
@@ -181,7 +234,8 @@ map toMsg (Dialog model) =
         , onOpened = Maybe.map toMsg model.onOpened
         , body = List.map (H.map toMsg) model.body
         , placement = model.placement
-        , fullscreen = model.fullscreen
+        , size = model.size
+        , priorityOverlay = model.priorityOverlay
         , showCloseButton = model.showCloseButton
         , overlay = List.map (H.map toMsg) model.overlay
         }
@@ -189,9 +243,10 @@ map toMsg (Dialog model) =
 
 {-| Native modal dialogs trap keyboard focus and make the page inert.
 Open after Elm renders through the OpenDialog port effect.
+Windowed dialogs fill the viewport in the mobile layout.
 -}
-toHtml : Dialog msg -> Html msg
-toHtml (Dialog model) =
+toHtml : OperatingSystem -> Dialog msg -> Html msg
+toHtml operatingSystem (Dialog model) =
     let
         openedAttributes : List (H.Attribute msg)
         openedAttributes =
@@ -319,9 +374,18 @@ toHtml (Dialog model) =
                 focusedHeader
                     |> CardHeader.toHtml
 
-        fullscreenStyles : List Css.Style
-        fullscreenStyles =
-            if model.fullscreen then
+        fullscreenStyle : List Css.Style -> Css.Style
+        fullscreenStyle =
+            case model.size of
+                Windowed ->
+                    ScreenSize.mobileStyles operatingSystem
+
+                Fullscreen ->
+                    S.batch
+
+        fullscreenFrame : Css.Style
+        fullscreenFrame =
+            fullscreenStyle
                 [ S.fixed
                 , S.top0
                 , S.bottom0
@@ -338,12 +402,9 @@ toHtml (Dialog model) =
                     [ S.col ]
                 ]
 
-            else
-                []
-
         dialogStyles : List Css.Style
         dialogStyles =
-            baseStyles ++ placementStyles ++ fullscreenStyles
+            baseStyles ++ placementStyles ++ List.singleton fullscreenFrame
 
         placementBodyStyles : List Css.Style
         placementBodyStyles =
@@ -355,17 +416,6 @@ toHtml (Dialog model) =
 
                 _ ->
                     []
-
-        fullscreenBodyStyles : List Css.Style
-        fullscreenBodyStyles =
-            if model.fullscreen then
-                [ S.flex1
-                , S.minH0
-                , S.overflowAuto
-                ]
-
-            else
-                []
 
         bodySpacing : List Css.Style
         bodySpacing =
@@ -381,19 +431,27 @@ toHtml (Dialog model) =
                     , S.p3
                     ]
 
+        fullscreenBody : Css.Style
+        fullscreenBody =
+            fullscreenStyle
+                [ S.flex1
+                , S.minH0
+                , S.overflowAuto
+                ]
+
         bodyStyles : List Css.Style
         bodyStyles =
             S.col
                 :: bodySpacing
                 ++ placementBodyStyles
-                ++ fullscreenBodyStyles
+                ++ List.singleton fullscreenBody
 
         content : List (Html msg)
         content =
             [ H.div
                 [ A.css
                     [ S.p2px
-                    , S.when model.fullscreen [ S.shrink0 ]
+                    , fullscreenStyle [ S.shrink0 ]
                     ]
                 ]
                 [ headerContent ]
@@ -412,7 +470,20 @@ toHtml (Dialog model) =
             , A.css dialogStyles
             ]
                 ++ openedAttributes
+
+        nativeDialog : Html msg
+        nativeDialog =
+            H.node "dialog"
+                attributes
+                content
     in
-    H.node "dialog"
-        attributes
-        content
+    if model.priorityOverlay then
+        Keyed.node "div"
+            [ A.css [ Css.property "display" "contents" ] ]
+            [ ( model.htmlId
+              , nativeDialog
+              )
+            ]
+
+    else
+        nativeDialog

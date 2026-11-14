@@ -38,7 +38,7 @@ try {
       console.error(failures.join('\n'));
       process.exitCode = 1;
     } else {
-      console.log('Home initialization, shared seed continuity, shared clock and resize subscriptions, and feedback submission checks passed.');
+      console.log('Home initialization, shared seed continuity, shared clock, home resize, and feedback submission checks passed.');
     }
   });
 } finally {

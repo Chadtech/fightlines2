@@ -2,8 +2,8 @@
 
 The Playwright suite drives the real Elm player app and Rust GraphQL server in
 Chromium, then compares viewport screenshots with checked-in PNG baselines. It
-protects the desktop interface while the mobile feature changes. There are no
-mocked GraphQL responses and no production-only testing hooks.
+covers desktop and mobile layouts plus selected interaction flows.
+The tests use live GraphQL requests against isolated local servers.
 
 ## Run it
 
@@ -52,6 +52,9 @@ A mobile interaction check resizes the live game across both layouts.
 - Settings dialog, dialog preferences, audio tab, and Escape dismissal.
 - First-game briefing, turn introduction, and their continue buttons.
 - 852 × 393 touch/landscape: battlefield, orders rail, details rail, settings.
+- Mobile interactions: landscape home and lobby controls, incoming chat
+  indicators, touch move and attack-move tracing, depot and terrain inspection,
+  and submission and end-game dialogs on short screens.
 - Desktop, laptop, and touch landscape: unloaded-infantry picker and remaining
   orders. Exercise canceling after an infantry order and bulk hold from the
   picker. Submit individual infantry orders and verify the truck and both
@@ -65,7 +68,7 @@ Most game scenarios create their isolated lobby/game through the real API for
 speed; one desktop scenario per viewport goes through the UI end to end. Fresh
 browser contexts provide independent cookies and local storage for every test.
 Mobile projects emulate responsive Chromium and touch input, **not iOS Safari**.
-This initial suite does not snapshot combat playback,
+The suite does not snapshot combat playback,
 matchmaking, chat, every map theme, Admin, or DevTools. Existing behavior tests
 remain necessary; screenshots do not prove those flows work.
 

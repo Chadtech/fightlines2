@@ -5,6 +5,7 @@ Detailed controls, game rules, and playback behavior. For setup, see
 Rust owns the authoritative rules; this guide explains the intended behavior.
 
 - [Starting a game](#starting-a-game)
+- [Turn playback and game flow](#turn-playback-and-game-flow) · [chat](#chat)
 - [Battlefield and movement](#battlefield-and-movement)
 - [Digging in](#digging-in) · [fuel](#fuel) · [transport](#transport-and-unloading)
 - [Sight and fog of war](#sight-and-fog-of-war)
@@ -16,9 +17,8 @@ Rust owns the authoritative rules; this guide explains the intended behavior.
 
 ## Turn playback and game flow
 
-The current prototype supports creating a lobby, joining through an invite link,
-and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
-Both players can plan and submit turns, with shared movement playback. The camera
+Start an invite game, queue for a human opponent, or play against the AI.
+Both sides plan and submit orders before the turn resolves. The camera
 holds its view while visible action remains on screen, panning only to bring
 offscreen movement, combat, or indirect-fire impacts into view. Necessary pans
 ease over 1.2 seconds while playback pauses for the camera to settle. It
@@ -27,8 +27,7 @@ Fuel, finite supply stocks, replenishment, and directional ambush combat are
 authoritative. Active games remain in memory, while private game archives on disk
 retain starting boards, accepted orders, and turn results for debugging. See
 [game archives](../DEPLOYMENT.md#game-archives) for storage and replay commands.
-Browsers remember the last user name used to successfully create or join a lobby
-and prefill it next time.
+The create-lobby and join forms prefill the player name saved in this browser.
 Each planning turn opens with a gold turn-introduction card, a pop-in animation,
 and drifting shine. From turn two, it also reports your previous turn’s unit losses,
 confirmed enemy losses, known HP damage inflicted, and total supplies consumed.
@@ -37,9 +36,10 @@ and stock discarded with destroyed units are not spending. Choose **begin turn**
 **skip this dialog** dismisses it and remembers the preference in this browser.
 When the previous turn has an animation, **replay turn** on this card rewatches it
 and returns to the card. Replay is available only here, before beginning the turn.
-Choose **surrender** at the end of the bottom turn controls to concede, including
-after submitting orders. Confirm with **surrender**, or choose **keep fighting**
-to return to the battlefield. Your opponent wins, and both players see the game-over card.
+Choose **surrender** in the desktop bottom controls or at the left of the mobile
+header to concede, including after submitting orders. Confirm with **surrender**,
+or choose **keep fighting** to return to the battlefield. If you concede, your
+opponent wins and both players see the game-over card.
 Choose **home** in the menu to return to the home screen. In an ongoing game,
 this surrenders first and navigates only after the request succeeds. Finished games
 return home immediately.
@@ -82,10 +82,7 @@ acknowledgment. Both scenes share the continue, see-map, and automatic-close con
 
 ## Starting a game
 
-Open http://127.0.0.1:8080 and choose **create a lobby** for an invite game or an
-AI opponent.
-
-Choose **match making** to find a human opponent.
+Open the game and choose **match making** to find a human opponent.
 Enter your user name and choose **find a game**. The waiting page shows the
 existing activity bar, **cancel**, and how recently the last match making game
 started. This is recent activity, rather than a predicted waiting time. With no
@@ -129,7 +126,6 @@ ground fuel, or a planned fuel-truck rendezvous; low-fuel tanks seek the nearest
 reachable refill instead of always returning to base. This planning cannot
 guarantee arrival through enemy action or blocked routes. Deliberate freight
 unloading is not planned yet; trucks deliver by bringing carried stock into range.
-Choose difficulty before starting.
 Switching back to **human** reopens the second slot before starting; a joined
 human cannot be replaced through the controller selector. Before starting, the host
 can choose **kick** beside a joined guest to remove them and reopen the slot.
@@ -148,8 +144,7 @@ home. **cancel** or Escape keeps the lobby open. Guests can use **home** to leav
 the page without closing the lobby.
 
 Unstarted lobbies are automatically removed after 30 minutes without a successful
-join, setup change, or chat message. Automatic polling does not count as activity;
-cleanup runs once per minute. Started games are unaffected by lobby cleanup.
+join, setup change, or chat message. Automatic polling does not renew the timer.
 
 Joined browsers navigate to the game page within about two seconds. The initial
 scenario requires exactly two players; a third player cannot join.
@@ -225,10 +220,11 @@ On a phone, drag with one finger to pan or use two fingers to pan and zoom.
 After choosing **move** or **attack move**, drag one finger along the route and
 lift it on a reachable destination, or tap a highlighted destination directly.
 For **attack move**, choose the final facing after setting the route.
-The selected-unit panel scrolls above the full-width turn controls.
-Use the minus/plus buttons to zoom, or tap the percentage to reset the view.
-The order menu uses two columns above the selected-unit panel, with internal
-scrolling when space is limited. Rotate the phone for a wider battlefield.
+In the phone layout, portrait shows a rotate prompt. In landscape, the
+selected unit opens a scrollable rail on the right over the full-width map.
+Friendly units available for planning have **orders** and **details** tabs.
+Tap **close** at the bottom of the rail to deselect and keep saved orders.
+Mobile dialogs fill the viewport.
 
 The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
@@ -237,9 +233,9 @@ Units use detailed illustrated anime sprites with red and blue team colors,
 packed into 256px square cells and smoothly scaled to the board.
 Field guns use separate realistically proportioned, elongated portraits in the
 right panel and combat theater, with matching red/blue colors and sprite facing.
-Direction markers appear only while choosing or maintaining an ambush, including
-turn playback. Infantry, tanks and field guns use a small illustrated red striking arrow for the
-ambush's up/right/down/left facing. Other units have no facing marker.
+Infantry, tanks, and field guns use an illustrated red arrow for ambush and
+stand-ground facing during planning and playback. Saved attack moves show the
+selected facing at the route endpoint.
 The arrow's ivory impact tip protrudes slightly beyond the tile edge.
 Movement turns units along each successfully traveled segment. Interrupted units
 face their last traveled segment; units stopped before moving retain their facing.
@@ -490,9 +486,8 @@ selection clears. Selected units show their name and player, inset portrait,
 gauges, and resource details in the panel. Illustrated orders open in a popup beside
 the selected unit on the board.
 The order popup’s info button opens a green inset, beveled, scrollable guide.
-Each row pairs its order sprite with the name and a paragraph explaining it,
-including orders not yet implemented. Close or Escape returns
-to the popup without changing orders.
+Each row pairs its order sprite with the name and an explanation.
+Close or Escape returns to the popup without changing orders.
 Available orders appear as move, attack move, ambush, hold position, indirect fire,
 stand ground, dig in, then sabotage. The guide and keyboard navigation use the same
 sequence, with dig in and sabotage grouped last as specialized actions.
@@ -500,7 +495,7 @@ Carried units have inspection details
 and no independent orders. While the
 popup is open, up/down arrows or W/S cycle available orders even before the list has
 focus; Enter or Space chooses the focused order. Cancel closes the popup
-and clears selection. These arrows do not pan the map. Unimplemented orders are disabled.
+and clears selection.
 Choosing move opens destination planning; **cancel order (esc)** cancels that
 preview and clears selection, just like Escape. Choosing hold position or saving a
 destination replaces the order list with the chosen order and **revoke order**.
@@ -513,10 +508,9 @@ The centered top header contains a small FightLines logo between the raised
 button. The inspector stays hidden until an object is selected, then opens over
 the right edge at full height. Closing it
 or pressing Escape clears selection without shifting the map sideways.
-The compact bottom-left control strip contains **submit turn**, pan/zoom/reset
-controls, and **surrender**. Controls wrap on narrower screens.
-The header and bottom controls float over the map, which continues behind them
-and remains visible and interactive beside the control panel.
+On desktop, the bottom-left control strip contains **submit turn**,
+pan/zoom/reset controls, and **surrender**. In the phone layout, **surrender**
+and **submit turn** sit at opposite ends of the header.
 The submit button pulses gold during planning. While waiting for the other
 player, the button reads **turn submitted** and a gray bar sweeps through the
 track beneath it. Reduced-motion settings keep these effects steady.
@@ -525,9 +519,8 @@ move/direction selection, unload workflow, dialog, or pointer gesture is active.
 In the units-without-orders warning, use Tab to reach an action and Enter to
 activate it. Escape or **keep planning** returns to planning.
 
-Give units a move, ambush, or **hold position** order. **submit turn**
-becomes primary when all units are ready. Submitting with unassigned units opens
-a warning listing the units that will hold position. Choose **keep planning**
+Submitting with unassigned units opens a warning listing the units that will
+hold position. Choose **keep planning**
 or **submit anyway**. Check **skip this dialog** to remember the preference in this
 browser; future submissions let unassigned units hold without showing the warning.
 Checking the box still leaves the current turn waiting for **submit anyway**.
@@ -545,7 +538,8 @@ successfully departing at the same instant frees its square unless they swap.
 Allies can pass through each other. If an encounter would leave a passing unit
 on an allied square, it stops at its preceding free square. Interrupted routes spend movement resources
 only for tiles actually traveled. Ambushes can interrupt movement at arrival boundaries.
-Loading and truck-planned unloading follow movement to preserve transport dependencies.
+Transport follows initial movement. Successfully dismounted infantry then
+resolve their follow-up orders before indirect fire and resource settlement.
 Both clients replay server-projected frames with shared timing and their own fog.
 Planning then opens with empty drafts. Refresh during playback shows the completed
 board. Allied starting squares become available once their occupants have moves
@@ -568,11 +562,13 @@ forming a five-square plus sign that rotates with the chosen direction.
 
 Ambush readiness costs 4 supplies for infantry and 8 for tanks and field guns,
 in addition to normal turn upkeep. Firing costs 4 supplies for infantry, 16 for
-field guns, and 24 for tanks; infantry deal 4 damage, tanks 8, and field guns 12.
-These are initial balance values. Readiness is charged even without a target, and upkeep
+field guns, and 24 for tanks. Base weapon power is 4 for infantry, 8 for tanks,
+and 12 for field guns. The [damage factors](../combat_factors.md) determine
+the actual hit. Readiness is charged even without a target, and upkeep
 is reserved before firing. Units without enough supplies for readiness cannot
 choose ambush; a unit can maintain readiness without enough supplies to fire.
-Trucks and carried units cannot ambush. Ambush orders last for one resolved turn.
+Infantry can ambush from a planned dismount square after a successful exit.
+Ambush orders last for one resolved turn.
 
 Firepower falls with the square of the attacker's current HP divided by the
 target's current HP, capped at full power. Equal HP gives full weapon power even
@@ -593,8 +589,7 @@ Terrain still blocks sight normally, and unrevealed enemies in forests remain co
 unit with a normal move stops its remaining movement. A surviving attack-moving
 unit continues its remaining route and can fire on a later attack-move contact;
 being ambushed alone does not trigger return fire. Opposing ready ambushers fire simultaneously when both
-have an eligible target, permitting mutual destruction. A tank ambush deals
-8 damage, half a fresh tank's health, without an automatic counterattack.
+have an eligible target, permitting mutual destruction.
 
 Every combat exchange involving your units opens the theater, even when the enemy
 is concealed on the battlefield. Before the exchange, playback freezes the battlefield and surrounding
@@ -705,8 +700,7 @@ arrow key / WASD, just like ambush. It never fires and costs normal upkeep plus
 An arrow and a dotted red square directly ahead show the chosen facing while
 planning and on saved orders, including infantry unloading from trucks.
 Choosing a direction saves the order, which counts toward turn readiness and
-can be revoked before submission. Trucks and
-passengers cannot stand ground.
+can be revoked before submission.
 
 ## Mountains
 
@@ -717,9 +711,9 @@ Infantry spend 2 movement points per mountain square (1 extra), so entering one
 uses their full turn movement budget. Tanks, trucks, and wheeled field guns cannot
 enter or pass through mountains, including passenger unloading. Mountains use the
 existing rough-terrain provision surcharge and grant no additional combat cover.
-Green, snowy, and desert maps use the matching approved mountain sprites. Combat
-theater scenes currently reuse the corresponding hill backdrops. Existing map
-layouts are unchanged; place mountains with `^` in a scenario's ASCII sketch.
+Green, snowy, and desert maps use matching mountain sprites. Combat theater
+scenes reuse the corresponding hill backdrops. Place mountains with the map
+editor or use `^` in an ASCII test fixture.
 
 ## Indirect fire and buildings
 

@@ -4,7 +4,6 @@ module DevPanel exposing
     , Msg(..)
     , Tab(..)
     , dialog
-    , htmlId
     , init
     , tabHtmlId
     )
@@ -121,6 +120,7 @@ dialog errors features model =
             ]
         ]
         |> Dialog.workspace
+        |> Dialog.priorityOverlay
 
 
 tabs : List Error -> Tab -> Html Msg

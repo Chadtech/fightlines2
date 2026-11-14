@@ -40,7 +40,7 @@ port results : List String -> Cmd msg
 
 type Model
     = WaitingForClock
-        { shared : Shared.Model
+        { home : Home.Model
         , failures : List String
         }
     | Finished
@@ -48,6 +48,7 @@ type Model
 
 type Msg
     = SharedMsg Shared.Msg
+    | HomeMsg Home.Msg
     | NavigationIgnored
 
 
@@ -88,7 +89,7 @@ main =
                             [ "shared initialization must retain the supplied startup time and screen size" ]
                 in
                 ( WaitingForClock
-                    { shared = shared
+                    { home = Home.init shared |> Tuple.first
                     , failures = List.map errorToString (checks shared) ++ clockFailures ++ featureChecks shared
                     }
                 , Cmd.none
@@ -104,12 +105,18 @@ main =
 updateClock : Msg -> Model -> ( Model, Cmd Msg )
 updateClock msg model =
     case ( msg, model ) of
+        ( HomeMsg homeMsg, WaitingForClock pending ) ->
+            ( WaitingForClock
+                { pending | home = Home.update homeMsg pending.home |> Tuple.first }
+            , Cmd.none
+            )
+
         ( SharedMsg sharedMsg, WaitingForClock pending ) ->
             let
                 ( shared, _ ) =
-                    Shared.superUpdate sharedMsg pending.shared
+                    Shared.update sharedMsg pending.home.shared
             in
-            if shared.now /= pending.shared.now then
+            if shared.now /= pending.home.shared.now then
                 let
                     expectedScreenSize : ScreenSize
                     expectedScreenSize =
@@ -123,14 +130,17 @@ updateClock msg model =
                             []
 
                         else
-                            [ "shared resize subscription must update screen size" ]
+                            [ "home resize subscription must update the shared screen size" ]
                 in
                 ( Finished
                 , results (pending.failures ++ resizeFailures)
                 )
 
             else
-                ( WaitingForClock { pending | shared = shared }, Cmd.none )
+                ( WaitingForClock
+                    { pending | home = Home.setShared shared pending.home }
+                , Cmd.none
+                )
 
         _ ->
             ( model, Cmd.none )
@@ -140,8 +150,10 @@ clockSubscriptions : Model -> Sub Msg
 clockSubscriptions model =
     case model of
         WaitingForClock _ ->
-            Shared.subscriptions
-                |> Sub.map SharedMsg
+            Sub.batch
+                [ Shared.subscriptions |> Sub.map SharedMsg
+                , Home.subscriptions |> Sub.map HomeMsg
+                ]
 
         Finished ->
             Sub.none
@@ -152,21 +164,22 @@ checks shared =
     let
         first : Home.Model
         first =
-            Home.init shared
+            Home.init shared |> Tuple.first
 
         repeated : Home.Model
         repeated =
-            Home.init shared
+            Home.init shared |> Tuple.first
 
         nextVisit : Home.Model
         nextVisit =
-            Home.init first.shared
+            Home.init first.shared |> Tuple.first
 
         restored : Home.Model
         restored =
             first.shared
                 |> Shared.setSeed shared.seed
                 |> Home.init
+                |> Tuple.first
 
         samePositions : Home.Model -> Home.Model -> Bool
         samePositions left right =
@@ -312,14 +325,14 @@ featureChecks shared =
     let
         selectTab : Shared.Model
         selectTab =
-            Shared.superUpdate
+            Shared.update
                 (Shared.devPanelMsg (DevPanel.TabClicked DevPanel.FeaturesTab))
                 shared
                 |> Tuple.first
 
         toggle : Bool -> Shared.Model -> Shared.Model
         toggle isEnabled model =
-            Shared.superUpdate
+            Shared.update
                 (Shared.devPanelMsg
                     (DevPanel.FeatureCheckboxChanged
                         Features.Placeholder

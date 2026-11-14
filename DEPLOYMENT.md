@@ -45,8 +45,9 @@ security from client-supplied forwarding headers.
 
 ## Admin dashboard and password setup
 
-`/admin` runs the third Elm app in development and production. It contains one
-dashboard for concurrent games, waiting lobbies, feedback, and recorded games.
+`/admin` runs the operator app in development and production. Its dashboard
+shows concurrent games, waiting lobbies, feedback, browser planning errors,
+recorded games, and player analytics.
 Game status polls every five seconds without renewing player or lobby activity.
 Concurrent games means started, unfinished games; finished games retained in
 memory and waiting lobbies have separate counts. Busy entries show their last
@@ -105,9 +106,9 @@ deployment snapshot workflow. Production builds still remove all DevTools output
 
 ## HTTP requests and limits
 
-Frontend pages and assets use `Cache-Control: no-cache` so browsers revalidate
-them after a rebuild. Preserve this header in the reverse proxy. GraphQL
-responses use `no-store`.
+App entry documents and GraphQL responses use `Cache-Control: no-store`.
+Static assets use `no-cache` so browsers revalidate them. Preserve both
+headers in the reverse proxy.
 
 GraphQL accepts at most 16 concurrent requests across all HTTP workers. When
 full, the server rejects additional requests immediately with HTTP `503` and
@@ -136,12 +137,15 @@ Public write mutations also use separate, shared token budgets:
 | Mutation | Session burst / refill | IP burst / refill |
 | --- | --- | --- |
 | `createLobby` | 3 / one every 60 seconds | 10 / one every 15 seconds |
+| `joinMatchMaking` | 3 / one every 60 seconds | 10 / one every 15 seconds |
 | `submitTurn` | 6 / one every 2 seconds | 24 / one every 500 milliseconds |
 | `sendChat` | 8 / one every 2 seconds | 24 / one every 500 milliseconds |
 | `submitFeedback` | 2 / one every 5 minutes | 5 / one every minute |
+| `reportPlanningErrors` | 6 / one every 60 seconds | 18 / one every 15 seconds |
+| `recordAnalytics` | — | 60 / one every second |
 
-Both applicable budgets must allow the operation. Anonymous requests use the IP
-budget; once a session exists, its budget also applies. Each resolver invocation
+The IP budget applies to every request to a listed mutation. A session budget
+applies where listed when the caller has a session. Each resolver invocation
 counts, including aliases, invalid inputs, and busy attempts. A rate rejection
 does not consume tokens or extend the wait. Rejections are ordinary GraphQL errors
 with `RATE_LIMITED` and `retryAfterSeconds`, so the UI shows the retry message.
@@ -166,14 +170,12 @@ and production, and are starting values to tune against real server load.
   security and development-server flag availability, independently of the build.
 - `FIGHTLINES_ADDR`: listen address; defaults to `127.0.0.1:8080`.
 - `FIGHTLINES_FRONTEND_DIR`: frontend asset directory; defaults to this
-  checkout's `public/`. Set it explicitly when moving the executable
-  to another machine, and include `index.html`, `main.js`, `elm-interop.js`,
-  the generated `build-config.js` and `elm.js`, and the `assets/` directory
-  containing the sprite sheets. For a development deployment, also include the
-  copied `dev-tools.html` and `dev-tools.js`, plus `elm-dev-tools.js`. Their
-  sources live in `dev-tools/`; both apps share `elm-interop.js` for browser
-  storage, startup flags, and dialogs. Clipboard and thumbnail requests are
-  handled by their respective app entry scripts.
+  checkout's `public/`. When moving the executable to another machine, set
+  this to the packaged frontend directory. Include the player and Admin entry
+  documents and bundles, shared scripts and fonts, artwork, audio, map
+  thumbnails, and backdrop calibration data. A development bundle also
+  includes the DevTools files. See the
+  [build outputs](docs/DEVELOPMENT.md#production-and-development-bundles).
 - `FIGHTLINES_MAP_DIR`: directory containing the playable `*.json` map files;
   defaults to this checkout’s `maps/`. Include this directory when moving the
   executable to another machine. Files are discovered and read at runtime.
@@ -356,8 +358,8 @@ retirement disables them. A machine reboot still loses in-memory sessions, but
 restarts the current release and resumes retirement from persisted deadlines.
 These ports remain inaccessible publicly.
 Each release writes only to its own `game-logs`, `feedback`, and `server-logs`.
-Admin reads recordings and feedback from old releases and the legacy directories.
-It also reads planning errors from each release's private server-log directory.
+Admin reads recordings, feedback, planning errors, and analytics from retained
+release directories and available legacy storage.
 Do not delete retired runtime directories if you want to retain their data.
 The shared `.session-owners` directory records session-to-release ownership before
 creation completes. Keep these records and the registry when retaining old links:
@@ -485,11 +487,21 @@ turn. The player app sets `data.sessionId` and `data.page` on each event and
 includes `data.lobbyId` on game-page events. The recorded fields exclude cookies.
 
 The server appends JSON lines with `name`, `data`, `version`,
-and `received_at_unix_ms` under `analytics/` in the private server log
-directory. Files rotate daily in UTC, with up to 30 files retained per release.
-The mutation allows a burst of 60 events per address and refills one event per
-second.
+and `received_at_unix_ms` to daily `analytics/analytics.YYYY-MM-DD.jsonl` files
+under `FIGHTLINES_SERVER_LOG_DIR`. Rotation uses UTC and retains up to 30 files
+per release.
 
+The authenticated Admin dashboard can load these logs by UTC day and server.
+The current server reads its own logs and retained logs from deployed releases
+under `FIGHTLINES_DEPLOYMENTS_DIR`, including retired releases and the legacy
+`server-logs/analytics/` directory beside it. A managed log's identity uses its
+owning release ID and UTC day, so a pagination cursor refers to the same file
+from any release. The viewer skips empty files and opens the most recently
+updated log on the newest available UTC day. Operators can page through earlier
+events and expand each event's recorded data.
+The **load analytics** action fetches the first page. Each page reads a
+window of up to 192 KiB and checks at most 40 lines, newest first. Unreadable
+records are counted in the results.
 
 ## Browser planning errors
 
@@ -501,9 +513,8 @@ The Admin dashboard shows the game ID, turn, diagnostic, frontend and backend
 versions, and server receipt time. Reports are saved in
 `$FIGHTLINES_SERVER_LOG_DIR/planning-errors/` with a separate budget of 32 MiB
 and 4,096 entries per process directory. Remove old reports during maintenance
-and restart to recalculate available space. Access to the game is required to
-submit. The session budget starts at six requests and refills one per minute.
-The address budget starts at 18 and refills one every 15 seconds.
+and restart to recalculate available space. The resolver checks game access
+and applies the [mutation budgets](#http-requests-and-limits).
 
 ## Player feedback
 
@@ -575,8 +586,9 @@ server-session input recording and replay are not implemented yet.
 
 Each game has a directory named `<game-id>-<start-time-in-unix-nanoseconds>`:
 
-- `00000000.json` contains the exact starting scenario, roster and AI difficulty,
-  map selection, lobby chat, application version, and optional build revision.
+- `00000000.json` contains the exact starting scenario, roster with controller
+  kinds, map selection, lobby chat, application version, and optional build
+  revision.
 - Following numbered files contain accepted submissions in processing order,
   timestamps in Unix milliseconds, the resulting authoritative board, pending
   players, terminal outcome, and the full resolution when a turn completes.

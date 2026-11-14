@@ -228,6 +228,7 @@ type Msg
     | PollTimerElapsed Time.Posix
     | LobbyResponseReceived PollRevision (Response Snapshot)
     | ActionResponseReceived (Response Snapshot)
+    | WindowResized ScreenSize
 
 
 
@@ -293,11 +294,19 @@ init location shared flags =
             else
                 E.none
 
+        initTab : LobbyTab
+        initTab =
+            PlayersTab
+
+        initChat : Chat.Model
+        initChat =
+            Chat.init flags.messages |> Chat.open
+
         model : Model
         model =
             { shared = shared
-            , chat = Chat.init flags.messages |> Chat.open
-            , tab = PlayersTab
+            , chat = initChat
+            , tab = initTab
             , unreadChat = False
             , id = lobby.id
             , name = lobby.name
@@ -324,8 +333,9 @@ init location shared flags =
             }
             lobby.id
         , routeCorrection
-        , scrollChatHistory model
+        , scrollChatHistory shared.screenSize screen initTab initChat
         , preloadMapImages lobby.mapType flags.mapPreviews
+        , E.readScreenSize WindowResized
         ]
     )
 
@@ -623,34 +633,33 @@ inviteUrl model =
 applyChatUpdate : Chat.Model -> Model -> ( Model, Eff Msg )
 applyChatUpdate chat model =
     let
-        next : Model
-        next =
-            { model | chat = chat }
-
-        scroll : Eff Msg
-        scroll =
+        eff : Eff Msg
+        eff =
             if chat.overlayVersion /= model.chat.overlayVersion then
-                scrollChatHistory next
+                scrollChatHistory model.shared.screenSize model.screen model.tab chat
 
             else
                 E.none
     in
-    ( next, scroll )
+    ( { model | chat = chat }
+    , eff
+    )
 
 
-lobbyUsesTabs : Model -> Bool
-lobbyUsesTabs model =
-    let
-        size : ScreenSize
-        size =
-            model.shared.screenSize
-    in
+lobbyUsesTabs : ScreenSize -> Bool
+lobbyUsesTabs size =
     (size.width > size.height) && (size.height <= 500) && (size.width <= 1023)
 
 
 chatVisible : Model -> Bool
 chatVisible model =
-    (model.screen == Setup) && (not (lobbyUsesTabs model) || (model.tab == ChatTab))
+    chatVisibleFromParts model.shared.screenSize model.screen model.tab
+
+
+chatVisibleFromParts : ScreenSize -> Screen -> LobbyTab -> Bool
+chatVisibleFromParts screenSize screen tab =
+    (screen == Setup)
+        && (not (lobbyUsesTabs screenSize) || (tab == ChatTab))
 
 
 lobbyTabHtmlId : LobbyTab -> String
@@ -665,26 +674,31 @@ lobbyTabHtmlId tab =
 
 selectLobbyTab : LobbyTab -> Model -> ( Model, Eff Msg )
 selectLobbyTab tab model =
-    case tab of
-        PlayersTab ->
-            { model | tab = PlayersTab }
-                |> E.withOut
+    let
+        eff : Eff Msg
+        eff =
+            if tab == ChatTab then
+                scrollChatHistory model.shared.screenSize model.screen tab model.chat
 
-        ChatTab ->
-            let
-                next : Model
-                next =
-                    { model
-                        | tab = ChatTab
-                        , unreadChat = False
-                    }
-            in
-            ( next, scrollChatHistory next )
+            else
+                E.none
+    in
+    ( { model
+        | tab = tab
+        , unreadChat =
+            if tab == ChatTab then
+                False
+
+            else
+                model.unreadChat
+      }
+    , eff
+    )
 
 
-scrollChatHistory : Model -> Eff Msg
-scrollChatHistory model =
-    if chatVisible model && Chat.followsHistory model.chat then
+scrollChatHistory : ScreenSize -> Screen -> LobbyTab -> Chat.Model -> Eff Msg
+scrollChatHistory screenSize screen tab chat =
+    if chatVisibleFromParts screenSize screen tab && Chat.followsHistory chat then
         E.scrollToBottom { htmlId = ChatView.messagesHtmlId } ChatScrollCompleted
 
     else
@@ -697,7 +711,7 @@ openChat model =
         let
             selected : ( Model, Eff Msg )
             selected =
-                if lobbyUsesTabs model then
+                if lobbyUsesTabs model.shared.screenSize then
                     selectLobbyTab ChatTab model
 
                 else
@@ -795,6 +809,9 @@ pollChat model =
 track : Msg -> Analytics.Event
 track msg =
     case msg of
+        WindowResized _ ->
+            Analytics.none
+
         SideInputChanged _ ->
             Analytics.none
 
@@ -895,6 +912,27 @@ track msg =
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
+        WindowResized screenSize ->
+            let
+                chatBecameVisible : Bool
+                chatBecameVisible =
+                    not (chatVisibleFromParts model.shared.screenSize model.screen model.tab)
+                        && chatVisibleFromParts screenSize model.screen model.tab
+
+                eff : Eff Msg
+                eff =
+                    if chatBecameVisible then
+                        scrollChatHistory screenSize model.screen model.tab model.chat
+
+                    else
+                        E.none
+            in
+            ( setShared
+                (Shared.setScreenSize screenSize model.shared)
+                model
+            , eff
+            )
+
         LobbyTabClicked tab ->
             selectLobbyTab tab model
 
@@ -1738,7 +1776,7 @@ lobbyView model =
 
 lobbySideView : Model -> Html Msg
 lobbySideView model =
-    if lobbyUsesTabs model then
+    if lobbyUsesTabs model.shared.screenSize then
         lobbyTabsView model
 
     else
@@ -2043,7 +2081,7 @@ closeDialogView model =
             ]
             |> Dialog.withCloseButton
             |> Dialog.onOpened CloseDialogOpened
-            |> Dialog.toHtml
+            |> Dialog.toHtml model.shared.operatingSystem
 
     else
         H.text ""
@@ -2595,7 +2633,12 @@ subscriptions model =
             else
                 Sub.none
     in
-    Sub.batch [ Time.every 2000 PollTimerElapsed, Time.every 1000 ChatPollElapsed, shortcut ]
+    Sub.batch
+        [ ScreenSize.subscription WindowResized
+        , Time.every 2000 PollTimerElapsed
+        , Time.every 1000 ChatPollElapsed
+        , shortcut
+        ]
 
 
 listeners : FromJs.Listener Msg

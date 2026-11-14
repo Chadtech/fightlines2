@@ -2,6 +2,7 @@ module Admin.Page.Dashboard exposing
     ( Flags
     , Model
     , Msg(..)
+    , accepts
     , init
     , load
     , needsLogin
@@ -12,6 +13,11 @@ module Admin.Page.Dashboard exposing
     , view
     )
 
+import Admin.Page.Dashboard.Analytics as Analytics exposing (Analytics)
+import Admin.Page.Dashboard.Analytics.Location as Location exposing (Location)
+import Admin.Page.Dashboard.Analytics.QueryResults as QueryResults exposing (QueryResults)
+import Admin.Page.Dashboard.Analytics.RequestId exposing (RequestId)
+import Admin.Page.Dashboard.Analytics.View as AnalyticsView
 import Admin.Route as Route
 import Api.Enum.Controller as Controller exposing (Controller)
 import Api.Enum.EntryStatus as Status exposing (EntryStatus)
@@ -31,7 +37,9 @@ import Api.Object.RecordingsPage as RecordingsApi
 import Api.Query
 import Api.Scalar exposing (MapId)
 import ApiRequest exposing (Response)
+import Browser.Dom
 import Effect as E exposing (Eff)
+import Error
 import Game.Archive as Archive exposing (Entry(..))
 import Game.MapId as MapId
 import Game.PlayerNumber as PlayerNumber
@@ -48,6 +56,7 @@ import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
 import View.CardHeader as CardHeader
+import View.Divider as Divider
 
 
 
@@ -173,6 +182,7 @@ type alias Model =
     , recordingOffset : Int
     , planningErrorOffset : Int
     , planningErrorsExpanded : Bool
+    , analytics : Analytics
     , request : Request
     , listError : Maybe String
     , error : Maybe String
@@ -206,6 +216,9 @@ type Msg
     | PlanningErrorsToggled
     | PlanningErrorsPageClicked Int
     | PlanningErrorsReceived Int (Response PlanningErrors)
+    | AnalyticsViewMsg AnalyticsView.Msg
+    | AnalyticsResponseReceived RequestId (Response QueryResults)
+    | AnalyticsFocusReturned (Result Browser.Dom.Error ())
 
 
 
@@ -237,6 +250,7 @@ init shared flags =
     , recordingOffset = 0
     , planningErrorOffset = 0
     , planningErrorsExpanded = False
+    , analytics = Analytics.NotLoaded
     , request = Idle
     , listError = Nothing
     , error = Nothing
@@ -370,6 +384,16 @@ planningErrorsSelection offset =
         |> Api.Query.adminPlanningErrors { offset = offset }
 
 
+accepts : Msg -> Model -> Bool
+accepts msg model =
+    case msg of
+        AnalyticsResponseReceived id _ ->
+            Analytics.accepts id model.analytics
+
+        _ ->
+            True
+
+
 needsLogin : Msg -> Bool
 needsLogin msg =
     case msg of
@@ -386,6 +410,9 @@ needsLogin msg =
             ApiRequest.requiresAdminLogin error
 
         PlanningErrorsReceived _ (Err error) ->
+            ApiRequest.requiresAdminLogin error
+
+        AnalyticsResponseReceived _ (Err error) ->
             ApiRequest.requiresAdminLogin error
 
         _ ->
@@ -464,8 +491,27 @@ requiresCurrentDeployment msg =
         PlanningErrorsReceived _ (Err error) ->
             ApiRequest.requiresCurrentDeployment error
 
+        AnalyticsResponseReceived _ (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
         _ ->
             False
+
+
+requestAnalytics : Location -> Model -> ( Model, Eff Msg )
+requestAnalytics location model =
+    case Analytics.begin location model.shared.seed model.analytics of
+        Nothing ->
+            model |> E.withOut
+
+        Just started ->
+            ( { model
+                | analytics = started.analytics
+                , shared = Shared.setSeed started.seed model.shared
+              }
+            , QueryResults.request location
+                |> E.request (AnalyticsResponseReceived started.id)
+            )
 
 
 
@@ -671,6 +717,50 @@ update msg model =
                     }
                         |> E.withOut
 
+        AnalyticsViewMsg event ->
+            case event of
+                AnalyticsView.PageButtonClicked location ->
+                    requestAnalytics location model
+
+                AnalyticsView.LogChanged id ->
+                    requestAnalytics (Location.forLog id []) model
+
+        AnalyticsResponseReceived id result ->
+            case Analytics.receive id result model.analytics of
+                Nothing ->
+                    model |> E.withOut
+
+                Just analytics ->
+                    let
+                        focusHtmlId : String
+                        focusHtmlId =
+                            case result of
+                                Ok _ ->
+                                    AnalyticsView.resultsHtmlId
+
+                                Err _ ->
+                                    AnalyticsView.retryHtmlId
+                    in
+                    ( { model | analytics = analytics }
+                    , E.focus
+                        { htmlId = focusHtmlId }
+                        AnalyticsFocusReturned
+                    )
+
+        AnalyticsFocusReturned result ->
+            case result of
+                Ok () ->
+                    model |> E.withOut
+
+                Err error ->
+                    model
+                        |> setShared
+                            (Shared.addError
+                                (Just (Error.ElementFocusFailed error))
+                                model.shared
+                            )
+                        |> E.withOut
+
 
 
 ----------------------------------------------------------------
@@ -761,6 +851,7 @@ view model =
                         , recordingsView model
                         ]
                    , planningErrorsView model
+                   , AnalyticsView.view model.analytics |> H.map AnalyticsViewMsg
                    , H.p
                         []
                         [ H.text
@@ -865,22 +956,9 @@ entriesPanel model title entries =
 
             else
                 List.map (entryView model.selectedGame) entries
-                    |> List.intersperse divider
+                    |> List.intersperse Divider.toHtml
     in
     Card.toHtml (Card.simple |> Card.withHeader (CardHeader.simple title)) rows
-
-
-divider : Html msg
-divider =
-    H.hr
-        [ A.css
-            [ S.border0
-            , S.borderT
-            , S.borderGray2
-            , S.wFull
-            ]
-        ]
-        []
 
 
 entryView : Maybe LobbyId -> LiveEntry -> Html Msg
@@ -1178,7 +1256,7 @@ feedbackView model =
 
         content : List (Html Msg)
         content =
-            empty ++ List.intersperse divider rows ++ controls
+            empty ++ List.intersperse Divider.toHtml rows ++ controls
     in
     Card.toHtml
         (Card.simple
@@ -1238,7 +1316,7 @@ planningErrorsView model =
 
         rows : List (Html Msg)
         rows =
-            List.map recordView visible |> List.intersperse divider
+            List.map recordView visible |> List.intersperse Divider.toHtml
 
         notices : List (Html Msg)
         notices =
@@ -1378,7 +1456,7 @@ recordingsView model =
         rows : List (Html Msg)
         rows =
             List.map recording visible
-                |> List.intersperse divider
+                |> List.intersperse Divider.toHtml
 
         content : List (Html Msg)
         content =

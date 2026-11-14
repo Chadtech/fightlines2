@@ -65,7 +65,7 @@ recordErrors msg model =
     let
         updated : Shared.Model
         updated =
-            Shared.superUpdate msg model
+            Shared.update msg model
                 |> Tuple.first
 
         toDetails : DevPanel.Error -> { title : String, details : String }

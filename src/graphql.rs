@@ -1,6 +1,6 @@
 use crate::{
     admin,
-    analytics::{self, AnalyticsEventInput},
+    analytics::{self, AnalyticsEventInput, AnalyticsPage},
     backdrop_calibration,
     chat::{self, ChatMessage, SendChatInput},
     combat::chart,
@@ -172,6 +172,14 @@ impl Query {
         #[graphql(default = 0)] offset: i32,
     ) -> FieldResult<PlanningErrorPage> {
         planning_error::list(context, offset)
+    }
+
+    fn admin_analytics(
+        context: &Context,
+        log_id: Option<String>,
+        before: Option<String>,
+    ) -> FieldResult<AnalyticsPage> {
+        analytics::list(context, log_id.as_deref(), before.as_deref())
     }
 
     fn chat(

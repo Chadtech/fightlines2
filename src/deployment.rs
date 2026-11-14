@@ -146,18 +146,22 @@ impl Deployment {
             env::var_os("FIGHTLINES_DEPLOYMENTS_DIR")
                 .ok_or_else(|| io::Error::other("FIGHTLINES_DEPLOYMENTS_DIR is required"))?,
         );
+        Self::open(id, root, frontend).map(Some)
+    }
+
+    pub(crate) fn open(id: DeploymentId, root: PathBuf, frontend: &Path) -> io::Result<Self> {
         fs::create_dir_all(root.join(id.as_str()))?;
         if root.canonicalize()?.starts_with(frontend.canonicalize()?) {
             return Err(io::Error::other(
                 "deployment state must be outside the frontend",
             ));
         }
-        Ok(Some(Self {
+        Ok(Self {
             id,
             root,
             started_at: unix_ms()?,
             phase: Mutex::new(Phase::AcceptingNewGames),
-        }))
+        })
     }
 
     pub fn base_path(&self) -> String {
@@ -309,29 +313,72 @@ pub fn draining_error() -> FieldError {
 
 /// Read-only discovery includes retired releases and the legacy single-process directory.
 pub fn storage_roots(local: &Path, leaf: &str) -> io::Result<Vec<PathBuf>> {
-    let Some(root) = env::var_os("FIGHTLINES_DEPLOYMENTS_DIR") else {
-        return Ok(vec![local.to_owned()]);
+    Ok(storage_locations(local, leaf, None)?
+        .into_iter()
+        .map(|location| location.path)
+        .collect())
+}
+
+pub(crate) enum StorageSource {
+    Local,
+    Release(DeploymentId),
+    Legacy,
+}
+
+pub(crate) struct StorageLocation {
+    pub source: StorageSource,
+    pub path: PathBuf,
+}
+
+pub(crate) fn storage_locations(
+    local: &Path,
+    leaf: &str,
+    deployment: Option<&Deployment>,
+) -> io::Result<Vec<StorageLocation>> {
+    let mut locations = vec![StorageLocation {
+        source: deployment.map_or(StorageSource::Local, |release| {
+            StorageSource::Release(release.id.clone())
+        }),
+        path: local.to_owned(),
+    }];
+    let root = match deployment {
+        Some(release) => Some(release.root.clone()),
+        None => env::var_os("FIGHTLINES_DEPLOYMENTS_DIR").map(PathBuf::from),
     };
-    let root = PathBuf::from(root);
-    let mut roots = vec![local.to_owned()];
+    let Some(root) = root else {
+        return Ok(locations);
+    };
     for entry in fs::read_dir(&root)? {
         let entry = entry?;
-        if entry.file_type()?.is_dir()
-            && DeploymentId::try_from(entry.file_name().to_string_lossy().into_owned()).is_ok()
-        {
-            let path = entry.path().join(leaf);
-            if path.is_dir() && !roots.contains(&path) {
-                roots.push(path);
-            }
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let Ok(id) = DeploymentId::try_from(entry.file_name().to_string_lossy().into_owned())
+        else {
+            continue;
+        };
+        // The answering release's configured log directory is already first.
+        if deployment.is_some_and(|release| release.id == id) {
+            continue;
+        }
+        let path = entry.path().join(leaf);
+        if path != local && path.is_dir() {
+            locations.push(StorageLocation {
+                source: StorageSource::Release(id),
+                path,
+            });
         }
     }
     if let Some(parent) = root.parent() {
         let legacy = parent.join(leaf);
-        if legacy.is_dir() && !roots.contains(&legacy) {
-            roots.push(legacy);
+        if legacy != local && legacy.is_dir() {
+            locations.push(StorageLocation {
+                source: StorageSource::Legacy,
+                path: legacy,
+            });
         }
     }
-    Ok(roots)
+    Ok(locations)
 }
 
 #[cfg(test)]

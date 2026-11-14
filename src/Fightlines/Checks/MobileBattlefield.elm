@@ -176,15 +176,13 @@ checks lobbyId friendlyId enemyId shared =
 
         portrait : GamePage.Model
         portrait =
-            GamePage.setShared
-                { shared | screenSize = { width = 393, height = 852 } }
-                initial
+            step (GamePage.WindowResized { width = 393, height = 852 }) initial
 
         landscapeAgain : GamePage.Model
         landscapeAgain =
             portrait
                 |> step GamePage.RotationNoticeCanceled
-                |> GamePage.setShared shared
+                |> step (GamePage.WindowResized shared.screenSize)
 
         ready : GamePage.Model
         ready =
@@ -229,16 +227,23 @@ checks lobbyId friendlyId enemyId shared =
         desktop : GamePage.Model
         desktop =
             moving
-                |> GamePage.setShared desktopShared
-                |> GamePage.resize { layoutChanged = True }
-                |> Tuple.first
+                |> step (GamePage.WindowResized desktopShared.screenSize)
 
         mobileAgain : GamePage.Model
         mobileAgain =
             desktop
-                |> GamePage.setShared shared
-                |> GamePage.resize { layoutChanged = True }
-                |> Tuple.first
+                |> step (GamePage.WindowResized shared.screenSize)
+
+        android : GamePage.Model
+        android =
+            GamePage.setShared
+                { shared | operatingSystem = OperatingSystem.Android }
+                moving
+
+        androidResized : GamePage.Model
+        androidResized =
+            step (GamePage.WindowResized desktopShared.screenSize)
+                android
 
         playbackFrame : TurnPlayback.Frame
         playbackFrame =
@@ -282,9 +287,7 @@ checks lobbyId friendlyId enemyId shared =
                         resized : GamePage.Model
                         resized =
                             { ready | currentTurn = currentTurn }
-                                |> GamePage.setShared desktopShared
-                                |> GamePage.resize { layoutChanged = True }
-                                |> Tuple.first
+                                |> step (GamePage.WindowResized desktopShared.screenSize)
 
                         desktopCamera : TurnLifecycle.PlaybackCamera
                         desktopCamera =
@@ -548,6 +551,11 @@ checks lobbyId friendlyId enemyId shared =
                 && (mobileAgain.currentTurn == moving.currentTurn)
                 && (mobileAgain.navigation == moving.navigation)
             )
+        , expect "wide viewports on Android retain mobile layout and zoom"
+            ((androidResized.shared.screenSize == desktopShared.screenSize)
+                && Shared.isMobileView androidResized.shared
+                && (androidResized.navigation == android.navigation)
+            )
         , expect "desktop order selection retains the ordinary planning flow"
             (desktopPlanning.currentTurn == moving.currentTurn)
         , expect "desktop order help still opens its planning dialog"
@@ -565,11 +573,12 @@ checks lobbyId friendlyId enemyId shared =
                 == Maybe.map Dialog.htmlId (GamePage.dialog initial)
             )
         , expect "mobile viewport updates without a mounted selection panel" viewportWithoutSelection
-        , expect "hover, focus, dialog open, and polling leave the inactivity clock alone"
+        , expect "hover, focus, dialog open, resize, and polling leave the inactivity clock alone"
             (List.all leavesInactivityAlone
                 [ GamePage.BattlefieldMsg (Battlefield.MouseOverUnit friendlyId)
                 , GamePage.FocusCompleted (Ok ())
                 , GamePage.ChatMsg ChatView.DialogOpened
+                , GamePage.WindowResized desktopShared.screenSize
                 , GamePage.CurrentTurnMsg CurrentTurn.PollTimerElapsed
                 ]
             )

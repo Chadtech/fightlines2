@@ -381,9 +381,6 @@ requiresCurrentDeployment event =
         DashboardResponseReceived (Err error) ->
             ApiRequest.requiresCurrentDeployment error
 
-        DashboardMsg inner ->
-            Dashboard.requiresCurrentDeployment inner
-
         ReplayResponseReceived (Err error) ->
             ApiRequest.requiresCurrentDeployment error
 
@@ -452,7 +449,7 @@ update msg page =
                 Just shared ->
                     let
                         ( newShared, effect ) =
-                            Shared.superUpdate inner shared
+                            Shared.update inner shared
                     in
                     ( setShared newShared page
                     , E.map SharedMsg effect
@@ -515,7 +512,13 @@ update msg page =
         DashboardMsg inner ->
             case page of
                 Dashboard dashboard ->
-                    if Dashboard.needsLogin inner then
+                    if not (Dashboard.accepts inner dashboard) then
+                        page |> E.withOut
+
+                    else if Dashboard.requiresCurrentDeployment inner then
+                        ( page, Route.load Route.Dashboard )
+
+                    else if Dashboard.needsLogin inner then
                         loginPage dashboard.shared (Just Route.Dashboard) |> E.withOut
 
                     else
@@ -646,22 +649,25 @@ view page =
 
         overlays : List (Html Msg)
         overlays =
-            if Maybe.map Shared.isMobileView (getShared page) == Just True then
-                []
-
-            else
-                [ AppControls.toHtml controls ]
+            [ AppControls.toHtml
+                (Maybe.map .operatingSystem (getShared page))
+                controls
+            ]
 
         dialog : List (Html Msg)
         dialog =
             case page of
                 Replay replay ->
+                    let
+                        shared : Shared.Model
+                        shared =
+                            Replay.getShared replay
+                    in
                     Replay.dialog replay
                         |> Maybe.map
-                            (Shared.adaptDialog (Replay.getShared replay)
-                                >> Dialog.map ReplayMsg
+                            (Dialog.map ReplayMsg
                                 >> Dialog.withOverlay overlays
-                                >> Dialog.toHtml
+                                >> Dialog.toHtml shared.operatingSystem
                                 >> List.singleton
                             )
                         |> Maybe.withDefault []

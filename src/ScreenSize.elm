@@ -1,12 +1,16 @@
 module ScreenSize exposing
     ( ScreenSize
     , decoder
-    , isMobileSize
-    , onResize
+    , mobileStyles
+    , subscription
+    , usesMobileLayout
     )
 
 import Browser.Events
+import Css
+import Css.Media
 import Json.Decode as Decode exposing (Decoder)
+import OperatingSystem exposing (OperatingSystem)
 
 
 
@@ -37,6 +41,11 @@ decoder =
         (Decode.field "height" Decode.float)
 
 
+usesMobileLayout : OperatingSystem -> ScreenSize -> Bool
+usesMobileLayout operatingSystem screenSize =
+    OperatingSystem.isMobile operatingSystem || isMobileSize screenSize
+
+
 isMobileSize : ScreenSize -> Bool
 isMobileSize screenSize =
     let
@@ -48,11 +57,42 @@ isMobileSize screenSize =
         longEdge =
             max screenSize.width screenSize.height
     in
-    (shortEdge <= 600) && (longEdge <= 1023)
+    (shortEdge <= mobileShortEdge) && (longEdge <= mobileLongEdge)
 
 
-onResize : (ScreenSize -> msg) -> Sub msg
-onResize toMsg =
+{-| Apply the same mobile sizing rule to styles without listening for resize.
+-}
+mobileStyles : OperatingSystem -> List Css.Style -> Css.Style
+mobileStyles operatingSystem styles =
+    if OperatingSystem.isMobile operatingSystem then
+        Css.batch styles
+
+    else
+        Css.Media.withMedia
+            [ Css.Media.all
+                [ Css.Media.maxWidth (Css.px mobileShortEdge)
+                , Css.Media.maxHeight (Css.px mobileLongEdge)
+                ]
+            , Css.Media.all
+                [ Css.Media.maxWidth (Css.px mobileLongEdge)
+                , Css.Media.maxHeight (Css.px mobileShortEdge)
+                ]
+            ]
+            styles
+
+
+mobileShortEdge : Float
+mobileShortEdge =
+    600
+
+
+mobileLongEdge : Float
+mobileLongEdge =
+    1023
+
+
+subscription : (ScreenSize -> msg) -> Sub msg
+subscription toMsg =
     let
         size : Int -> Int -> ScreenSize
         size width height =

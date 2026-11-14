@@ -155,9 +155,10 @@ current health.
 
 ## Tank and field-gun exchanges
 
-A ready field gun gets a separate first volley when a tank engages it inside
-its visible, unobstructed ambush coverage, through attack-move contact or an
-opposing ambush. This includes contacts deferred at the start of the turn.
+An ambushing field gun gets a separate first volley when a tank engages it by
+attack-move contact or an opposing ambush. The tank must be inside the gun's
+coverage and observable to its side. This includes contacts deferred at the
+start of the turn.
 On open ground, a full-health gun destroys a full-health tank before it can shoot. From outside that area, against an unready
 gun, or after the gun has spent its shot, the tank fires normally; a full-health
 tank can destroy the gun. Wounded guns may fail to kill the tank; survivors return

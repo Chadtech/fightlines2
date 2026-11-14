@@ -139,18 +139,15 @@ player. Use separate browser profiles when testing both sides on one machine.
 | `make check` | Check formatting, Clippy, fast tests, frontend behavior, and compilation |
 | `make check-visual` | Compare desktop and mobile browser screenshots |
 | `make check-all` | Run all checks, including slow AI simulations and visual tests |
-| `make build` | Build the server and production player frontend |
+| `make build` | Build both Rust binaries and the production player and Admin apps |
 
-**Current status:** playable prototype under active development. Active games and
-lobbies live in memory and reset when the server restarts; recorded archives
-remain on disk. Planned updates can keep existing server processes running until
-their sessions drain; see [deployment](DEPLOYMENT.md) for the local rehearsal,
-hosting setup, and tool-access details.
+Active games and lobbies live in memory. Recorded game archives survive process
+restarts. The release workflow starts a new server alongside the old releases
+and gives their existing sessions time to finish. See
+[deployment](DEPLOYMENT.md#deploying-updates-with-draining) for the workflow
+and local rehearsal.
 
 ## Documentation
-
-The detailed rules and development workflows live in linked guides, keeping this
-page focused on the project while preserving the reference material.
 
 | Guide | What's inside |
 | --- | --- |

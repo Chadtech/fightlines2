@@ -63,6 +63,15 @@ test('battlefield, selected tank, orders, and settings', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(surrender).toBeFocused();
+
+  await page.getByRole('button', { name: 'menu', exact: true }).click();
+  const openDevPanel = page.getByRole('button', { name: 'dev panel', exact: true });
+  await openDevPanel.click();
+  const devPanel = page.getByRole('dialog', { name: 'dev panel', exact: true });
+  await expect(devPanel.getByRole('heading', { name: 'dev panel' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(devPanel).toHaveCount(0);
+  await expect(openDevPanel).toBeVisible();
 });
 
 test('units without orders excludes units with a saved order', async ({ page }) => {

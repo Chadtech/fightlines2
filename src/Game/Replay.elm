@@ -25,7 +25,6 @@ import Api.Query
 import ApiRequest
 import Audio
 import Browser.Dom
-import Browser.Events
 import Effect as E exposing (Eff)
 import Error
 import Game.AnimationFrame as AnimationFrame
@@ -61,6 +60,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import KeyCmd
 import Ports.Js.To as ToJs
+import ScreenSize exposing (ScreenSize)
 import Shared
 import Style as S
 import Time
@@ -165,7 +165,7 @@ type Msg
     | BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
     | InspectorSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
     | ControlsSizeReceived { battlefield : Browser.Dom.Element, inspector : Browser.Dom.Element } (Result Browser.Dom.Error Browser.Dom.Element)
-    | WindowResized
+    | WindowResized ScreenSize
     | CameraReturnFinished
     | AnimationTimerElapsed
     | CargoUnitClicked UnitId
@@ -250,6 +250,7 @@ init config shared id flags =
     ( model
     , E.batch
         [ measureWorkspace
+        , E.readScreenSize WindowResized
         , E.toJs (ToJs.PreloadImages (Assets.imagePaths model.battlefield.map.theme))
         ]
     )
@@ -1096,10 +1097,15 @@ update msg model =
             )
                 |> E.withOut
 
-        WindowResized ->
-            ( model
-            , measureWorkspace
-            )
+        WindowResized screenSize ->
+            if model.shared.screenSize == screenSize then
+                E.withOut model
+
+            else
+                ( model
+                    |> setShared (Shared.setScreenSize screenSize model.shared)
+                , measureWorkspace
+                )
 
         BattlefieldSizeReceived result ->
             case result of
@@ -1811,7 +1817,7 @@ battlefieldDialog model =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Browser.Events.onResize (\_ _ -> WindowResized)
+        [ ScreenSize.subscription WindowResized
         , Time.every 400 (\_ -> AnimationTimerElapsed)
         , PlaybackPresentation.subscriptions (playback model)
             |> Sub.map PlaybackMsg
