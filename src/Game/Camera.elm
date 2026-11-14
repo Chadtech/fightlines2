@@ -3,6 +3,7 @@ module Game.Camera exposing
     , Viewport
     , anchor
     , boardWidth
+    , centerOn
     , coordinateAt
     , frame
     , setOffset
@@ -130,6 +131,28 @@ coordinateAt size map camera point =
 
     else
         Nothing
+
+
+centerOn : Viewport -> Map -> Coordinate -> Camera -> Camera
+centerOn viewport map position camera =
+    let
+        tilePixels : Float
+        tilePixels =
+            boardPixels viewport.size * camera.zoom / toFloat map.width
+    in
+    setOffset
+        { x =
+            (toFloat map.width / 2 - toFloat position.x - 0.5)
+                * tilePixels
+                - viewport.rightInset
+                / 2
+        , y =
+            (toFloat map.height / 2 - toFloat position.y - 0.5)
+                * tilePixels
+                - viewport.bottomInset
+                / 2
+        }
+        camera
 
 
 {-| Keep the view unless a subject tile is clipped. Reframe with one tile of

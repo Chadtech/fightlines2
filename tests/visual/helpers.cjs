@@ -34,8 +34,8 @@ const test = base.extend({
   },
 });
 
-async function graphql(page, query) {
-  const response = await page.request.post('/graphql', { data: { query } });
+async function graphql(session, query, variables) {
+  const response = await session.request.post('/graphql', { data: { query, variables } });
   expect(response.ok(), await response.text()).toBeTruthy();
   const body = await response.json();
   expect(body.errors, 'GraphQL setup must use the real server successfully').toBeUndefined();

@@ -1,5 +1,6 @@
 module Game.OrderPlanning exposing
-    ( Drafts
+    ( DismountOrderProgress
+    , Drafts
     , InvariantViolation(..)
     , Model(..)
     , applyOrder
@@ -16,9 +17,12 @@ module Game.OrderPlanning exposing
     , confirmUnloadPassengers
     , destinationFeedback
     , dismissDialog
+    , dismountOrderProgress
+    , dismountedInfantryChoices
     , extendPath
     , focusOrder
     , focusedOrder
+    , holdRemainingInfantry
     , indirectTargetPreview
     , indirectTargets
     , init
@@ -38,6 +42,7 @@ module Game.OrderPlanning exposing
     , revokeSelectedOrder
     , saveDirection
     , saveUnloadDestination
+    , selectDismountedInfantry
     , selectNextUnorderedUnit
     , selectTile
     , selectUnit
@@ -81,7 +86,7 @@ import Game.MovePlanning as MovePlanning
 import Game.Movement as Movement
 import Game.OrderDependencies as OrderDependencies
 import Game.PlannedOrder as PlannedOrder exposing (PlannedOrder)
-import Game.PlannedTransport as PlannedTransport
+import Game.PlannedTransport as PlannedTransport exposing (DismountedInfantry)
 import Game.Selection as Selection
     exposing
         ( OrderMenuState(..)
@@ -119,6 +124,7 @@ type Model
     | ChoosingGroundFreight UnitId Supply.GroundCrate Drafts
     | ChoosingPassengers UnloadChoice
     | ChoosingExits UnloadPlanning
+    | ChoosingDismountedInfantry UnitId (List PlannedOrder)
 
 
 type alias Drafts =
@@ -127,10 +133,17 @@ type alias Drafts =
     }
 
 
+type alias DismountOrderProgress =
+    { current : Int
+    , total : Int
+    }
+
+
 type InvariantViolation
     = PlanningUnitNotFound UnitId
     | OrderUnitHasNoPosition UnitId
     | LoadingOrderNotFound UnitId
+    | DismountTruckOrderNotFound UnitId
     | MovementInvariantViolated Movement.InvariantViolation
     | PassengerNotAboard { passengerId : UnitId, truckId : UnitId }
     | TransportInvariantViolated PlannedTransport.InvariantViolation
@@ -177,6 +190,9 @@ orders model =
         ChoosingExits unloading ->
             UnloadingTruck.toOrder unloading.truck :: unloading.otherOrders
 
+        ChoosingDismountedInfantry _ drafts ->
+            drafts
+
 
 setOrders : List PlannedOrder -> Model -> Model
 setOrders draftsOrders model =
@@ -212,6 +228,9 @@ selection model =
         ChoosingExits unloading ->
             Just (Inspecting (UnitInspection (UnloadCargo.inspectionUnit unloading.truck unloading.cargo)))
 
+        ChoosingDismountedInfantry truckId _ ->
+            Just (Inspecting (UnitInspection truckId))
+
 
 {-| Return to ordinary planning with this selection. Leaving passenger or exit
 selection cancels the pending truck order and unload choices, keeping other orders.
@@ -244,25 +263,29 @@ cancelInteraction map units model =
         canceled : List PlannedOrder -> Model
         canceled retained =
             OrdinaryPlanning { orders = retained, selection = Nothing }
+
+        cancel : Maybe UnitId -> InvariantCheck InvariantViolation Model
+        cancel activeTruck =
+            case activeTruck of
+                Just truckId ->
+                    OrderDependencies.revoke units [ truckId ] (orders model)
+                        |> IC.mapError OrderDependenciesInvariantViolated
+                        |> IC.map canceled
+
+                Nothing ->
+                    if hasDialog model then
+                        dismissDialog model
+                            |> promptDismountedOrders map units
+
+                    else
+                        setSelection Nothing model |> IC.happy
     in
-    case activeTruckSequence map units model of
-        Just truckId ->
-            OrderDependencies.revoke units [ truckId ] (orders model)
-                |> IC.mapError OrderDependenciesInvariantViolated
-                |> IC.map canceled
-
-        Nothing ->
-            if hasDialog model then
-                dismissDialog model
-                    |> promptDismountedOrders map units
-                    |> IC.happy
-
-            else
-                setSelection Nothing model |> IC.happy
+    activeTruckSequence units model
+        |> IC.andThen cancel
 
 
-activeTruckSequence : Map -> List Unit -> Model -> Maybe UnitId
-activeTruckSequence map units model =
+activeTruckSequence : List Unit -> Model -> InvariantCheck InvariantViolation (Maybe UnitId)
+activeTruckSequence units model =
     let
         unloadingTruck : UnitId -> Maybe UnitId
         unloadingTruck id =
@@ -277,35 +300,47 @@ activeTruckSequence map units model =
             else
                 Nothing
 
-        pendingPassengers : Unit -> Maybe UnitId
+        pendingPassengers : Unit -> InvariantCheck InvariantViolation (Maybe UnitId)
         pendingPassengers unit =
             let
                 truckId : UnitId
                 truckId =
                     Maybe.withDefault unit.id (Unit.carrierId unit)
+
+                active : List DismountedInfantry -> Maybe UnitId
+                active pending =
+                    if List.isEmpty pending then
+                        Nothing
+
+                    else
+                        Just truckId
             in
-            PlannedTransport.nextDismountedUnit map units truckId (orders model)
-                |> Maybe.map (\_ -> truckId)
+            unorderedDismounts units truckId (orders model)
+                |> IC.map active
     in
     case model of
         ChoosingPassengers choice ->
-            Just (UnloadingTruck.unitId choice.truck)
+            IC.happy (Just (UnloadingTruck.unitId choice.truck))
 
         ChoosingExits unloading ->
-            Just (UnloadingTruck.unitId unloading.truck)
+            IC.happy (Just (UnloadingTruck.unitId unloading.truck))
+
+        ChoosingDismountedInfantry truckId _ ->
+            IC.happy (Just truckId)
 
         ChoosingCrates id _ _ ->
-            unloadingTruck id
+            IC.happy (unloadingTruck id)
 
         ChoosingGroundFreight id _ _ ->
-            unloadingTruck id
+            IC.happy (unloadingTruck id)
 
         OrdinaryPlanning _ ->
             selectedUnitFromSelection units (selection model)
-                |> Maybe.andThen pendingPassengers
+                |> Maybe.map pendingPassengers
+                |> Maybe.withDefault (IC.happy Nothing)
 
         ConfirmingSubmission _ ->
-            Nothing
+            IC.happy Nothing
 
 
 {-| Unfinished unloading cannot become a submission. The lifecycle consumes
@@ -578,27 +613,31 @@ chooseUnloadSquare map units playerNumbers movementRules supplyCrates depots des
             depots
             (UnloadPlanning.availableOptions (unloadOptions map units playerNumbers movementRules supplyCrates))
             destination
-        |> IC.map (promptDismountedOrders map units)
+        |> IC.andThen (promptDismountedOrders map units)
 
 
-promptDismountedOrders : Map -> List Unit -> Model -> Model
+promptDismountedOrders : Map -> List Unit -> Model -> InvariantCheck InvariantViolation Model
 promptDismountedOrders map units model =
     case selectedUnitFromSelection units (selection model) of
         Just unit ->
-            promptTruckDismountedOrders
-                map
-                units
-                (Maybe.withDefault unit.id (Unit.carrierId unit))
-                model
+            case ( model, Unit.carrierId unit, selection model ) of
+                ( OrdinaryPlanning _, Just truckId, Just (Inspecting _) ) ->
+                    advanceDismountedOrders units truckId model
+
+                ( _, Nothing, _ ) ->
+                    promptTruckDismountedOrders map units unit.id model
+
+                _ ->
+                    IC.happy model
 
         Nothing ->
-            model
+            IC.happy model
 
 
-{-| Automatic prompts stay with the active transport, including orders saved
-by its dismounting infantry. Leaving selection ends that prompt sequence.
+{-| Open the infantry picker once the truck finishes its cargo choices.
+Loading dialogs keep precedence when both workflows are available.
 -}
-promptTruckDismountedOrders : Map -> List Unit -> UnitId -> Model -> Model
+promptTruckDismountedOrders : Map -> List Unit -> UnitId -> Model -> InvariantCheck InvariantViolation Model
 promptTruckDismountedOrders map units truckId original =
     let
         model : Model
@@ -630,19 +669,197 @@ promptTruckDismountedOrders map units truckId original =
                     original
     in
     case model of
-        OrdinaryPlanning _ ->
-            case PlannedTransport.nextDismountedUnit map units truckId (orders model) of
-                Just unit ->
-                    setUnitInteraction
-                        unit.id
-                        (OrderMenu (ChoosingOrder Nothing))
+        OrdinaryPlanning drafts ->
+            let
+                openPicker : List DismountedInfantry -> Model
+                openPicker passengers =
+                    if List.isEmpty passengers then
                         model
+
+                    else
+                        ChoosingDismountedInfantry truckId drafts.orders
+            in
+            unorderedDismounts units truckId drafts.orders
+                |> IC.map openPicker
+
+        _ ->
+            IC.happy model
+
+
+advanceDismountedOrders : List Unit -> UnitId -> Model -> InvariantCheck InvariantViolation Model
+advanceDismountedOrders units truckId model =
+    let
+        openNext : List DismountedInfantry -> Model
+        openNext passengers =
+            case List.head passengers of
+                Just passenger ->
+                    openDismountedOrderMenu passenger.unit.id model
 
                 Nothing ->
                     model
+    in
+    unorderedDismounts units truckId (orders model)
+        |> IC.map openNext
+
+
+unorderedDismounts :
+    List Unit
+    -> UnitId
+    -> List PlannedOrder
+    -> InvariantCheck InvariantViolation (List DismountedInfantry)
+unorderedDismounts units truckId drafts =
+    case ListUtil.find (\order -> order.unitId == truckId) drafts of
+        Just order ->
+            unorderedPassengers units drafts order
+
+        Nothing ->
+            IC.happy []
+
+
+unorderedPassengers :
+    List Unit
+    -> List PlannedOrder
+    -> PlannedOrder
+    -> InvariantCheck InvariantViolation (List DismountedInfantry)
+unorderedPassengers units drafts order =
+    PlannedTransport.dismountedInfantry units order
+        |> IC.mapError TransportInvariantViolated
+        |> IC.map (List.filter (needsDismountOrder drafts))
+
+
+needsDismountOrder : List PlannedOrder -> DismountedInfantry -> Bool
+needsDismountOrder drafts passenger =
+    not (List.any (\order -> order.unitId == passenger.unit.id) drafts)
+
+
+dismountedInfantryChoices : List Unit -> Model -> List DismountedInfantry
+dismountedInfantryChoices units model =
+    case model of
+        ChoosingDismountedInfantry truckId drafts ->
+            unorderedDismounts units truckId drafts
+                |> IC.resolve (\_ valid -> valid)
 
         _ ->
-            model
+            []
+
+
+selectDismountedInfantry : List Unit -> UnitId -> Model -> InvariantCheck InvariantViolation Model
+selectDismountedInfantry units id model =
+    case model of
+        ChoosingDismountedInfantry truckId drafts ->
+            let
+                choose : List DismountedInfantry -> Model
+                choose passengers =
+                    if List.any (\passenger -> passenger.unit.id == id) passengers then
+                        openDismountedOrderMenu id model
+
+                    else
+                        model
+            in
+            dismountPickerPassengers units truckId drafts
+                |> IC.map choose
+
+        _ ->
+            IC.happy model
+
+
+dismountPickerPassengers :
+    List Unit
+    -> UnitId
+    -> List PlannedOrder
+    -> InvariantCheck InvariantViolation (List DismountedInfantry)
+dismountPickerPassengers units truckId drafts =
+    case ListUtil.find (\order -> order.unitId == truckId) drafts of
+        Just order ->
+            unorderedPassengers units drafts order
+
+        Nothing ->
+            IC.violated (DismountTruckOrderNotFound truckId) []
+
+
+openDismountedOrderMenu : UnitId -> Model -> Model
+openDismountedOrderMenu id =
+    setUnitInteraction id (OrderMenu (ChoosingOrder Nothing))
+
+
+dismountOrderProgress : List Unit -> Model -> Maybe DismountOrderProgress
+dismountOrderProgress units model =
+    let
+        selected : Maybe Selection
+        selected =
+            selection model
+    in
+    case ( selected, selectedUnitFromSelection units selected ) of
+        ( Just (UnitSelection _), Just unit ) ->
+            let
+                progressForTruck : UnitId -> Maybe DismountOrderProgress
+                progressForTruck truckId =
+                    let
+                        drafts : List PlannedOrder
+                        drafts =
+                            orders model
+
+                        pending : List DismountedInfantry
+                        pending =
+                            List.filter (needsDismountOrder drafts) passengers
+
+                        passengers : List DismountedInfantry
+                        passengers =
+                            case ListUtil.find (\order -> order.unitId == truckId) drafts of
+                                Just order ->
+                                    PlannedTransport.dismountedInfantry units order
+                                        |> IC.resolve (\_ valid -> valid)
+
+                                Nothing ->
+                                    []
+
+                        total : Int
+                        total =
+                            List.length passengers
+                    in
+                    if List.any (\passenger -> passenger.unit.id == unit.id) pending then
+                        Just
+                            { current = total - List.length pending + 1
+                            , total = total
+                            }
+
+                    else
+                        Nothing
+            in
+            Unit.carrierId unit |> Maybe.andThen progressForTruck
+
+        _ ->
+            Nothing
+
+
+holdRemainingInfantry : List Unit -> Model -> InvariantCheck InvariantViolation Model
+holdRemainingInfantry units model =
+    let
+        finish : UnitId -> List PlannedOrder -> List DismountedInfantry -> Model
+        finish truckId drafts passengers =
+            let
+                holdAtExit : DismountedInfantry -> PlannedOrder
+                holdAtExit passenger =
+                    { unitId = passenger.unit.id
+                    , action = PlannedOrder.Hold passenger.destination
+                    }
+
+                holds : List PlannedOrder
+                holds =
+                    List.map holdAtExit passengers
+            in
+            OrdinaryPlanning
+                { orders = holds ++ drafts
+                , selection = Just (Inspecting (UnitInspection truckId))
+                }
+    in
+    case model of
+        ChoosingDismountedInfantry truckId drafts ->
+            dismountPickerPassengers units truckId drafts
+                |> IC.map (finish truckId drafts)
+
+        _ ->
+            IC.happy model
 
 
 applyOrder :
@@ -1642,7 +1859,7 @@ finishUnloading units supplyCrates depots truck otherOrders selected =
         }
 
 
-skipUnloading : Map -> List Unit -> List Supply.GroundCrate -> List Depot -> Model -> Model
+skipUnloading : Map -> List Unit -> List Supply.GroundCrate -> List Depot -> Model -> InvariantCheck InvariantViolation Model
 skipUnloading map units supplyCrates depots model =
     case model of
         ChoosingPassengers choice ->
@@ -1665,14 +1882,14 @@ skipUnloading map units supplyCrates depots model =
                 depots
                 unloading.truck
                 unloading.otherOrders
-                Nothing
+                (Just (Inspecting (UnitInspection (UnloadingTruck.unitId unloading.truck))))
                 |> promptTruckDismountedOrders
                     map
                     units
                     (UnloadingTruck.unitId unloading.truck)
 
         _ ->
-            model
+            IC.happy model
 
 
 startTruckUnload : UnloadingTruck -> Model -> Model
@@ -1886,7 +2103,7 @@ inspectSelectedUnit map units model =
 finishUnitOrder : Map -> List Unit -> Model -> InvariantCheck InvariantViolation Model
 finishUnitOrder map units model =
     inspectSelectedUnit map units model
-        |> IC.map (promptDismountedOrders map units)
+        |> IC.andThen (promptDismountedOrders map units)
 
 
 restoreOrderMenu :
@@ -2046,6 +2263,9 @@ hasDialog model =
             True
 
         ChoosingGroundFreight _ _ _ ->
+            True
+
+        ChoosingDismountedInfantry _ _ ->
             True
 
         _ ->

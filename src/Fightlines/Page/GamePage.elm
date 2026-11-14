@@ -86,7 +86,7 @@ import Game.PlannedOrder as PlannedOrder
         ( PlannedOrder
         , UnloadOrder
         )
-import Game.PlannedTransport as PlannedTransport
+import Game.PlannedTransport as PlannedTransport exposing (DismountedInfantry)
 import Game.PlaybackPresentation as PlaybackPresentation
 import Game.PlayerNumber as PlayerNumber
 import Game.Selection as Selection
@@ -344,6 +344,9 @@ type Msg
     | UnloadUnitToggled UnitId Bool
     | UnloadChoicesConfirmed
     | UnloadSkipped
+    | DismountedInfantryClicked UnitId
+    | HoldRemainingInfantryClicked
+    | CancelTruckOrderClicked
     | InspectClicked
     | InspectorCloseClicked
     | MobileTabClicked MobileBattlefield.Tab
@@ -639,7 +642,9 @@ setCurrentTurn currentTurn model =
         next
 
     else
-        resetMobileTab (selectedUnitId model) next
+        next
+            |> resetMobileTab (selectedUnitId model)
+            |> centerDismountOrder
 
 
 setCombatEnterHeld : Bool -> Model -> Model
@@ -1003,7 +1008,7 @@ dismissDialog model =
 
     else
         model
-            |> mapPlanning
+            |> mapCheckedPlanning
                 (OrderPlanning.dismissDialog
                     >> OrderPlanning.promptDismountedOrders model.map model.units
                 )
@@ -1320,6 +1325,60 @@ orderMenuUnit model =
     TurnLifecycle.planning model.currentTurn.phase
         |> Maybe.andThen
             (OrderPlanning.orderMenuUnit model.map model.units)
+
+
+dismountOrderProgress : Model -> Maybe OrderPlanning.DismountOrderProgress
+dismountOrderProgress model =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.andThen (OrderPlanning.dismountOrderProgress model.units)
+
+
+dismountOrderTitle : Model -> Maybe String
+dismountOrderTitle model =
+    let
+        title : OrderPlanning.DismountOrderProgress -> String
+        title progress =
+            if progress.total == 1 then
+                "unloaded infantry"
+
+            else
+                "unloaded infantry · "
+                    ++ String.fromInt progress.current
+                    ++ " of "
+                    ++ String.fromInt progress.total
+    in
+    dismountOrderProgress model |> Maybe.map title
+
+
+centerDismountOrder : Model -> Model
+centerDismountOrder model =
+    case ( dismountOrderProgress model, inspectionPosition model, model.battlefieldViewport ) of
+        ( Just _, Just position, Just viewport ) ->
+            let
+                camera : Camera.Camera
+                camera =
+                    Camera.centerOn
+                        viewport.camera
+                        model.map
+                        position
+                        (BattlefieldNavigation.camera model.navigation)
+            in
+            mapNavigation (BattlefieldNavigation.setOffset camera.offset) model
+
+        _ ->
+            model
+
+
+holdRemainingInfantry : Model -> Model
+holdRemainingInfantry model =
+    model
+        |> mapCheckedPlanning (OrderPlanning.holdRemainingInfantry model.units)
+
+
+cancelTruckOrder : Model -> Model
+cancelTruckOrder model =
+    model
+        |> mapCheckedPlanning (OrderPlanning.cancelInteraction model.map model.units)
 
 
 submitRequest : LobbyId -> Int -> List PlannedOrder -> Graphql.Http.Request Snapshot
@@ -2690,6 +2749,15 @@ isUserInteraction msg =
         UnloadSkipped ->
             True
 
+        DismountedInfantryClicked _ ->
+            True
+
+        HoldRemainingInfantryClicked ->
+            True
+
+        CancelTruckOrderClicked ->
+            True
+
         InspectClicked ->
             True
 
@@ -3340,7 +3408,7 @@ update lobbyId msg model =
 
         UnloadSkipped ->
             model
-                |> mapPlanning
+                |> mapCheckedPlanning
                     (OrderPlanning.skipUnloading
                         model.map
                         model.units
@@ -3349,11 +3417,29 @@ update lobbyId msg model =
                     )
                 |> E.withOut
 
+        DismountedInfantryClicked id ->
+            let
+                next : Model
+                next =
+                    mapCheckedPlanning
+                        (OrderPlanning.selectDismountedInfantry model.units id)
+                        model
+            in
+            ( next, focusAdjacentOrder identity Nothing next )
+
+        HoldRemainingInfantryClicked ->
+            holdRemainingInfantry model
+                |> E.withOut
+
+        CancelTruckOrderClicked ->
+            cancelTruckOrder model
+                |> E.withOut
+
         GroundFreightPickupClicked ->
             model
                 |> mapCheckedPlanning
                     (OrderPlanning.confirmGroundPickup
-                        >> IC.map
+                        >> IC.andThen
                             (OrderPlanning.promptDismountedOrders model.map model.units)
                     )
                 |> E.withOut
@@ -3369,7 +3455,7 @@ update lobbyId msg model =
                         |> mapCheckedPlanning
                             (OrderPlanning.dismissDialog
                                 >> saveCrateLoading id count
-                                >> IC.map (OrderPlanning.promptDismountedOrders model.map model.units)
+                                >> IC.andThen (OrderPlanning.promptDismountedOrders model.map model.units)
                             )
                         |> E.withOut
 
@@ -4098,6 +4184,15 @@ playAudio msg model =
         UnloadSkipped ->
             Audio.cancel
 
+        DismountedInfantryClicked _ ->
+            Audio.affirm
+
+        HoldRemainingInfantryClicked ->
+            Audio.confirm
+
+        CancelTruckOrderClicked ->
+            Audio.cancel
+
         InspectClicked ->
             Audio.cancel
 
@@ -4824,13 +4919,24 @@ handleOrderMsg orderMsg model =
 
             else
                 model
-                    |> mapPlanning (OrderPlanning.openOrderGuide model.map model.units (ownPlayerNumbers model))
+                    |> mapPlanning
+                        (OrderPlanning.openOrderGuide
+                            model.map
+                            model.units
+                            (ownPlayerNumbers model)
+                        )
                     |> E.withOut
 
         OrderMenu.CancelClicked ->
-            model
-                |> clearSelection
-                |> E.withOut
+            case dismountOrderProgress model of
+                Just _ ->
+                    cancelTruckOrder model
+                        |> E.withOut
+
+                Nothing ->
+                    model
+                        |> clearSelection
+                        |> E.withOut
 
         OrderMenu.OrderFocused order ->
             model
@@ -5089,11 +5195,14 @@ mobileView model =
     let
         close : Button.Button Msg
         close =
-            if (currentSelection model /= Nothing) && canOpenDialog model then
-                Button.secondary "close" InspectorCloseClicked
+            if not (canOpenDialog model) then
+                Button.disabled "close"
+
+            else if dismountOrderProgress model /= Nothing then
+                Button.secondary "cancel order" CancelOrderClicked
 
             else
-                Button.disabled "close"
+                Button.secondary "close" InspectorCloseClicked
 
         activity : TurnControls.Activity
         activity =
@@ -5240,10 +5349,28 @@ mobileTaskPanel model =
 
 mobileOrdersPanel : Model -> Html Msg
 mobileOrdersPanel model =
+    let
+        title : Html Msg
+        title =
+            case dismountOrderTitle model of
+                Just caption ->
+                    H.p
+                        [ Aria.role Aria.Status
+                        , A.css [ S.textYellow5 ]
+                        ]
+                        [ H.text caption ]
+
+                Nothing ->
+                    H.text ""
+    in
     case orderMenuUnit model of
         Just unit ->
-            OrderMenu.embedded model.depots model.map unit
-                |> H.map OrderMenuMsg
+            H.div
+                [ A.css [ S.col, S.g2 ] ]
+                [ title
+                , OrderMenu.embedded model.depots model.map unit
+                    |> H.map OrderMenuMsg
+                ]
 
         Nothing ->
             case selectedUnit model of
@@ -5251,7 +5378,9 @@ mobileOrdersPanel model =
                     let
                         canCancelOrder : Bool
                         canCancelOrder =
-                            not (planningLocked model) && isOwnUnit model unit
+                            not (planningLocked model)
+                                && isOwnUnit model unit
+                                && (dismountOrderProgress model == Nothing)
 
                         action : Html Msg
                         action =
@@ -5313,7 +5442,8 @@ mobileOrdersPanel model =
                             , S.g2
                             ]
                         ]
-                        [ context
+                        [ title
+                        , context
                         , action
                         ]
 
@@ -5535,10 +5665,22 @@ battlefieldSelectionView layout model =
 
                 canCancelOrder : Bool
                 canCancelOrder =
+                    let
+                        orderingDismount : Bool
+                        orderingDismount =
+                            dismountOrderProgress model /= Nothing
+
+                        cancelInFooter : Bool
+                        cancelInFooter =
+                            (layout == Layout.Mobile) && orderingDismount
+
+                        choosingFacing : Bool
+                        choosingFacing =
+                            choosingDirection model && (orderingDismount || not (choosingAmbush model))
+                    in
                     (Maybe.map .id (selectedUnit model) == Just unit.id)
-                        && ((pathPreview model /= Nothing)
-                                || (choosingDirection model && not (choosingAmbush model))
-                           )
+                        && not cancelInFooter
+                        && ((pathPreview model /= Nothing) || choosingFacing)
 
                 portraitAction : Maybe (UnitStatus.Action Msg)
                 portraitAction =
@@ -5651,26 +5793,9 @@ movementView model =
             else
                 []
 
-        dismountDetails : List (Html Msg)
-        dismountDetails =
-            case selectedUnit model of
-                Just unit ->
-                    if PlannedTransport.isDismounting model.units unit then
-                        [ H.p
-                            []
-                            [ H.text "this infantry acts after unloading, with a fresh movement allowance. unloading and movement both consume supplies."
-                            ]
-                        ]
-
-                    else
-                        []
-
-                Nothing ->
-                    []
-
         content : List (Html Msg)
         content =
-            dismountDetails ++ details ++ feedback
+            details ++ feedback
     in
     H.div
         [ A.css
@@ -6056,6 +6181,71 @@ unloadChecklist model choice =
             , A.css [ S.when mobile [ S.shrink0 ] ]
             ]
             [ proceedButton ]
+        ]
+        |> Dialog.reference
+
+
+dismountedInfantryDialogHtmlId : String
+dismountedInfantryDialogHtmlId =
+    "order-unloaded-infantry"
+
+
+dismountedInfantryDialog : List DismountedInfantry -> Dialog Msg
+dismountedInfantryDialog passengers =
+    let
+        multiple : Bool
+        multiple =
+            List.length passengers > 1
+
+        instruction : String
+        instruction =
+            if multiple then
+                "these infantry can move or attack after unloading from this truck. choose one to order next."
+
+            else
+                "this infantry can move or attack after unloading from this truck. select it to give an order."
+
+        infantryButton : Int -> DismountedInfantry -> Html Msg
+        infantryButton index passenger =
+            let
+                label : String
+                label =
+                    if multiple then
+                        Unit.name passenger.unit ++ " " ++ String.fromInt (index + 1)
+
+                    else
+                        Unit.name passenger.unit
+            in
+            Button.primary label (DismountedInfantryClicked passenger.unit.id)
+                |> Button.withIcon (unitThumbnail UnloadPortrait passenger.unit)
+                |> Button.fullWidth
+                |> Button.toHtml
+    in
+    Dialog.make dismountedInfantryDialogHtmlId
+        "order unloaded infantry"
+        CancelTruckOrderClicked
+        [ H.p
+            []
+            [ H.text instruction ]
+        , H.div
+            [ A.css
+                [ S.row
+                , S.g2
+                ]
+            ]
+            (List.indexedMap infantryButton passengers)
+        , H.div
+            [ A.css
+                [ S.row
+                , S.flexWrap
+                , S.g2
+                ]
+            ]
+            [ Button.secondary "hold remaining infantry" HoldRemainingInfantryClicked
+                |> Button.toHtml
+            , Button.secondary "cancel truck order" CancelTruckOrderClicked
+                |> Button.toHtml
+            ]
         ]
         |> Dialog.reference
 
@@ -6806,6 +6996,12 @@ planningDialog model _ =
 
         TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers choice) ->
             Just (unloadChecklist model choice)
+
+        TurnLifecycle.Planning ((OrderPlanning.ChoosingDismountedInfantry _ _) as planning) ->
+            Just
+                (OrderPlanning.dismountedInfantryChoices model.units planning
+                    |> dismountedInfantryDialog
+                )
 
         TurnLifecycle.Planning (OrderPlanning.ChoosingCrates id source _) ->
             Just (depotLoadingDialog model id source)

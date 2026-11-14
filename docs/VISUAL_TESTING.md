@@ -25,7 +25,8 @@ explicit setup step, not an implicit download during checks.
 
 Each invocation rebuilds the frontend and debug server once. It starts isolated
 servers on `127.0.0.1:4187` for desktop, `127.0.0.1:4188` for mobile visual
-tests, and `127.0.0.1:4189` for tagged mobile interaction tests. Each group
+tests, `127.0.0.1:4189` for tagged mobile interaction tests, and
+`127.0.0.1:4190` for laptop. Each group
 has an independent lobby-creation budget. The servers exit after the run.
 The suite fails if any of these ports is occupied. Run one visual
 invocation at a time. Do not build the same checkout concurrently from another
@@ -51,6 +52,10 @@ A mobile interaction check resizes the live game across both layouts.
 - Settings dialog, dialog preferences, audio tab, and Escape dismissal.
 - First-game briefing, turn introduction, and their continue buttons.
 - 852 × 393 touch/landscape: battlefield, orders rail, details rail, settings.
+- Desktop, laptop, and touch landscape: unloaded-infantry picker and remaining
+  orders. Exercise canceling after an infantry order and bulk hold from the
+  picker. Submit individual infantry orders and verify the truck and both
+  infantry positions after resolution.
 - Resolved turn-two report: all four metrics and actions fit without scrolling
   at 852 × 393, 828 × 379, and 667 × 320, with actions at the bottom;
   snapshot both the shortest layout and one with spare height.

@@ -1,4 +1,5 @@
 const { test, expect, openGame, createGame, graphql, snapshot } = require('./helpers.cjs');
+const { checkUnloadedInfantry } = require('./unloaded-infantry.cjs');
 
 const interaction = { tag: '@mobile-interaction' };
 
@@ -503,3 +504,5 @@ async function expectReportFits(page, dialog, { width, height }) {
   await expect(dialog.getByRole('button', { name: 'replay turn', exact: true })).toBeInViewport({ ratio: 1 });
   await expect(dialog.getByRole('checkbox', { name: 'skip this dialog', exact: true })).toBeInViewport({ ratio: 1 });
 }
+
+test('order unloaded infantry, hold, and cancel the truck order', checkUnloadedInfantry);

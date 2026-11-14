@@ -1,4 +1,5 @@
 const { test, expect, openGame, createGame, snapshot } = require('./helpers.cjs');
+const { checkUnloadedInfantry } = require('./unloaded-infantry.cjs');
 
 test('home, about, and create-lobby form', async ({ page }) => {
   await page.goto('/');
@@ -104,3 +105,5 @@ test('placeholder flag leaves desktop battlefield unchanged', async ({ page }) =
   await openGame(page);
   await snapshot(page, 'battlefield');
 });
+
+test('order unloaded infantry, hold, and cancel the truck order', checkUnloadedInfantry);

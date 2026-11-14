@@ -333,6 +333,9 @@ planningErrorDetails violation =
         OrderPlanning.LoadingOrderNotFound unitId ->
             "loading order not found: " ++ UnitId.toString unitId
 
+        OrderPlanning.DismountTruckOrderNotFound truckId ->
+            "truck order not found for infantry dismount: " ++ UnitId.toString truckId
+
         OrderPlanning.MovementInvariantViolated (Movement.RuleNotFound missing) ->
             "movement rule not found for "
                 ++ UnitKind.label missing.kind
@@ -355,6 +358,15 @@ planningErrorDetails violation =
 
                 PlannedTransport.ReceiverHasNoPosition unitId ->
                     "receiver has no position: " ++ UnitId.toString unitId
+
+                PlannedTransport.UnloadPassengerNotFound unitId ->
+                    "planned unload passenger not found: " ++ UnitId.toString unitId
+
+                PlannedTransport.UnloadPassengerNotAboard relationship ->
+                    "planned unload passenger "
+                        ++ UnitId.toString relationship.passengerId
+                        ++ " is not aboard truck "
+                        ++ UnitId.toString relationship.truckId
 
         OrderPlanning.OrderDependenciesInvariantViolated dependency ->
             case dependency of

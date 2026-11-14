@@ -284,8 +284,8 @@ interruptedDismountChecks infantryId truckId passengerId =
                         , unit otherUnitId Kind.Tank (Location.OnMap { x = 0, y = 0 })
                         ]
 
-                ready : OrderPlanning.Model
-                ready =
+                picker : OrderPlanning.Model
+                picker =
                     OrderPlanning.init
                         |> OrderPlanning.setOrders
                             [ { unitId = truckId
@@ -301,7 +301,28 @@ interruptedDismountChecks infantryId truckId passengerId =
                             , unrelatedOrder
                             ]
                         |> OrderPlanning.setSelection (Just (Inspecting (UnitInspection truckId)))
-                        |> OrderPlanning.promptDismountedOrders context.map context.units
+                        |> (OrderPlanning.promptDismountedOrders context.map context.units >> fixtureValue)
+
+                ready : OrderPlanning.Model
+                ready =
+                    OrderPlanning.selectDismountedInfantry context.units infantryId picker |> fixtureValue
+
+                missingPassenger : List Unit
+                missingPassenger =
+                    List.filter (\passenger -> passenger.id /= infantryId) context.units
+
+                misplacedPassenger : List Unit
+                misplacedPassenger =
+                    let
+                        displace : Unit -> Unit
+                        displace passenger =
+                            if passenger.id == infantryId then
+                                Unit.setLocation (Location.Aboard otherTruckId) passenger
+
+                            else
+                                passenger
+                    in
+                    List.map displace context.units
 
                 unrelatedOrder : PlannedOrder.PlannedOrder
                 unrelatedOrder =
@@ -318,11 +339,15 @@ interruptedDismountChecks infantryId truckId passengerId =
 
                 escaped : OrderPlanning.Model
                 escaped =
-                    cancel ready
+                    cancel picker
 
                 firstOrder : OrderPlanning.Model
                 firstOrder =
                     hold ready
+
+                holdRemaining : OrderPlanning.Model -> OrderPlanning.Model
+                holdRemaining =
+                    OrderPlanning.holdRemainingInfantry context.units >> fixtureValue
 
                 completed : OrderPlanning.Model
                 completed =
@@ -395,8 +420,90 @@ interruptedDismountChecks infantryId truckId passengerId =
                     deployOtherPassenger infantryContext
             in
             List.concat
-                [ expect "the initial truck opens its infantry orders"
-                    (Maybe.map .id (OrderPlanning.orderMenuUnit context.map context.units ready) == Just infantryId)
+                [ expect "the picker lists both infantry and blocks submission"
+                    (List.map (.unit >> .id) (OrderPlanning.dismountedInfantryChoices context.units picker)
+                        == [ infantryId, passengerId ]
+                        && OrderPlanning.submissionDrafts picker
+                        == Nothing
+                        && OrderPlanning.selectDismountedInfantry context.units otherUnitId picker
+                        == IC.happy picker
+                    )
+                , expect "the picker opens orders for either infantry"
+                    (Maybe.map .id (OrderPlanning.orderMenuUnit context.map context.units ready)
+                        == Just infantryId
+                        && Maybe.map .id
+                            (OrderPlanning.selectDismountedInfantry context.units passengerId picker
+                                |> fixtureValue
+                                |> OrderPlanning.orderMenuUnit context.map context.units
+                            )
+                        == Just passengerId
+                    )
+                , expect "an absent saved passenger reports an invariant and preserves the other choice"
+                    (let
+                        checked : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+                        checked =
+                            OrderPlanning.selectDismountedInfantry missingPassenger passengerId picker
+                     in
+                     IC.error checked
+                        == Just (OrderPlanning.TransportInvariantViolated (PlannedTransport.UnloadPassengerNotFound infantryId))
+                        && Maybe.map .id (OrderPlanning.orderMenuUnit context.map missingPassenger (fixtureValue checked))
+                        == Just passengerId
+                    )
+                , expect "opening the picker reports a missing saved passenger"
+                    (let
+                        checked : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+                        checked =
+                            picker
+                                |> OrderPlanning.setSelection (Just (Inspecting (UnitInspection truckId)))
+                                |> OrderPlanning.promptDismountedOrders context.map missingPassenger
+                     in
+                     IC.error checked
+                        == Just (OrderPlanning.TransportInvariantViolated (PlannedTransport.UnloadPassengerNotFound infantryId))
+                        && List.map (.unit >> .id)
+                            (OrderPlanning.dismountedInfantryChoices missingPassenger (fixtureValue checked))
+                        == [ passengerId ]
+                    )
+                , expect "bulk hold reports a wrong carrier and holds only the valid passenger"
+                    (let
+                        checked : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+                        checked =
+                            OrderPlanning.holdRemainingInfantry misplacedPassenger picker
+
+                        relationship : { passengerId : UnitId, truckId : UnitId }
+                        relationship =
+                            { passengerId = infantryId, truckId = truckId }
+                     in
+                     IC.error checked
+                        == Just (OrderPlanning.TransportInvariantViolated (PlannedTransport.UnloadPassengerNotAboard relationship))
+                        && OrderPlanning.orders (fixtureValue checked)
+                        == { unitId = passengerId, action = PlannedOrder.Hold { x = 2, y = 1 } }
+                        :: OrderPlanning.orders picker
+                    )
+                , expect "an active picker reports a missing truck order"
+                    (let
+                        withoutTruck : OrderPlanning.Model
+                        withoutTruck =
+                            OrderPlanning.ChoosingDismountedInfantry truckId [ unrelatedOrder ]
+                     in
+                     OrderPlanning.selectDismountedInfantry context.units infantryId withoutTruck
+                        == IC.violated (OrderPlanning.DismountTruckOrderNotFound truckId) withoutTruck
+                    )
+                , expect "holding from the picker saves both holds at their exits"
+                    (OrderPlanning.orders (holdRemaining picker)
+                        == [ { unitId = infantryId, action = PlannedOrder.Hold { x = 1, y = 2 } }
+                           , { unitId = passengerId, action = PlannedOrder.Hold { x = 2, y = 1 } }
+                           ]
+                        ++ OrderPlanning.orders picker
+                        && OrderPlanning.submissionDrafts (holdRemaining picker)
+                        /= Nothing
+                    )
+                , expect "saving one order advances to the next infantry and leaves bulk hold in the picker"
+                    (OrderPlanning.holdRemainingInfantry context.units firstOrder
+                        == IC.happy firstOrder
+                        && OrderPlanning.dismountOrderProgress context.units firstOrder
+                        == Just { current = 2, total = 2 }
+                        && List.isEmpty (OrderPlanning.dismountedInfantryChoices context.units firstOrder)
+                    )
                 , expect "Escape cancels the truck and both unloads while preserving unrelated orders"
                     (OrderPlanning.orders escaped
                         == [ unrelatedOrder ]
@@ -439,7 +546,9 @@ interruptedDismountChecks infantryId truckId passengerId =
                         == OrderPlanning.orders ready
                     )
                 , expect "another truck prompts only its own dismounting infantry"
-                    (Maybe.map .id (OrderPlanning.orderMenuUnit infantryContext.map infantryContext.units infantryDeployed) == Just gunId)
+                    (List.map (.unit >> .id) (OrderPlanning.dismountedInfantryChoices infantryContext.units infantryDeployed)
+                        == [ gunId ]
+                    )
                 ]
 
         _ ->
@@ -745,6 +854,7 @@ groundPickupChecks infantryId truckId =
                 fullSkipped =
                     hold fullContext truckId
                         |> OrderPlanning.skipUnloading fullContext.map fullContext.units fullContext.supplyCrates fullContext.depots
+                        |> fixtureValue
             in
             List.concat
                 [ expect "holding on either kind of ground freight offers a pickup choice" (asksFor kind pending)
@@ -868,7 +978,7 @@ cargoLoadingChecks infantryId truckId passengerId =
 
                 skipped : OrderPlanning.Model
                 skipped =
-                    OrderPlanning.skipUnloading fixture.map fixture.units fixture.supplyCrates fixture.depots checklist
+                    OrderPlanning.skipUnloading fixture.map fixture.units fixture.supplyCrates fixture.depots checklist |> fixtureValue
 
                 confirmed : OrderPlanning.Model
                 confirmed =
@@ -909,7 +1019,7 @@ cargoLoadingChecks infantryId truckId passengerId =
 
         spare : OrderPlanning.Model
         spare =
-            OrderPlanning.skipUnloading spareFixture.map spareFixture.units spareFixture.supplyCrates spareFixture.depots (hold spareFixture)
+            OrderPlanning.skipUnloading spareFixture.map spareFixture.units spareFixture.supplyCrates spareFixture.depots (hold spareFixture) |> fixtureValue
 
         fortressFixture : BoardFixture
         fortressFixture =
@@ -2564,6 +2674,7 @@ planningChecks infantryId truckId passengerId =
                     freightRendezvousContext.units
                     freightRendezvousContext.supplyCrates
                     freightRendezvousContext.depots
+                |> fixtureValue
                 |> (OrderPlanning.selectUnit
                         freightRendezvousContext.map
                         freightRendezvousContext.units
@@ -2922,6 +3033,8 @@ planningChecks infantryId truckId passengerId =
         secondInfantryOrder : OrderPlanning.Model
         secondInfantryOrder =
             twoInfantryReady
+                |> OrderPlanning.selectDismountedInfantry twoInfantryContext.units infantryId
+                |> fixtureValue
                 |> (OrderPlanning.applyOrder
                         twoInfantryContext.map
                         twoInfantryContext.units
@@ -2957,6 +3070,8 @@ planningChecks infantryId truckId passengerId =
         dismountAttack : OrderPlanning.Model
         dismountAttack =
             completed
+                |> OrderPlanning.selectDismountedInfantry cargoContext.units infantryId
+                |> fixtureValue
                 |> (OrderPlanning.applyOrder
                         cargoContext.map
                         cargoContext.units
@@ -2993,6 +3108,8 @@ planningChecks infantryId truckId passengerId =
         dismountHold : OrderPlanning.Model
         dismountHold =
             completed
+                |> OrderPlanning.selectDismountedInfantry cargoContext.units infantryId
+                |> fixtureValue
                 |> (OrderPlanning.applyOrder
                         cargoContext.map
                         cargoContext.units
@@ -4479,6 +4596,7 @@ planningChecks infantryId truckId passengerId =
                             depotCargoContext.supplyCrates
                             depotCargoContext.depots
                             depotChecklist
+                            |> fixtureValue
                         )
                     )
             )
@@ -4569,6 +4687,7 @@ planningChecks infantryId truckId passengerId =
                         depotCargoContext.supplyCrates
                         depotCargoContext.depots
                         depotFirstExit
+                        |> fixtureValue
                     )
                 && List.concatMap PlannedOrder.unloads
                     (OrderPlanning.orders
@@ -4578,6 +4697,7 @@ planningChecks infantryId truckId passengerId =
                             depotCargoContext.supplyCrates
                             depotCargoContext.depots
                             depotFirstExit
+                            |> fixtureValue
                         )
                     )
                 == [ { unitId = infantryId, destination = { x = 3, y = 2 } } ]
@@ -5164,13 +5284,9 @@ planningChecks infantryId truckId passengerId =
                 && List.length (OrderPlanning.orders bothInfantryOrdered)
                 == 3
             )
-        , expect "completing exits opens the dismounted infantry order menu"
-            (OrderPlanning.orderMenuUnit
-                cargoContext.map
-                cargoContext.units
-                completed
-                |> Maybe.map .id
-                |> (==) (Just infantryId)
+        , expect "completing exits lists infantry in the picker and skips field guns"
+            (List.map (.unit >> .id) (OrderPlanning.dismountedInfantryChoices cargoContext.units completed)
+                == [ infantryId ]
             )
         , expect "dismounted attack tracing begins at the exit and saves normally"
             (OrderPlanning.orders dismountAttack

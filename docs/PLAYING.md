@@ -342,14 +342,19 @@ leave the affected passengers aboard. An exit occupied by a concealed enemy can
 be submitted; if the enemy remains there at resolution, the passenger stays aboard
 and spends no unloading supplies. Revoking the truck's order also removes
 its unload choices.
-After choosing cargo exits, unloading infantry receive their normal order menu.
-Plan a move, attack move, ambush, stand ground, or hold from the unload square.
+After choosing cargo exits and finishing any freight-loading choice, **order unloaded
+infantry** shows who can move or attack after unloading. Select a portrait to open the infantry's
+normal orders at its unload square. Plan a move, attack move, ambush, stand ground,
+or hold. Saving an order advances directly to the next infantry on the map.
+In the dialog, **hold remaining infantry** saves a hold at each unordered
+infantry's exit and keeps the truck plan.
 They receive a fresh movement allowance after dismounting, but pay both unloading
 and action supply costs, with upkeep charged once. Orders resolve after transport
 and before indirect fire. Prepared ambushes can fire during unloading; a blocked
 exit, stopped truck, or dead passenger prevents the follow-up action. Field guns
-still only dismount. Press Escape during this order sequence to cancel the
-truck move, all unload choices, and any infantry orders already entered.
+still only dismount. Choose **cancel truck order** in the dialog, use the order
+controls to cancel, or press Escape during this sequence to clear the truck
+move, all unload choices, and any infantry orders already entered.
 After the last unloading infantry receives an order, the sequence is complete;
 Escape then clears selection and keeps the saved plan. Revoking the truck order
 also revokes its infantry orders.
@@ -575,16 +580,15 @@ when both units are wounded: 5 HP against 5 HP hits as hard as 16 HP against
 16 HP. A 5 HP attacker against a 10 HP target has one-quarter power. This also
 applies to attack moves and indirect fire.
 
-The server records observable enemies already in each ambush firing area when
-readiness begins. Those enemies get a chance to leave: they are targeted only
-if they remain in the area after movement and transport finish, whether holding
-still or moving within the area. Leaving the area escapes the ambush; leaving
-and re-entering triggers it immediately. New contacts trigger after each movement
-arrival or transport transition, including enemies emerging from concealment or
-unloading into the area. Other units moving do not trigger fire at an initial
-contact that has stayed in the area. A unit fires at most once per turn, choosing
-the nearest eligible observable enemy in its firing area. Shared vision or a firing
-reveal enables ambush fire through intervening forests, hills, and mountains.
+An observable enemy that steps onto a covered square can trigger the ambush
+immediately, including when it starts inside the firing area. Stepping directly
+out of the area is safe from that ambush. An enemy that stays on its starting
+square is checked after movement and transport, or in the same volley if it
+fires an attack-move shot from that square. Enemies emerging from concealment or
+unloading into the area can also trigger immediate fire. A unit fires at most
+once per turn, choosing the nearest eligible observable enemy in its firing area.
+Shared vision or a firing reveal enables ambush fire through intervening forests,
+hills, and mountains.
 Terrain still blocks sight normally, and unrevealed enemies in forests remain concealed. An ambushed
 unit with a normal move stops its remaining movement. A surviving attack-moving
 unit continues its remaining route and can fire on a later attack-move contact;

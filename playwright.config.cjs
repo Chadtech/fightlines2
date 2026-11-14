@@ -3,6 +3,7 @@ const { defineConfig } = require('@playwright/test');
 const desktopUrl = 'http://127.0.0.1:4187';
 const mobileUrl = 'http://127.0.0.1:4188';
 const mobileInteractionUrl = 'http://127.0.0.1:4189';
+const laptopUrl = 'http://127.0.0.1:4190';
 const mobileInteraction = /@mobile-interaction/;
 const mobileLandscape = { viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true };
 const serverOptions = {
@@ -50,7 +51,7 @@ module.exports = defineConfig({
   },
   projects: [
     { name: 'desktop', testMatch: '**/desktop.spec.cjs', use: { viewport: { width: 1440, height: 900 } } },
-    { name: 'laptop', testMatch: '**/desktop.spec.cjs', use: { viewport: { width: 1280, height: 800 } } },
+    { name: 'laptop', testMatch: '**/desktop.spec.cjs', use: { viewport: { width: 1280, height: 800 }, baseURL: laptopUrl } },
     { name: 'mobile-landscape', testMatch: '**/mobile.spec.cjs', grepInvert: mobileInteraction, use: { ...mobileLandscape, baseURL: mobileUrl } },
     { name: 'mobile-interaction', testMatch: '**/mobile.spec.cjs', grep: mobileInteraction, use: { ...mobileLandscape, baseURL: mobileInteractionUrl } },
     { name: 'mobile-portrait', testMatch: '**/mobile-portrait.spec.cjs', use: { baseURL: mobileUrl, viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true } },
@@ -71,6 +72,11 @@ module.exports = defineConfig({
       ...serverOptions,
       command: 'node tests/visual/server.cjs 4189',
       url: mobileInteractionUrl,
+    },
+    {
+      ...serverOptions,
+      command: 'node tests/visual/server.cjs 4190',
+      url: laptopUrl,
     },
   ],
 });

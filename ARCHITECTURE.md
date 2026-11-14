@@ -1192,11 +1192,11 @@ verifies that conversion, including unloading from stationary trucks.
 Its playback state owns the held combat Enter key; changing encounters or leaving
 playback clears it. Opening chat also clears the press.
 `Game.OrderPlanning` owns the planning custom type and its transitions:
-`OrdinaryPlanning`, `ConfirmingSubmission`,
-`ChoosingPassengers` or `ChoosingExits`. Ordinary planning and submission
-confirmation carry drafts and selection; unload stages carry the required truck
-move, other units' orders and stage-specific passenger data. The submission
-warning and unload checklist are rendered directly from these alternatives;
+`OrdinaryPlanning`, `ConfirmingSubmission`, the freight-loading choices, and
+the unload stages. Ordinary planning and submission confirmation carry drafts and
+selection. `ChoosingPassengers` and `ChoosingExits` carry the pending truck
+plan and other units' orders. `ChoosingDismountedInfantry` retains the truck ID
+and saved orders. The planning dialogs render directly from these alternatives;
 `GamePage.Model` has no separate planning-dialog state. Only one planning
 workflow can be active. Inspector reference help is independent of planning:
 `Game.View.InspectionHelp.Help` identifies unit, supply, fuel, or cargo help, or carries
@@ -1513,8 +1513,12 @@ default holds for unassigned units. If a hold has no physical origin, the page
 records the violation and keeps the drafts editable without sending the request.
 The unload checklist uses the eligibility result to disable unavailable choices.
 Checkbox actions and exit planning record violations they encounter while handling
-the action. `InvariantCheck.resolve` delivers the optional diagnostic and retained
-value together at these boundaries.
+the action. Infantry order actions check saved exits when resolving their
+passengers. A missing passenger or a passenger aboard a different truck is
+reported while valid passengers remain available. The active infantry picker
+also checks that its truck order exists when choosing or holding infantry.
+`InvariantCheck.resolve` delivers the optional diagnostic and retained value
+together at these boundaries.
 
 The game page records each distinct order-planning violation once per turn and
 queues up to eight for a single `reportPlanningErrors` request per minute. Reports
@@ -1936,13 +1940,15 @@ two-square forward line and infantry a one-square forward line. Elm renders cove
 and simultaneous damage. Ready ambushers and attack-move contacts can fire;
 targets caught by an ambush stop their remaining route unless they survive with
 an attack-move order. Being ambushed does not automatically trigger return fire.
-It records initially eligible targets per ambushing unit and defers them while
-they remain eligible. Losing
-contact removes that deferral, so re-entry triggers immediate fire. The movement
-resolver prepares ambush facing/readiness before arrivals and checks new contacts
-after arrivals. Its firing state survives into loading/unloading, allowing
-newly unloaded enemies to trigger an unfired ambush. After transport finishes,
-`Turns` releases the remaining deferred contacts for a final volley before upkeep.
+It defers initially eligible targets until they arrive on a covered square,
+lose contact, fire an attack-move shot, or reach the final volley. The movement
+resolver prepares ambush facing and readiness before arrivals and passes the
+successful arrivals to combat after resolving allied retreats. Ambushes check
+targets at their settled positions. Attack-move fire reveals its shooter in time
+for the same volley. Firing state survives into loading and unloading, allowing
+newly unloaded enemies to trigger an unfired ambush. After transport and
+dismount movement, `Turns` releases the remaining deferred contacts for a final
+volley before upkeep.
 `Combat` retains attack-mover IDs from the submitted orders so ambush damage does
 not stop their routes; death and physical encounters still stop them. Movement
 resources are paid per successful edge in the working board; the final health,
@@ -2556,8 +2562,11 @@ transport events.
 `PlannedTransport.planningUnit` projects dismounted infantry only for order selection,
 route previews, and submission. Inspector resource gauges retain authoritative
 values; reserved unloading supplies affect order affordability only. Physical
-board and cargo data stay unchanged until playback. Finishing exit choices opens the first infantry order menu; saving an
-order advances to the next unloaded infantry without an order from the same truck.
+board and cargo data stay unchanged until playback. Once the exit and loading
+choices are complete, `OrderPlanning.ChoosingDismountedInfantry` owns the portrait
+picker and retains the truck's saved plan. Selecting a passenger opens its ordinary
+order menu. Saving an order advances directly to the next unordered infantry
+from that truck. The bulk hold action saves explicit holds at the remaining exits.
 `OrderPlanning.cancelInteraction` cancels the active truck sequence through
 `OrderDependencies.revoke`, including saved infantry orders and other dependent
 routes. The active unload stage identifies its truck; during infantry orders,

@@ -2694,7 +2694,7 @@ mod tests {
     }
 
     #[test]
-    fn ambush_initial_contacts_resolve_after_their_submitted_movement() -> TestResult<()> {
+    fn ambush_initial_contacts_resolve_at_covered_arrival_or_turn_end() -> TestResult<()> {
         for first in [PlayerNumber::Player1, PlayerNumber::Player2] {
             for (destinations, damage) in [
                 (vec![], 11),
@@ -2744,7 +2744,12 @@ mod tests {
                     .find(|unit| unit.id() == "6")
                     .fixture()?;
                 assert_eq!(target.hit_points().current(), 16 - damage);
-                let (x, y) = destinations.last().copied().unwrap_or((8, 8));
+                let destination = if damage > 0 {
+                    destinations.first()
+                } else {
+                    destinations.last()
+                };
+                let (x, y) = destination.copied().unwrap_or((8, 8));
                 assert_eq!(
                     target.board_position(),
                     Some(Coordinate::new(u16::try_from(x)?, u16::try_from(y)?))
@@ -2755,7 +2760,12 @@ mod tests {
                     .iter()
                     .find(|event| event.unit_id == target.unit_id())
                     .fixture()?;
-                assert_eq!(movement.path.len(), destinations.len() + 1);
+                let steps = if damage > 0 {
+                    destinations.len().min(1)
+                } else {
+                    destinations.len()
+                };
+                assert_eq!(movement.path.len(), steps + 1);
                 if !destinations.is_empty() && damage > 0 {
                     let arrival = resolution
                         .frames

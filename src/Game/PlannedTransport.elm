@@ -1,14 +1,15 @@
 module Game.PlannedTransport exposing
-    ( InvariantViolation(..)
+    ( DismountedInfantry
+    , InvariantViolation(..)
     , Occupancy
     , boardingPassengers
     , cargoRoom
+    , dismountedInfantry
     , hasCargo
     , isDismounting
     , loadingTarget
     , moveOrders
     , moveReceiver
-    , nextDismountedUnit
     , occupancy
     , planningUnit
     , receivingLoad
@@ -45,6 +46,12 @@ type alias Occupancy =
     }
 
 
+type alias DismountedInfantry =
+    { unit : Unit
+    , destination : Coordinate
+    }
+
+
 type InvariantViolation
     = CarrierNotFound
         { passengerId : UnitId
@@ -55,6 +62,8 @@ type InvariantViolation
         , carrierId : UnitId
         }
     | ReceiverHasNoPosition UnitId
+    | UnloadPassengerNotFound UnitId
+    | UnloadPassengerNotAboard { passengerId : UnitId, truckId : UnitId }
 
 
 
@@ -373,19 +382,53 @@ withoutStalePassengerHolds map units drafts =
     List.filter (not << staleHold) drafts
 
 
-{-| Continue orders only for passengers of this truck. Other transports may
-have unfinished infantry orders whose automatic menus were dismissed.
--}
-nextDismountedUnit : Map -> List Unit -> UnitId -> List PlannedOrder -> Maybe Unit
-nextDismountedUnit map units truckId drafts =
+dismountedInfantry :
+    List Unit
+    -> PlannedOrder
+    -> InvariantCheck InvariantViolation (List DismountedInfantry)
+dismountedInfantry units order =
     let
-        needsOrder : Unit -> Bool
-        needsOrder unit =
-            (Unit.carrierId unit == Just truckId)
-                && Unit.onMap (planningUnit map drafts unit)
-                && not (List.any (\order -> order.unitId == unit.id) drafts)
+        infantryAtExit :
+            PlannedOrder.UnloadOrder
+            -> InvariantCheck InvariantViolation (Maybe DismountedInfantry)
+        infantryAtExit exit =
+            case ListUtil.find (\unit -> unit.id == exit.unitId) units of
+                Just unit ->
+                    if Unit.carrierId unit /= Just order.unitId then
+                        IC.violated
+                            (UnloadPassengerNotAboard
+                                { passengerId = exit.unitId
+                                , truckId = order.unitId
+                                }
+                            )
+                            Nothing
+
+                    else if unit.kind == Kind.Infantry then
+                        IC.happy (Just { unit = unit, destination = exit.destination })
+
+                    else
+                        IC.happy Nothing
+
+                Nothing ->
+                    IC.violated (UnloadPassengerNotFound exit.unitId) Nothing
+
+        collect :
+            PlannedOrder.UnloadOrder
+            -> InvariantCheck InvariantViolation (List DismountedInfantry)
+            -> InvariantCheck InvariantViolation (List DismountedInfantry)
+        collect exit retained =
+            infantryAtExit exit
+                |> IC.andThen
+                    (\passenger ->
+                        case passenger of
+                            Just infantry ->
+                                IC.map ((::) infantry) retained
+
+                            Nothing ->
+                                retained
+                    )
     in
-    ListUtil.find needsOrder units
+    List.foldr collect (IC.happy []) (PlannedOrder.unloads order)
 
 
 

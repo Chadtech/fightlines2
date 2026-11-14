@@ -486,6 +486,7 @@ fn resolve_arrivals(
             .map(|order| (order.unit_id, order.arrival_direction))
             .collect();
         let mut blocked_forest_entries = Vec::new();
+        let mut arrived = BTreeSet::new();
         for (id, destination) in intents {
             let unit = board
                 .units
@@ -505,6 +506,7 @@ fn resolve_arrivals(
             let origin = *path.last().ok_or(ResolutionError::EmptyPath)?;
             unit.follow_terrain_path(&board.map, &[origin, destination], passenger_count);
             path.push(destination);
+            arrived.insert(id);
         }
         stopped.extend(blocked);
         stopped.extend(stop_after_arrival);
@@ -586,6 +588,7 @@ fn resolve_arrivals(
             if let Some(index) = free {
                 let discarded_path = path[index..].to_vec();
                 path.truncate(index + 1);
+                arrived.remove(&id);
                 let initial = scenario
                     .units
                     .iter()
@@ -617,7 +620,7 @@ fn resolve_arrivals(
             &board,
             (tick - previous_tick) * MOVEMENT_DURATION_MS / ticks,
         ));
-        combat.engage_contacts(&mut board, &mut stopped, &mut frames, &contacts);
+        combat.engage_contacts(&mut board, &mut stopped, &mut frames, &contacts, &arrived);
         previous_tick = tick;
     }
     Ok(MovementResolution {

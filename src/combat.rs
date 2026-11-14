@@ -803,7 +803,7 @@ impl Combat {
         stopped: &mut BTreeSet<UnitId>,
         frames: &mut Vec<TurnFrame>,
     ) {
-        self.engage_contacts(board, stopped, frames, &[]);
+        self.engage_contacts(board, stopped, frames, &[], &BTreeSet::new());
     }
 
     /// An ambushing field gun gets the first shot when a tank contacts it or aims
@@ -848,13 +848,14 @@ impl Combat {
             .collect()
     }
 
-    /// Physical encounters bypass sight and ambush range, including concealed defenders.
+    /// Check movement arrivals and physical encounters against the settled board.
     pub fn engage_contacts(
         &mut self,
         board: &mut Scenario,
         stopped: &mut BTreeSet<UnitId>,
         frames: &mut Vec<TurnFrame>,
         contacts: &[(UnitId, UnitId)],
+        arrived: &BTreeSet<UnitId>,
     ) {
         // Resolving an allied traffic jam can retract a participant's movement.
         // Only contacts that remain physically adjacent can trigger direct fire
@@ -883,51 +884,8 @@ impl Combat {
         self.volley(board, &interceptions, frames);
         // Survivors may return fire with their reduced strength; other encounters
         // retain simultaneous resolution within their usual volley.
-        let eligible: Vec<_> = board
-            .units
-            .iter()
-            .filter(|unit| self.ambushers.contains(&unit.unit_id()))
-            .flat_map(|shooter| {
-                board
-                    .units
-                    .iter()
-                    .filter_map(|target| self.engagement(board, shooter, target))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-        // Initial contacts may escape. Once they leave contact, re-entry triggers
-        // immediate fire just like any newcomer, even if another unit moved.
-        for (shooter, targets) in &mut self.deferred_targets {
-            targets.retain(|target| {
-                eligible.iter().any(|engagement| {
-                    engagement.shooter == *shooter && engagement.target == *target
-                })
-            });
-        }
-        let opening: Vec<_> = self
-            .ambushers
-            .iter()
-            .filter_map(|shooter| {
-                eligible
-                    .iter()
-                    .filter(|engagement| {
-                        engagement.shooter == *shooter
-                            && !self
-                                .deferred_targets
-                                .get(shooter)
-                                .is_some_and(|targets| targets.contains(&engagement.target))
-                    })
-                    .min_by_key(|engagement| {
-                        (
-                            (engagement.shot.destination.x() - engagement.shot.origin.x()).abs()
-                                + (engagement.shot.destination.y() - engagement.shot.origin.y())
-                                    .abs(),
-                            engagement.target,
-                        )
-                    })
-            })
-            .collect();
-        let mut opening: Vec<_> = opening.into_iter().cloned().collect();
+        let mut opening = Vec::new();
+        let mut attacking = BTreeSet::new();
         for (shooter_id, target_id) in &adjacent_contacts {
             let shooter = board
                 .units
@@ -940,9 +898,7 @@ impl Combat {
                 && shooter.player_number() != target.player_number()
                 && let (Some(origin), Some(destination)) =
                     (shooter.board_position(), target.board_position())
-                && !opening
-                    .iter()
-                    .any(|engagement| engagement.shooter == *shooter_id)
+                && attacking.insert(*shooter_id)
             {
                 opening.push(Engagement {
                     shooter: *shooter_id,
@@ -967,6 +923,54 @@ impl Combat {
                 });
             }
         }
+        // Contact fire exposes even a concealed attacker to the same volley.
+        for unit in &mut board.units {
+            if attacking.contains(&unit.unit_id()) {
+                unit.reveal_position();
+            }
+        }
+        let eligible: Vec<_> = board
+            .units
+            .iter()
+            .filter(|unit| self.ambushers.contains(&unit.unit_id()))
+            .flat_map(|shooter| {
+                board
+                    .units
+                    .iter()
+                    .filter_map(|target| self.engagement(board, shooter, target))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        // An initial target can leave on its first step. A covered arrival or a
+        // direct attack exposes it now, even if it never left the firing area.
+        for (shooter, targets) in &mut self.deferred_targets {
+            targets.retain(|target| {
+                !arrived.contains(target)
+                    && !attacking.contains(target)
+                    && eligible.iter().any(|engagement| {
+                        engagement.shooter == *shooter && engagement.target == *target
+                    })
+            });
+        }
+        let ambushes = self.ambushers.iter().filter_map(|shooter| {
+            eligible
+                .iter()
+                .filter(|engagement| {
+                    engagement.shooter == *shooter
+                        && !self
+                            .deferred_targets
+                            .get(shooter)
+                            .is_some_and(|targets| targets.contains(&engagement.target))
+                })
+                .min_by_key(|engagement| {
+                    (
+                        (engagement.shot.destination.x() - engagement.shot.origin.x()).abs()
+                            + (engagement.shot.destination.y() - engagement.shot.origin.y()).abs(),
+                        engagement.target,
+                    )
+                })
+        });
+        opening.extend(ambushes.cloned());
         opening.sort_by_key(|engagement| (engagement.shooter, engagement.target));
         for engagement in &opening {
             let continues_attack_move = engagement.shot.kind == CombatKind::Ambush
@@ -1481,6 +1485,7 @@ mod tests {
                 &mut BTreeSet::new(),
                 &mut frames,
                 &[(attacker, defender)],
+                &BTreeSet::new(),
             );
             let shots: Vec<_> = frames.iter().flat_map(|frame| &frame.shots).collect();
             assert_eq!(shots.len(), 1);
@@ -1884,6 +1889,28 @@ mod tests {
     }
 
     #[test]
+    fn infantry_charging_from_inside_a_field_guns_ambush_is_hit_on_arrival() -> TestResult<()> {
+        let (board, mut orders) = fixture(
+            UnitKind::FieldGun,
+            UnitKind::Infantry,
+            Coordinate::new(5, 3),
+        )?;
+        let infantry = orders.get_mut(1).fixture()?;
+        infantry.action = CombatAction::AttackMove;
+        let covered = Coordinate::new(4, 3);
+        infantry.path.extend([covered, Coordinate::new(3, 3)]);
+        let result = resolve_fixture_movement(&board, &orders, 1)?;
+        let hits = shots(&result);
+        assert_eq!(hits.len(), 1);
+        let hit = hits.first().fixture()?;
+        assert_eq!(hit.kind, CombatKind::Ambush);
+        assert_eq!(hit.destination, covered);
+        assert_eq!(hit.target_health.after.current(), 0);
+        assert_eq!(hit.attacker_health.after.current(), 16);
+        Ok(())
+    }
+
+    #[test]
     fn stale_attack_contacts_require_cardinal_adjacency_before_interception() -> TestResult<()> {
         for defender in [UnitKind::Infantry, UnitKind::FieldGun] {
             for position in [Coordinate::new(5, 3), Coordinate::new(4, 4)] {
@@ -1900,6 +1927,7 @@ mod tests {
                     &mut BTreeSet::new(),
                     &mut frames,
                     &[(tank_id, defender_id)],
+                    &BTreeSet::new(),
                 );
                 assert!(frames.iter().all(|frame| frame.shots.is_empty()));
                 assert_eq!(board.units, prepared);
@@ -1934,6 +1962,7 @@ mod tests {
                 &mut BTreeSet::new(),
                 &mut frames,
                 &[(tank_id, gun_id)],
+                &BTreeSet::new(),
             );
             let shots: Vec<_> = frames.iter().flat_map(|frame| &frame.shots).collect();
             assert_eq!(shots.len(), 1);
@@ -1965,6 +1994,7 @@ mod tests {
             &mut BTreeSet::new(),
             &mut frames,
             &[(tank_id, gun_id)],
+            &BTreeSet::new(),
         );
         let shots: Vec<_> = frames.iter().flat_map(|frame| &frame.shots).collect();
         assert_eq!(shots.len(), 2);
@@ -1988,6 +2018,7 @@ mod tests {
             &mut BTreeSet::new(),
             &mut frames,
             &[(tank_id, gun_id)],
+            &BTreeSet::new(),
         );
         assert_eq!(frames.iter().flat_map(|frame| &frame.shots).count(), 1);
         assert_eq!(board.units.first().fixture()?.hit_points().current(), 0);
@@ -2022,6 +2053,7 @@ mod tests {
                     &mut BTreeSet::new(),
                     &mut frames,
                     &[(infantry_id, gun_id)],
+                    &BTreeSet::new(),
                 );
                 let hit = frames
                     .iter()
@@ -2728,44 +2760,44 @@ mod tests {
     }
 
     #[test]
-    fn initial_contacts_can_escape_but_remaining_contacts_wait_until_movement_finishes()
-    -> TestResult<()> {
+    fn initial_contacts_trigger_on_covered_arrival_or_at_turn_end() -> TestResult<()> {
         for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
-            let within_line_x = if kind == UnitKind::FieldGun { 5 } else { 4 };
-            let within_line = Coordinate::new(within_line_x, 3);
-            for (route, expected_shots) in [
-                (Vec::new(), 1),
-                (vec![within_line], 1),
-                (vec![Coordinate::new(4, 2)], 0),
-                // Passing through a second firing square while withdrawing is safe.
+            let origin = Coordinate::new(4, 3);
+            let covered = Coordinate::new(5, 3);
+            let mut cases = vec![
+                (Vec::new(), None, true),
                 (
-                    vec![
-                        within_line,
-                        Coordinate::new(within_line_x, 2),
-                        Coordinate::new(within_line_x, 1),
-                    ],
-                    0,
+                    vec![Coordinate::new(4, 2), Coordinate::new(4, 1)],
+                    None,
+                    false,
                 ),
-            ] {
-                let (scenario, mut orders) = fixture(kind, UnitKind::Truck, Coordinate::new(4, 3))?;
-                // Avoid a duplicate position for the one-square firing lines.
-                orders[1].path.extend(
-                    route
-                        .into_iter()
-                        .filter(|position| *position != Coordinate::new(4, 3)),
-                );
+            ];
+            if kind != UnitKind::Infantry {
+                cases.push((vec![covered, Coordinate::new(5, 2)], Some(covered), true));
+            }
+            for (route, arrival_hit, expected_shot) in cases {
+                let (mut scenario, mut orders) = fixture(kind, UnitKind::Truck, origin)?;
+                // Keep the truck observable beyond the tank's one-tile sight radius.
+                scenario.units.get_mut(1).fixture()?.reveal_position();
+                let target = orders.get_mut(1).fixture()?;
+                target.path.extend(route);
                 let mut result = resolve_fixture_movement(&scenario, &orders, 1)?;
-                assert!(shots(&result).is_empty());
-                assert_eq!(
-                    result.paths.get(&orders[1].unit_id).fixture()?,
-                    &orders[1].path
-                );
-                let mut board = scenario.clone();
-                board.units = result.frames.last().fixture()?.units.clone();
+                let hits = shots(&result);
+                assert_eq!(hits.len(), usize::from(arrival_hit.is_some()), "{kind:?}");
+                if let Some(destination) = arrival_hit {
+                    assert_eq!(hits.first().fixture()?.destination, destination);
+                }
+                let target = orders.get(1).fixture()?;
+                let expected_path = if arrival_hit.is_some() {
+                    &target.path[..2]
+                } else {
+                    &target.path
+                };
+                assert_eq!(result.paths.get(&target.unit_id).fixture()?, expected_path);
                 result
                     .combat
-                    .finish(&mut board, &mut result.stopped, &mut result.frames);
-                assert_eq!(shots(&result).len(), expected_shots, "{kind:?}");
+                    .finish(&mut result.board, &mut result.stopped, &mut result.frames);
+                assert_eq!(shots(&result).len(), usize::from(expected_shot), "{kind:?}");
             }
         }
         Ok(())
@@ -3069,6 +3101,7 @@ mod tests {
                     &mut BTreeSet::new(),
                     &mut frames,
                     &[(attacker_id, defender_id)],
+                    &BTreeSet::new(),
                 );
                 combat.finish(&mut board, &mut BTreeSet::new(), &mut frames);
                 let shots: Vec<_> = frames.iter().flat_map(|frame| &frame.shots).collect();
@@ -3264,6 +3297,7 @@ mod tests {
             &mut BTreeSet::new(),
             &mut frames,
             &[(attacker_id, defender_id)],
+            &BTreeSet::new(),
         );
         let volley = frames.first().fixture()?;
         assert_eq!(volley.shots.len(), 2);
@@ -3474,14 +3508,12 @@ mod tests {
     }
 
     #[test]
-    fn ambushes_hit_revealed_forest_targets_that_stay_in_the_area() -> TestResult<()> {
+    fn ambushes_hit_forest_targets_when_revealed_or_firing_from_the_area() -> TestResult<()> {
         for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
             for revealed in [false, true] {
                 for attack_move in [false, true] {
                     let (mut scenario, mut orders) =
                         fixture(kind, UnitKind::Infantry, Coordinate::new(4, 3))?;
-                    // Keep contact fire nonlethal so the defender can still ambush.
-                    scenario.units.get_mut(1).fixture()?.take_damage(4);
                     scenario.map = Map::new(9, 9, Terrain::Forest, BTreeMap::new()).fixture()?;
                     scenario
                         .units
@@ -3499,8 +3531,7 @@ mod tests {
                         .into_iter()
                         .filter(|shot| shot.attacker.unit_id() == shooter_id)
                         .collect();
-                    // Contact fire reveals the attacker immediately, allowing the
-                    // surviving ambusher to acquire it even inside a forest.
+                    // Contact fire reveals the attacker in time for the same volley.
                     let target_revealed = revealed || attack_move;
                     assert_eq!(hits.len(), usize::from(target_revealed));
                     if target_revealed {
@@ -3510,6 +3541,23 @@ mod tests {
                         assert!(
                             hit.target_health.after.current() < hit.target_health.before.current()
                         );
+                    }
+                    if attack_move {
+                        let exchange = result
+                            .frames
+                            .iter()
+                            .find(|frame| !frame.shots.is_empty())
+                            .fixture()?;
+                        assert_eq!(exchange.shots.len(), 2);
+                        assert!(
+                            exchange
+                                .shots
+                                .iter()
+                                .any(|shot| shot.kind == CombatKind::AttackMove)
+                        );
+                        if kind == UnitKind::FieldGun {
+                            assert!(exchange.units.iter().all(|unit| !unit.is_alive()));
+                        }
                     }
                     // Enemy contact stops the attack move on its original square.
                     let infantry_id = scenario.units.get(1).fixture()?.unit_id();

@@ -1111,8 +1111,15 @@ the complete depot inspection beneath its own row. Unknown stock has no map bar
 or numeric value; the inspector row says `stock outside sight`.
 
 Treat a truck move, its unload choices, and its infantry orders as one planning
-sequence. Escape cancels that truck order and all dependent orders while the
-sequence is unfinished, including after some infantry orders have been saved.
+sequence. Once exit and freight-loading choices are complete, open the native
+`order unloaded infantry` dialog on desktop and mobile. Explain that the infantry
+can move or attack after unloading and show a portrait button for each infantry awaiting an order.
+Choosing a portrait centers its unload square and opens the ordinary orders.
+Show `unloaded infantry` above the mobile options, with progress when there is
+more than one. Advance to the next infantry on the board as orders are saved.
+The dialog offers compact `hold remaining infantry` and `cancel truck order`
+buttons. Hold saves orders at the chosen exits. Cancel and Escape clear the
+truck order and its dependent orders while the sequence is unfinished.
 After every unloading infantry has an order, Escape only clears selection and
 keeps the completed plan. Trucks unloading only field guns or freight complete
 the sequence when their final cargo choice is saved.

@@ -3,14 +3,13 @@
 ## doing now
 
 ## Bugs
-
+- I set up a field gun ambush on an infantry, but he ran up and attack moved and destroyed the field gun. Should that have happened?
+- UI not clear about doing infantry moves when unloading from truck, a dialog should appear?
 
 ## Immediately
 - Frontend AI engine
 - Tutorial missions
-- Lag between moving a loaded truck and unloading dialog on black forest
-- Was there a bug where my infantry just didnt move?
-- Bumping into a unit in the forest should reveal it so units dont mysteriously dont move through the woods
+
 
 ## Soon
 - Shadows under units in combat theater
