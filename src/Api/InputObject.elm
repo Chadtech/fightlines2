@@ -247,6 +247,66 @@ encodeMapDefinitionInput input____ =
         [ ( "description", Encode.string input____.description |> Just ), ( "releaseStatus", Encode.enum Api.Enum.MapReleaseStatus.toString input____.releaseStatus |> Just ), ( "matchMaking", Encode.bool |> Encode.optional input____.matchMaking ), ( "width", Encode.int input____.width |> Just ), ( "height", Encode.int input____.height |> Just ), ( "theme", Encode.enum Api.Enum.MapTheme.toString input____.theme |> Just ), ( "features", (encodeTerrainPlacementInput |> Encode.list) input____.features |> Just ), ( "depots", (encodeDepotPlacementInput |> Encode.list) input____.depots |> Just ), ( "units", (encodeUnitPlacementInput |> Encode.list) input____.units |> Just ) ]
 
 
+buildPlanningErrorBatchInput :
+    PlanningErrorBatchInputRequiredFields
+    -> PlanningErrorBatchInput
+buildPlanningErrorBatchInput required____ =
+    { gameId = required____.gameId, clientVersion = required____.clientVersion, errors = required____.errors }
+
+
+type alias PlanningErrorBatchInputRequiredFields =
+    { gameId : String
+    , clientVersion : String
+    , errors : List PlanningErrorInput
+    }
+
+
+{-| Type for the PlanningErrorBatchInput input object.
+-}
+type alias PlanningErrorBatchInput =
+    { gameId : String
+    , clientVersion : String
+    , errors : List PlanningErrorInput
+    }
+
+
+{-| Encode a PlanningErrorBatchInput into a value that can be used as an argument.
+-}
+encodePlanningErrorBatchInput : PlanningErrorBatchInput -> Value
+encodePlanningErrorBatchInput input____ =
+    Encode.maybeObject
+        [ ( "gameId", Encode.string input____.gameId |> Just ), ( "clientVersion", Encode.string input____.clientVersion |> Just ), ( "errors", (encodePlanningErrorInput |> Encode.list) input____.errors |> Just ) ]
+
+
+buildPlanningErrorInput :
+    PlanningErrorInputRequiredFields
+    -> PlanningErrorInput
+buildPlanningErrorInput required____ =
+    { turnNumber = required____.turnNumber, details = required____.details }
+
+
+type alias PlanningErrorInputRequiredFields =
+    { turnNumber : Int
+    , details : String
+    }
+
+
+{-| Type for the PlanningErrorInput input object.
+-}
+type alias PlanningErrorInput =
+    { turnNumber : Int
+    , details : String
+    }
+
+
+{-| Encode a PlanningErrorInput into a value that can be used as an argument.
+-}
+encodePlanningErrorInput : PlanningErrorInput -> Value
+encodePlanningErrorInput input____ =
+    Encode.maybeObject
+        [ ( "turnNumber", Encode.int input____.turnNumber |> Just ), ( "details", Encode.string input____.details |> Just ) ]
+
+
 buildPositionInput :
     PositionInputRequiredFields
     -> PositionInput

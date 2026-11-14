@@ -13,6 +13,8 @@
 - Bumping into a unit in the forest should reveal it so units dont mysteriously dont move through the woods
 
 ## Soon
+- Shadows under units in combat theater
+- Revisit America Tank design. The turrent is too short
 - Manufacturing and cities
 - Air planes and boats
 - Day Night Cycle

@@ -2,11 +2,12 @@ module Fightlines.Route exposing
     ( Route(..)
     , fromUrl
     , load
-    , pushUrl
-    , replaceUrl
+    , navigate
+    , navigateReplacing
     , toString
     )
 
+import Deployment
 import Effect as E exposing (Eff)
 import LobbyId
     exposing
@@ -55,14 +56,37 @@ load route =
     E.loadUrl (toString route)
 
 
-pushUrl : Route -> Eff msg
-pushUrl route =
-    E.pushUrl (toString route)
+{-| Navigate to a player route, loading its document when deployment routing
+requires it.
+-}
+navigate : Deployment.Model -> Route -> Eff msg
+navigate deployment route =
+    let
+        url : String
+        url =
+            toString route
+    in
+    if Deployment.requiresDocumentLoad deployment url then
+        E.loadUrl url
+
+    else
+        E.pushUrl url
 
 
-replaceUrl : Route -> Eff msg
-replaceUrl route =
-    E.replaceUrl (toString route)
+{-| Navigate and replace the current history entry.
+-}
+navigateReplacing : Deployment.Model -> Route -> Eff msg
+navigateReplacing deployment route =
+    let
+        url : String
+        url =
+            toString route
+    in
+    if Deployment.requiresDocumentLoad deployment url then
+        E.replaceDocument url
+
+    else
+        E.replaceUrl url
 
 
 toString : Route -> String

@@ -18,6 +18,17 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
   const thumbnails = [];
   const images = [];
   const documentReplacements = [];
+  const animationFrames = [];
+  const dialogs = new Map();
+  class Dialog {
+    open = false;
+    opens = 0;
+
+    showModal() {
+      this.open = true;
+      this.opens += 1;
+    }
+  }
   const storage = {
     getItem(name) {
       if (readFails) throw new Error('storage denied');
@@ -66,11 +77,39 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
     Date: { now: () => now },
     Math: { floor: Math.floor, min: Math.min, random: () => randomSample },
     localStorage: storage,
-    document: { addEventListener() {} },
+    document: { addEventListener() {}, getElementById(id) { return dialogs.get(id); } },
+    HTMLDialogElement: Dialog,
+    requestAnimationFrame(callback) { animationFrames.push(callback); },
     addEventListener(name, handler) { events[name] = handler; },
     console: { warn(...args) { warnings.push(args); } },
   });
-  return { stored, messages, warnings, flags, send, storage, events, clipboard, thumbnails, images, documentReplacements };
+  return { stored, messages, warnings, flags, send, storage, events, clipboard, thumbnails, images, documentReplacements, animationFrames, dialogs, Dialog };
+}
+
+async function checkDialogOpening() {
+  const { send, animationFrames, dialogs, Dialog } = boot();
+  const request = { tag: 'openDialog', htmlId: 'unload-passengers' };
+  const dialog = new Dialog();
+  dialogs.set(request.htmlId, dialog);
+  await send(request);
+  animationFrames.shift()();
+  assert.equal(dialog.opens, 1, 'opens on the first frame when the dialog is rendered');
+  assert.equal(animationFrames.length, 0);
+
+  await send(request);
+  animationFrames.shift()();
+  assert.equal(dialog.opens, 1, 'does not reopen an active modal');
+  assert.equal(animationFrames.length, 0);
+
+  dialogs.delete(request.htmlId);
+  await send(request);
+  animationFrames.shift()();
+  assert.equal(animationFrames.length, 1, 'allows one more frame for Elm to render');
+  const lateDialog = new Dialog();
+  dialogs.set(request.htmlId, lateDialog);
+  animationFrames.shift()();
+  assert.equal(lateDialog.opens, 1);
+  assert.equal(animationFrames.length, 0);
 }
 
 async function checkInterop() {
@@ -195,6 +234,7 @@ async function checkInterop() {
 
 async function main() {
   await checkInterop();
+  await checkDialogOpening();
   const directory = mkdtempSync(join(tmpdir(), 'fightlines-local-storage-'));
   try {
     const output = join(directory, 'checks.js');

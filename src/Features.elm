@@ -2,6 +2,7 @@ module Features exposing
     ( Feature(..)
     , Model
     , all
+    , armyStyle
     , enabled
     , encodePreference
     , init
@@ -10,10 +11,12 @@ module Features exposing
     )
 
 import Error exposing (Error)
+import Game.ArmyStyle as ArmyStyle exposing (ArmyStyle)
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import LocalStorage exposing (LocalStorage)
 import Preference
+import Util.List as ListUtil
 
 
 
@@ -24,6 +27,7 @@ import Preference
 
 type Feature
     = Placeholder
+    | Army ArmyStyle
 
 
 type alias Model =
@@ -61,7 +65,13 @@ init storage =
 
 all : List Feature
 all =
-    [ Placeholder ]
+    Placeholder :: List.map Army ArmyStyle.priority
+
+
+armyStyle : Model -> Maybe ArmyStyle
+armyStyle model =
+    ArmyStyle.priority
+        |> ListUtil.find (\style -> enabled (Army style) model)
 
 
 enabled : Feature -> Model -> Bool
@@ -93,6 +103,9 @@ label feature =
         Placeholder ->
             "placeholder"
 
+        Army style ->
+            ArmyStyle.label style ++ " army style"
+
 
 encodePreference : Model -> { key : String, value : Encode.Value }
 encodePreference model =
@@ -113,6 +126,9 @@ toString feature =
         Placeholder ->
             "placeholder"
 
+        Army style ->
+            "army-" ++ ArmyStyle.slug style
+
 
 decoder : Decoder (Maybe Feature)
 decoder =
@@ -122,11 +138,13 @@ decoder =
 decodeFeature : String -> Decoder (Maybe Feature)
 decodeFeature value =
     case value of
-        "placeholder" ->
-            Decode.succeed (Just Placeholder)
-
         "mobileLandscape" ->
             Decode.succeed Nothing
 
         _ ->
-            Decode.fail ("unknown feature: " ++ value)
+            case ListUtil.find (\feature -> toString feature == value) all of
+                Just feature ->
+                    Decode.succeed (Just feature)
+
+                Nothing ->
+                    Decode.fail ("unknown feature: " ++ value)

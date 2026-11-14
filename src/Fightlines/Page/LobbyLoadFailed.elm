@@ -65,13 +65,14 @@ update msg model =
         RetryButtonClicked ->
             case model.location of
                 LobbyPage.LobbySetup ->
-                    Route.pushUrl (Route.Lobby model.id)
+                    Route.navigate model.shared.deployment (Route.Lobby model.id)
 
                 LobbyPage.MapLibrary ->
-                    Route.pushUrl (Route.LobbyMaps model.id)
+                    Route.navigate model.shared.deployment
+                        (Route.LobbyMaps model.id)
 
         ReturnHomeButtonClicked ->
-            Route.pushUrl Route.Home
+            Route.navigate model.shared.deployment Route.Home
 
 
 view : Model -> List (Html Msg)

@@ -111,6 +111,12 @@ directory is available. A fresh clone does not include that directory.
   Rows 0–2 are red/blue/neutral infantry, 3–5 tanks, 6–8 trucks and 9–11 field guns.
   Infantry, tanks and trucks use rigid-part idle loops; field guns use four drawn
   elevation poses. Frames cycle every 400ms with stable unit ID phase offsets.
+- `army-infantry-v1/` and `army-tanks-v1/`: six style atlases per unit kind.
+  Each 1024 × 512 sheet has four 256px idle frames and red and blue team rows.
+  The Features tab switches these atlases on the live board, using the same
+  animation clock and facing as the standard atlas. The infantry sheets are
+  the team-colored exports from the army infantry idle artwork. The tank
+  sheets are the board exports from the tank idle artwork in `design/tanks/`.
 
 Terrain, buildings and units use smooth scaling. Selection corners use pixelated
 rendering. Eastern units are mirrored to face west. Depots have no ownership

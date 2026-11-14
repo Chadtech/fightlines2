@@ -3,9 +3,9 @@ module Deployment exposing
     , Status(..)
     , init
     , load
-    , navigation
     , observe
     , receive
+    , requiresDocumentLoad
     , selection
     )
 
@@ -107,8 +107,8 @@ load =
 {-| Public destinations stay stable. Crossing a session boundary or leaving a
 draining entry document loads the server-selected frontend and API connection.
 -}
-navigation : Model -> String -> { url : String, fullLoad : Bool }
-navigation deployment destination =
+requiresDocumentLoad : Model -> String -> Bool
+requiresDocumentLoad deployment destination =
     let
         newSession : Bool
         newSession =
@@ -131,9 +131,7 @@ navigation deployment destination =
         crossingSession =
             destinationSession /= deployment.documentSession
     in
-    { url = destination
-    , fullLoad = crossingSession || (newSession && draining)
-    }
+    crossingSession || (newSession && draining)
 
 
 {-| Draining is monotonic, including responses delayed across the transition.

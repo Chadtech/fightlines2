@@ -11,6 +11,7 @@ module Shared exposing
     , isMobileView
     , keyCommands
     , listeners
+    , planningErrorDetails
     , setAudioMute
     , setAudioVolumes
     , setDevPanelOpen
@@ -32,11 +33,14 @@ import ErrorHistory
 import Features
 import Game.DirectionPlanning as DirectionPlanning
 import Game.IndirectFirePlanning as IndirectFirePlanning
+import Game.Movement as Movement
 import Game.OrderDependencies as OrderDependencies
 import Game.OrderPlanning as OrderPlanning
 import Game.PlannedTransport as PlannedTransport
 import Game.PlayerNumber as PlayerNumber
+import Game.TurnPlayback as TurnPlayback
 import Game.UnitId as UnitId
+import Game.UnitKind as UnitKind
 import Json.Decode as Decode
 import KeyCmd exposing (KeyCmd)
 import LocalStorage exposing (LocalStorage)
@@ -292,6 +296,23 @@ toDevPanelError error =
                 , details = planningErrorDetails violation
                 }
 
+        Error.PlanningErrorReportFailed message ->
+            DevPanel.Error
+                { title = "could not report planning error"
+                , details = message
+                }
+
+        Error.TurnPlaybackInvariantViolated (TurnPlayback.TooFewFrames missing) ->
+            DevPanel.Error
+                { title = "turn playback invariant violated"
+                , details =
+                    "resolved turn "
+                        ++ String.fromInt missing.resolvedTurn
+                        ++ " has "
+                        ++ String.fromInt missing.frameCount
+                        ++ " playback frames (expected at least two)"
+                }
+
 
 domErrorDetails : Browser.Dom.Error -> String
 domErrorDetails failure =
@@ -311,6 +332,18 @@ planningErrorDetails violation =
 
         OrderPlanning.LoadingOrderNotFound unitId ->
             "loading order not found: " ++ UnitId.toString unitId
+
+        OrderPlanning.MovementInvariantViolated (Movement.RuleNotFound missing) ->
+            "movement rule not found for "
+                ++ UnitKind.label missing.kind
+                ++ " "
+                ++ UnitId.toString missing.unitId
+
+        OrderPlanning.PassengerNotAboard relationship ->
+            "passenger "
+                ++ UnitId.toString relationship.passengerId
+                ++ " is not aboard truck "
+                ++ UnitId.toString relationship.truckId
 
         OrderPlanning.TransportInvariantViolated transport ->
             case transport of

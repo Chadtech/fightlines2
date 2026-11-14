@@ -13,6 +13,7 @@ use crate::{
     map_editor,
     map_id::MapId,
     match_making,
+    planning_error::{self, PlanningErrorBatchInput, PlanningErrorPage},
     player::Controller,
     player_number::PlayerNumber,
     scenario::UnitKind,
@@ -77,6 +78,7 @@ pub struct Context {
     pub mutation_limits: Arc<server_limits::Limits>,
     client_address: ClientAddress,
     pub feedback: Option<Arc<feedback::Directory>>,
+    pub planning_errors: Option<Arc<planning_error::Directory>>,
     pub editor: map_editor::Access,
     pub archives: game_archive::Access,
     identity: Mutex<Option<SessionToken>>,
@@ -160,6 +162,13 @@ impl Query {
 
     fn match_making(context: &Context) -> FieldResult<match_making::Snapshot> {
         match_making::get(context)
+    }
+
+    fn admin_planning_errors(
+        context: &Context,
+        #[graphql(default = 0)] offset: i32,
+    ) -> FieldResult<PlanningErrorPage> {
+        planning_error::list(context, offset)
     }
 
     fn chat(
@@ -280,6 +289,14 @@ impl Mutation {
     fn submit_feedback(context: &Context, text: String) -> FieldResult<bool> {
         context.admit(Operation::SubmitFeedback)?;
         feedback::submit(context, &text)
+    }
+
+    fn report_planning_errors(
+        context: &Context,
+        input: PlanningErrorBatchInput,
+    ) -> FieldResult<bool> {
+        context.admit(Operation::ReportPlanningError)?;
+        planning_error::submit(context, input)
     }
 
     fn send_chat(context: &Context, input: SendChatInput) -> FieldResult<ChatMessage> {
@@ -498,6 +515,10 @@ pub async fn handle(
         mutation_limits: endpoint.mutation_limits.clone(),
         client_address: ClientAddress::from_request(&request),
         feedback: feedback.map(web::Data::into_inner),
+        planning_errors: request
+            .app_data::<web::Data<planning_error::Directory>>()
+            .cloned()
+            .map(web::Data::into_inner),
         editor: map_editor::Access::from_request(editor, &request),
         archives: match archives {
             Some(archives) => game_archive::Access::from_browser(Some(archives)),
@@ -582,6 +603,7 @@ pub fn export_schema() -> std::io::Result<()> {
         mutation_limits: Arc::new(server_limits::Limits::default()),
         client_address: ClientAddress::Unavailable,
         feedback: None,
+        planning_errors: None,
         editor: map_editor::Access::Disabled,
         archives: game_archive::Access::Disabled,
         identity: Mutex::new(None),

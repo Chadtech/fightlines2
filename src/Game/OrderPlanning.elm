@@ -131,6 +131,8 @@ type InvariantViolation
     = PlanningUnitNotFound UnitId
     | OrderUnitHasNoPosition UnitId
     | LoadingOrderNotFound UnitId
+    | MovementInvariantViolated Movement.InvariantViolation
+    | PassengerNotAboard { passengerId : UnitId, truckId : UnitId }
     | TransportInvariantViolated PlannedTransport.InvariantViolation
     | OrderDependenciesInvariantViolated OrderDependencies.InvariantViolation
     | DirectionInvariantViolated DirectionPlanning.InvariantViolation
@@ -1308,7 +1310,12 @@ missingOrders map units playerNumbers drafts =
         |> List.filter missing
 
 
-submissionOrders : Map -> List Unit -> List PlayerNumber -> List PlannedOrder -> List PlannedOrder
+submissionOrders :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List PlannedOrder
+    -> InvariantCheck InvariantViolation (List PlannedOrder)
 submissionOrders map units playerNumbers drafts =
     let
         missing : Unit -> Bool
@@ -1318,14 +1325,32 @@ submissionOrders map units playerNumbers drafts =
                 unit
                 && not (List.any (\order -> order.unitId == unit.id) drafts)
 
-        holds : List PlannedOrder
+        addHold :
+            Unit
+            -> List PlannedOrder
+            -> InvariantCheck InvariantViolation (List PlannedOrder)
+        addHold unit collected =
+            case PlannedOrder.hold units (PlannedTransport.planningUnit map drafts unit) of
+                Just hold ->
+                    IC.happy (hold :: collected)
+
+                Nothing ->
+                    IC.violated (OrderUnitHasNoPosition unit.id) collected
+
+        collectHold :
+            Unit
+            -> InvariantCheck InvariantViolation (List PlannedOrder)
+            -> InvariantCheck InvariantViolation (List PlannedOrder)
+        collectHold unit =
+            IC.andThen (addHold unit)
+
+        holds : InvariantCheck InvariantViolation (List PlannedOrder)
         holds =
             units
-                |> List.map (PlannedTransport.planningUnit map drafts)
                 |> List.filter missing
-                |> List.filterMap (PlannedOrder.hold units)
+                |> List.foldl collectHold (IC.happy [])
     in
-    drafts ++ holds
+    IC.map (List.reverse >> (++) drafts) holds
 
 
 confirmPassengers :
@@ -1449,7 +1474,7 @@ applyUnitOrder map units playerNumbers movementRules supplyCrates depots order u
                     |> IC.happy
 
             UnitOrder.HoldPosition ->
-                holdPosition map units supplyCrates depots unit model
+                holdPosition map units movementRules supplyCrates depots unit model
 
             UnitOrder.Sabotage ->
                 saveStationaryOrder map units unit PlannedOrder.Sabotage model
@@ -1660,19 +1685,67 @@ startTruckUnload truck model =
             model
 
 
+{-| Check the passengers' rules as the checklist becomes available. A passenger
+with a missing rule cannot be checked, so the checkbox handler would never see it.
+-}
+openCheckedUnloadChoice :
+    List Unit
+    -> List Movement.Rule
+    -> UnloadingTruck
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+openCheckedUnloadChoice units movementRules truck model =
+    case model of
+        OrdinaryPlanning _ ->
+            let
+                truckId : UnitId
+                truckId =
+                    UnloadingTruck.unitId truck
+
+                missingRule : Unit -> Maybe Movement.InvariantViolation
+                missingRule passenger =
+                    case Movement.planningRule movementRules passenger of
+                        Ok _ ->
+                            Nothing
+
+                        Err violation ->
+                            Just violation
+
+                next : Model
+                next =
+                    startTruckUnload truck model
+            in
+            case
+                units
+                    |> List.filter (\unit -> Unit.carrierId unit == Just truckId)
+                    |> List.filterMap missingRule
+                    |> List.head
+            of
+                Just violation ->
+                    IC.violated (MovementInvariantViolated violation) next
+
+                Nothing ->
+                    IC.happy next
+
+        _ ->
+            IC.happy model
+
+
 openUnloadPrompt :
     List Unit
+    -> List Movement.Rule
     -> List Supply.GroundCrate
     -> List Depot
     -> Unit
     -> Movement.Option
     -> Model
     -> InvariantCheck InvariantViolation Model
-openUnloadPrompt units supplyCrates depots truck move model =
+openUnloadPrompt units movementRules supplyCrates depots truck move model =
     if PlannedTransport.hasCargo units truck then
         model
-            |> startUnload truck.id move
-            |> IC.happy
+            |> openCheckedUnloadChoice units
+                movementRules
+                (UnloadingTruck.moving truck.id move)
 
     else
         offerTruckLoading units supplyCrates depots truck model
@@ -1681,12 +1754,13 @@ openUnloadPrompt units supplyCrates depots truck move model =
 holdPosition :
     Map
     -> List Unit
+    -> List Movement.Rule
     -> List Supply.GroundCrate
     -> List Depot
     -> Unit
     -> Model
     -> InvariantCheck InvariantViolation Model
-holdPosition map units supplyCrates depots unit model =
+holdPosition map units movementRules supplyCrates depots unit model =
     case PlannedOrder.hold units unit of
         Just hold ->
             let
@@ -1703,7 +1777,11 @@ holdPosition map units supplyCrates depots unit model =
             in
             if PlannedTransport.hasCargo units unit then
                 next
-                    |> IC.map (startStationaryUnload unit.id (PlannedOrder.destination hold))
+                    |> IC.andThen
+                        (openCheckedUnloadChoice units
+                            movementRules
+                            (UnloadingTruck.stationary unit.id (PlannedOrder.destination hold))
+                        )
 
             else
                 next |> IC.andThen (offerTruckLoading units supplyCrates depots unit)
@@ -1727,6 +1805,12 @@ unloadOptions map units playerNumbers movementRules supplyCrates planning =
             case error of
                 UnloadPlanning.PassengerNotFound id ->
                     PlanningUnitNotFound id
+
+                UnloadPlanning.PassengerNotAboard relationship ->
+                    PassengerNotAboard relationship
+
+                UnloadPlanning.MovementInvariantViolated movement ->
+                    MovementInvariantViolated movement
     in
     UnloadPlanning.options map
         units
@@ -1777,13 +1861,13 @@ beginMovement purpose map units movementRules unit model =
     case Unit.physicalPosition units unit of
         Just origin ->
             let
-                planning : MovePlanning
-                planning =
-                    MovePlanning.start purpose map units movementRules (orders model) unit origin
+                chooseMove : MovePlanning -> Model
+                chooseMove planning =
+                    setUnitInteraction unit.id (ChoosingMove planning) model
             in
-            model
-                |> setUnitInteraction unit.id (ChoosingMove planning)
-                |> IC.happy
+            MovePlanning.start purpose map units movementRules (orders model) unit origin
+                |> IC.mapError MovementInvariantViolated
+                |> IC.map chooseMove
 
         Nothing ->
             IC.violated (OrderUnitHasNoPosition unit.id) model
@@ -1910,7 +1994,14 @@ selectMovementTile map units playerNumbers movementRules supplyCrates depots pos
                                 |> IC.mapError TransportInvariantViolated
                                 |> IC.map saveOrders
                                 |> IC.andThen (finishUnitOrder map units)
-                                |> IC.andThen (openUnloadPrompt units supplyCrates depots unit move)
+                                |> IC.andThen
+                                    (openUnloadPrompt units
+                                        movementRules
+                                        supplyCrates
+                                        depots
+                                        unit
+                                        move
+                                    )
                                 |> IC.andThen offerReceiverLoading
 
                     Nothing ->

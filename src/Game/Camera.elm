@@ -6,7 +6,6 @@ module Game.Camera exposing
     , coordinateAt
     , frame
     , setOffset
-    , transform
     , zoomAt
     )
 
@@ -53,10 +52,15 @@ zoomAt anchorPoint zoom camera =
     }
 
 
-{-| The initial whole-map overview, shared by the board and order anchors.
+{-| The rendered board width, including the camera's zoom.
 -}
-boardWidth : String
-boardWidth =
+boardWidth : Camera -> String
+boardWidth camera =
+    "calc(" ++ overviewWidth ++ " * " ++ String.fromFloat camera.zoom ++ ")"
+
+
+overviewWidth : String
+overviewWidth =
     "min(92cqw, 98cqh)"
 
 
@@ -78,7 +82,7 @@ displacement camera fraction =
         axis : Float -> Float -> String
         axis boardFraction offset =
             "calc("
-                ++ boardWidth
+                ++ overviewWidth
                 ++ " * "
                 ++ String.fromFloat (boardFraction * camera.zoom)
                 ++ " + "
@@ -88,22 +92,6 @@ displacement camera fraction =
     { x = axis fraction.x camera.offset.x
     , y = axis fraction.y camera.offset.y
     }
-
-
-transform : Camera -> String
-transform camera =
-    let
-        translation : { x : String, y : String }
-        translation =
-            displacement camera { x = 0, y = 0 }
-    in
-    "translate("
-        ++ translation.x
-        ++ ", "
-        ++ translation.y
-        ++ ") scale("
-        ++ String.fromFloat camera.zoom
-        ++ ")"
 
 
 boardPixels : Point -> Float

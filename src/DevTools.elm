@@ -57,7 +57,7 @@ import View.Dialog as Dialog exposing (Dialog)
 
 
 type Page
-    = AppInitError Decode.Error
+    = AppInitError Navigation.Key Decode.Error
     | Home Shared.Model
     | LoadingCombatChart Shared.Model CombatChartLoadId
     | CombatChartLoadFailed Shared.Model String
@@ -115,18 +115,10 @@ main =
                     |> Tuple.mapSecond (E.toCmd key)
         , update =
             \msg page ->
-                let
-                    ( newPage, eff ) =
-                        update msg page
-                            |> restorePageDialog page
-                            |> E.andThen (withPlaybackAudio page)
-                in
-                case getShared newPage of
-                    Just shared ->
-                        ( newPage, E.toCmd shared.key eff )
-
-                    Nothing ->
-                        ( newPage, Cmd.none )
+                update msg page
+                    |> restorePageDialog page
+                    |> E.andThen (withPlaybackAudio page)
+                    |> Tuple.mapSecond (E.toCmd (getKey page))
         , view = view
         , subscriptions = subscriptions
         , onUrlRequest = LinkClicked
@@ -161,7 +153,7 @@ init value url key =
                 |> E.and (E.audio (Audio.SetVolumes shared.audioVolumes))
 
         Err error ->
-            ( AppInitError error, E.none )
+            ( AppInitError key error, E.none )
 
 
 
@@ -197,10 +189,68 @@ restorePageDialog previous ( page, effect ) =
         result
 
 
+getKey : Page -> Navigation.Key
+getKey page =
+    case page of
+        AppInitError key _ ->
+            key
+
+        Home shared ->
+            shared.key
+
+        LoadingCombatChart shared _ ->
+            shared.key
+
+        CombatChartLoadFailed shared _ ->
+            shared.key
+
+        CombatChart model ->
+            model.shared.key
+
+        LoadingBackdropReview shared _ ->
+            shared.key
+
+        BackdropReviewLoadFailed shared _ ->
+            shared.key
+
+        BackdropReview model ->
+            model.shared.key
+
+        LoadingMapEditor shared ->
+            shared.key
+
+        MapEditorLoadFailed shared _ ->
+            shared.key
+
+        MapEditor model ->
+            model.shared.key
+
+        LoadingLoggedGames shared ->
+            shared.key
+
+        LoggedGamesLoadFailed shared _ ->
+            shared.key
+
+        LoggedGames model ->
+            model.shared.key
+
+        LoadingReplay shared _ ->
+            shared.key
+
+        ReplayLoadFailed shared _ _ ->
+            shared.key
+
+        Replay _ model ->
+            GameReplay.getShared model |> .key
+
+        NotFound shared ->
+            shared.key
+
+
 getShared : Page -> Maybe Shared.Model
 getShared page =
     case page of
-        AppInitError _ ->
+        AppInitError _ _ ->
             Nothing
 
         Home shared ->
@@ -258,7 +308,7 @@ getShared page =
 setShared : Shared.Model -> Page -> Page
 setShared shared page =
     case page of
-        AppInitError _ ->
+        AppInitError _ _ ->
             page
 
         Home _ ->
@@ -700,7 +750,7 @@ pageDialog page =
 shell : Page -> List (Html Msg)
 shell page =
     case page of
-        AppInitError error ->
+        AppInitError _ error ->
             AppInitError.view error
 
         Home _ ->

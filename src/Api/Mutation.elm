@@ -87,6 +87,17 @@ submitFeedback requiredArgs____ =
     Object.selectionForField "Bool" "submitFeedback" [ Argument.required "text" requiredArgs____.text Encode.string ] Decode.bool
 
 
+type alias ReportPlanningErrorsRequiredArguments =
+    { input : Api.InputObject.PlanningErrorBatchInput }
+
+
+reportPlanningErrors :
+    ReportPlanningErrorsRequiredArguments
+    -> SelectionSet Bool RootMutation
+reportPlanningErrors requiredArgs____ =
+    Object.selectionForField "Bool" "reportPlanningErrors" [ Argument.required "input" requiredArgs____.input Api.InputObject.encodePlanningErrorBatchInput ] Decode.bool
+
+
 type alias SendChatRequiredArguments =
     { input : Api.InputObject.SendChatInput }
 

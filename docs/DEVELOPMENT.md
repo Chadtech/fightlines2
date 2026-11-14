@@ -40,10 +40,11 @@ review app under `/dev`, with its own `DevTools.Route` and `DevTools.Flags`.
 Both apps use the common closed model and browser infrastructure in `Shared.elm`.
 Open [the tools index](http://127.0.0.1:8080/dev) for links to
 `/dev/map-editor`, `/dev/logged-games`, `/dev/backdrop-review`, and `/dev/combat-chart`.
-Both apps use `Effect.Eff` and outgoing ports in `Ports.Js.To`. Their route modules
-provide typed `Route.pushUrl` helpers for in-app navigation and `Route.load`
-for loading a new document. `Effect.loadUrl` loads a browser-provided URL
-through the same `Load` effect. Player pages and app infrastructure live in
+The apps use `Effect.Eff` and outgoing ports in `Ports.Js.To`. The player app
+uses `Route.navigate` and `Route.navigateReplacing` to choose the navigation
+effect from its deployment state. Admin and DevTools use `Route.pushUrl` for
+in-app navigation. `Route.load` loads a new document, and `Effect.loadUrl`
+does the same for a browser-provided URL. Player pages and app infrastructure live in
 `src/Fightlines/`, with pages in
 `src/Fightlines/Page/` and player-only views in `src/Fightlines/View/`. Tool pages
 live in `src/DevTools/Page/` under `DevTools.Page.*`. Both apps share
@@ -174,6 +175,11 @@ Open the dev panel with backtick and select **features** to toggle local feature
 Changes apply immediately and persist on this device, including across reloads
 and other open tabs. The **placeholder** flag exercises the switch and storage
 flow. The retired `"mobileLandscape"` value is ignored when reading preferences.
+
+Army style switches change the current player's tank and unentrenched infantry
+sprites on the live board, including turn playback. If several army styles are
+checked, the first one listed in the Features tab wins. Turning off every army
+style restores the standard sprites.
 
 The minimal battlefield layout is automatic on Android/iOS or a viewport with
 a short edge up to 600px and a long edge up to 1023px. The viewport dimensions

@@ -74,13 +74,18 @@ function startElmApp(elmApp, handleMessage) {
         break;
       }
       case "openDialog": {
-        // Allow Elm's next render to create the dialog before opening it.
-        requestAnimationFrame(() => requestAnimationFrame(() => {
+        function openDialog() {
           const dialog = document.getElementById(message.htmlId);
-          if (dialog instanceof HTMLDialogElement && !dialog.open) {
+          if (!(dialog instanceof HTMLDialogElement)) return false;
+          if (!dialog.open) {
             dialog.showModal();
           }
-        }));
+          return true;
+        }
+        // Elm may still have a render queued for this frame.
+        requestAnimationFrame(() => {
+          if (!openDialog()) requestAnimationFrame(openDialog);
+        });
         break;
       }
       default: {

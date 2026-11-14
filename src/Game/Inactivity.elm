@@ -12,7 +12,7 @@ module Game.Inactivity exposing
     , pending
     , recordInteraction
     , reportDelay
-    , reportingContextChanged
+    , reportingContext
     , selection
     , sequence
     , succeeded
@@ -35,6 +35,12 @@ import Time
 type Inactivity
     = Disabled
     | Enabled (Maybe Int)
+
+
+type ReportingContext
+    = ReportingDisabled
+    | ReportingEnabled
+    | WarningOpen
 
 
 {-| Disabled activity cannot carry a countdown or any reporting state.
@@ -241,17 +247,19 @@ observe now responseSequence inactivity model =
 {-| Server observations affect report timing when they enable reporting or
 open or close a warning. Updating the displayed seconds has no such effect.
 -}
-reportingContextChanged : Model -> Model -> Bool
-reportingContextChanged previous current =
-    case ( previous, current ) of
-        ( DisabledActivity, DisabledActivity ) ->
-            False
+reportingContext : Model -> ReportingContext
+reportingContext model =
+    case model of
+        DisabledActivity ->
+            ReportingDisabled
 
-        ( EnabledActivity before, EnabledActivity after ) ->
-            (before.countdown == Nothing) /= (after.countdown == Nothing)
+        EnabledActivity { countdown } ->
+            case countdown of
+                Nothing ->
+                    ReportingEnabled
 
-        _ ->
-            True
+                Just _ ->
+                    WarningOpen
 
 
 {-| Milliseconds until a pending interaction or presentation can be reported.

@@ -96,9 +96,9 @@ runs at once. These limits also apply to aliases in a GraphQL document. Missing
 or forged admin cookies never grant access, including through the public
 `/graphql` endpoint. Keep the production development flags disabled.
 
-Feedback is read in pages of 50 and recordings in pages of 20; corrupt entries
-show errors alongside readable entries. Refresh updates the feedback and recording
-lists; ordinary polling reads only live status. Browser assets include
+Feedback is read in pages of 50. Recordings and planning errors are read in
+pages of 20. Refresh updates these lists while ordinary polling reads live status.
+Corrupt entries are indicated alongside readable ones. Browser assets include
 `admin.html`, `admin.js`, and `elm-admin.js` in addition to the player files.
 Their source entry files live in `tools/admin/`, which is included by the local
 deployment snapshot workflow. Production builds still remove all DevTools outputs.
@@ -357,6 +357,7 @@ restarts the current release and resumes retirement from persisted deadlines.
 These ports remain inaccessible publicly.
 Each release writes only to its own `game-logs`, `feedback`, and `server-logs`.
 Admin reads recordings and feedback from old releases and the legacy directories.
+It also reads planning errors from each release's private server-log directory.
 Do not delete retired runtime directories if you want to retain their data.
 The shared `.session-owners` directory records session-to-release ownership before
 creation completes. Keep these records and the registry when retaining old links:
@@ -475,6 +476,20 @@ jq 'select(.level == "ERROR")' /var/log/fightlines/fightlines.*.jsonl
 
 Schema export and offline archive replay do not initialize the server logger.
 
+
+## Browser planning errors
+
+During gameplay each game page batches up to eight distinct order-planning
+invariant reports in one request per minute. Further violations while the queue
+is full are recorded in the browser's diagnostics. The browser attempts each
+queued report once.
+The Admin dashboard shows the game ID, turn, diagnostic, frontend and backend
+versions, and server receipt time. Reports are saved in
+`$FIGHTLINES_SERVER_LOG_DIR/planning-errors/` with a separate budget of 32 MiB
+and 4,096 entries per process directory. Remove old reports during maintenance
+and restart to recalculate available space. Access to the game is required to
+submit. The session budget starts at six requests and refills one per minute.
+The address budget starts at 18 and refills one every 15 seconds.
 
 ## Player feedback
 

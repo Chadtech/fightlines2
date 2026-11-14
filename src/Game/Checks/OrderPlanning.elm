@@ -98,6 +98,7 @@ checks =
                 ++ groundPickupChecks infantryId truckId
                 ++ mutualPickupChecks infantryId truckId passengerId
                 ++ transportInvariantChecks infantryId truckId passengerId
+                ++ missingPlanningDataChecks infantryId truckId passengerId
                 ++ dependencyInvariantChecks infantryId truckId passengerId
                 ++ directionPlanningChecks infantryId truckId
                 ++ indirectPlanningChecks infantryId truckId
@@ -107,6 +108,164 @@ checks =
 
         _ ->
             [ "could not construct planning fixture IDs" ]
+
+
+missingPlanningDataChecks : UnitId -> UnitId -> UnitId -> List String
+missingPlanningDataChecks infantryId truckId otherTruckId =
+    let
+        origin : Coordinate
+        origin =
+            { x = 1, y = 1 }
+
+        truck : Unit
+        truck =
+            unit truckId Kind.Truck (Location.OnMap origin)
+
+        otherTruck : Unit
+        otherTruck =
+            unit otherTruckId Kind.Truck (Location.OnMap { x = 4, y = 3 })
+
+        passenger : Unit
+        passenger =
+            unit infantryId Kind.Infantry (Location.Aboard truckId)
+
+        context : BoardFixture
+        context =
+            board [ truck, otherTruck, passenger ]
+
+        checklist : OrderPlanning.Model
+        checklist =
+            OrderPlanning.startStationaryUnload truckId origin OrderPlanning.init
+
+        eligibility :
+            List Movement.Rule
+            -> Unit
+            -> InvariantCheck OrderPlanning.InvariantViolation Bool
+        eligibility rules infantry =
+            OrderPlanning.canSelectUnloadCargo
+                context.map
+                [ truck, otherTruck, infantry ]
+                context.playerNumbers
+                rules
+                []
+                (UnloadCargo.Passenger infantryId)
+                checklist
+
+        wrongTruck : OrderPlanning.InvariantViolation
+        wrongTruck =
+            OrderPlanning.PassengerNotAboard { passengerId = infantryId, truckId = truckId }
+
+        missingRule : Unit -> OrderPlanning.InvariantViolation
+        missingRule mover =
+            OrderPlanning.MovementInvariantViolated
+                (Movement.RuleNotFound { unitId = mover.id, kind = mover.kind })
+
+        applyTruckOrder :
+            UnitOrder.Order
+            -> List Movement.Rule
+            -> InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+        applyTruckOrder order rules =
+            let
+                selected : OrderPlanning.Model
+                selected =
+                    OrderPlanning.setSelection
+                        (Just (UnitSelection { id = truckId, interaction = OrderMenu (ChoosingOrder Nothing) }))
+                        OrderPlanning.init
+            in
+            OrderPlanning.applyOrder context.map
+                context.units
+                context.playerNumbers
+                rules
+                []
+                []
+                order
+                selected
+
+        move :
+            List Movement.Rule
+            -> InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+        move =
+            applyTruckOrder UnitOrder.Move
+
+        truckOnly : List Movement.Rule
+        truckOnly =
+            [ movementRule Kind.Truck ]
+
+        destination : Coordinate
+        destination =
+            { x = 1, y = 2 }
+
+        movingChecklist : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+        movingChecklist =
+            move truckOnly
+                |> IC.map (OrderPlanning.previewTile context.map context.units context.playerNumbers truckOnly destination)
+                |> IC.andThen (OrderPlanning.confirmPath context.map context.units context.playerNumbers truckOnly [] [])
+
+        otherTruckHold : PlannedOrder.PlannedOrder
+        otherTruckHold =
+            { unitId = otherTruckId, action = PlannedOrder.Hold { x = 4, y = 3 } }
+
+        prepareSubmission :
+            List Unit
+            -> InvariantCheck OrderPlanning.InvariantViolation (List PlannedOrder.PlannedOrder)
+        prepareSubmission units =
+            OrderPlanning.submissionOrders context.map
+                units
+                context.playerNumbers
+                [ otherTruckHold ]
+    in
+    List.concat
+        [ expect "a passenger aboard the selected truck can be unloaded"
+            (eligibility context.movementRules passenger == IC.happy True)
+        , expect "a ground unit has no unload options for the selected truck"
+            (eligibility context.movementRules (Unit.setOnMap origin passenger)
+                == IC.violated wrongTruck False
+            )
+        , expect "another truck's passenger has no unload options for the selected truck"
+            (eligibility context.movementRules (Unit.setLocation (Location.Aboard otherTruckId) passenger)
+                == IC.violated wrongTruck False
+            )
+        , expect "a missing passenger movement rule disables the unload choice and reports why"
+            (eligibility [ movementRule Kind.Truck ] passenger == IC.violated (missingRule passenger) False)
+        , expect "confirming a truck route opens the checklist and reports a missing passenger rule"
+            ((IC.error movingChecklist == Just (missingRule passenger))
+                && (OrderPlanning.unloadChoice (fixtureValue movingChecklist) /= Nothing)
+            )
+        , expect "a missing movement rule leaves the route picker empty and reports why"
+            (let
+                checked : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+                checked =
+                    move [ movementRule Kind.Infantry ]
+             in
+             (IC.error checked == Just (missingRule truck))
+                && List.isEmpty (OrderPlanning.moveOptions (fixtureValue checked))
+            )
+        , expect "a rule with no affordable routes leaves the route picker empty without an error"
+            (let
+                truckRule : Movement.Rule
+                truckRule =
+                    movementRule Kind.Truck
+
+                checked : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+                checked =
+                    move [ { truckRule | budget = 0 } ]
+             in
+             (IC.error checked == Nothing)
+                && List.isEmpty (OrderPlanning.moveOptions (fixtureValue checked))
+            )
+        , expect "submission fills in a normal hold for an unassigned passenger"
+            (prepareSubmission context.units
+                == IC.happy
+                    [ otherTruckHold
+                    , { unitId = truckId, action = PlannedOrder.Hold origin }
+                    , { unitId = infantryId, action = PlannedOrder.Hold origin }
+                    ]
+            )
+        , expect "submission reports a missing default hold while retaining other orders"
+            (prepareSubmission [ otherTruck, passenger ]
+                == IC.violated (OrderPlanning.OrderUnitHasNoPosition infantryId) [ otherTruckHold ]
+            )
+        ]
 
 
 interruptedDismountChecks : UnitId -> UnitId -> UnitId -> List String
@@ -3605,6 +3764,7 @@ planningChecks infantryId truckId passengerId =
                 cargoContext.units
                 cargoContext.playerNumbers
                 (OrderPlanning.orders completed)
+                |> fixtureValue
 
         firstUnordered : OrderPlanning.Model
         firstUnordered =

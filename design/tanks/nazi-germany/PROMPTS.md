@@ -252,3 +252,26 @@ Chassis: replace the row of separate chunky armor boxes and deep rectangular tra
 
 Preserve the established right-facing near-side-on, slightly elevated view and wheelbase, the square tile-filling footprint, tight margins, the olive-gray and charcoal palette, and detailed hand-painted 1980s anime ink contours and cel shading. Keep broad shapes readable at map scale. Draw one complete vehicle on a transparent square canvas. No background, floor shadow, text, crew, flags, or insignia.
 ```
+
+## v15 · 2026-11-12
+
+Built-in ImageGen edit of [concept v14](concept-v14.png). [Concept v15](concept-v15.png) thickens the barrel shaft while retaining the existing muzzle size.
+
+The first pass produced a subtler change.
+
+```text
+Use case: precise-object-edit
+Asset type: one static transparent FightLines game-map sprite.
+Edit the selected German tank concept v14. The only requested change is the drawn barrel shaft between the large collar beside the turret and the ringed muzzle at the right. The current center shaft is too thin relative to the muzzle. Thicken the exposed narrow middle section visibly, aiming for about 25 to 30 percent more exterior diameter in the illustration. Expand both the upper and lower edges around the same horizontal centerline. Adjust the adjacent small shaft step or collar only as needed to make the transition look natural. Keep enough contrast in the stepped silhouette to read at 32 and 64 px.
+
+Keep the entire muzzle at its original size and location, including the outer rim and dark bore. Keep the existing barrel length, direction, warm olive-gray paint, rounded bevels, ink contours, and cel highlights. Leave the mantlet, turret, roof fittings, stepped hull, fender, tracks, wheels, and the rest of the artwork as close to the original as possible. Use the same square framing and genuine transparent alpha background. No scenery, ground shadow, markings, or text.
+```
+
+The second pass used v14 as the edit target again.
+
+```text
+Use case: precise-object-edit
+Edit the attached approved FightLines tank v14 sprite. Preserve the exact sprite, pose, palette, inked painted finish, and transparent square framing. Make a strong, clearly visible change to only the narrow exposed barrel shaft between the turret-side sleeve and the large ringed muzzle. The result should no longer look like a big muzzle on a skinny neck.
+
+The shaft is the short central span at roughly 79–82% of the canvas width, directly left of the muzzle's first thin ring. The existing shaft looks about three fifths as tall as the muzzle. Redraw it to look about four fifths as tall as that same muzzle. Push its upper outline upward and its lower outline downward by a clearly visible amount, symmetrically about the existing centerline. Bring the sleeve immediately to the left of that shaft smoothly into the thicker shape. Maintain one shallow step into the original rim. Keep the barrel horizontal and maintain its exact length. Lock the broad rightmost muzzle block, dark bore, rim, size and position to the reference. Keep the large barrel mounting plate at the turret, turret itself, chassis and tracks as close to the source artwork as possible. Keep the complete right-facing vehicle on real alpha, with no scenery, floor shadow, emblems or lettering.
+```

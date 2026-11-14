@@ -447,11 +447,34 @@ startTurnPlayback model =
             ( started, E.batch [ measureWorkspace, dialogEffect ] )
 
         _ ->
+            let
+                stopped : Model
+                stopped =
+                    if model.position.turn == 0 then
+                        model
+
+                    else
+                        model
+                            |> setPlaybackIntent SingleTurnPlayback
+                            |> setShared
+                                (Shared.addError
+                                    (Just
+                                        (Error.TurnPlaybackInvariantViolated
+                                            (TurnPlayback.TooFewFrames
+                                                { resolvedTurn = model.position.turn
+                                                , frameCount = List.length model.frames
+                                                }
+                                            )
+                                        )
+                                    )
+                                    model.shared
+                                )
+            in
             if isPlaying model then
-                finishPlayback model
+                finishPlayback stopped
 
             else
-                loadNextTurn model
+                loadNextTurn stopped
 
 
 finishPlayback : Model -> ( Model, Eff Msg )
@@ -619,9 +642,9 @@ inspectTile position model =
         |> setInspection (Just (TileInspection position))
 
 
-withInspectionMeasurement : Model -> Model -> ( Model, Eff Msg )
-withInspectionMeasurement previous next =
-    if (previous.inspection == Nothing) /= (next.inspection == Nothing) then
+withInspectionMeasurement : Maybe Inspection -> Model -> ( Model, Eff Msg )
+withInspectionMeasurement previousInspection next =
+    if (previousInspection == Nothing) /= (next.inspection == Nothing) then
         ( next
             |> setViewport Nothing
         , measureWorkspace
@@ -983,7 +1006,7 @@ update msg model =
         BattlefieldMsg battlefieldMsg ->
             model
                 |> handleBattlefieldMsg battlefieldMsg
-                |> withInspectionMeasurement model
+                |> withInspectionMeasurement model.inspection
 
         NavigationMsg navigationMsg ->
             model
@@ -995,7 +1018,7 @@ update msg model =
                 |> setInspection Nothing
             )
                 |> selectUnit id
-                |> withInspectionMeasurement model
+                |> withInspectionMeasurement model.inspection
 
         InspectionHelpClicked help ->
             if dialog model /= Nothing then
@@ -1029,13 +1052,13 @@ update msg model =
                 (model
                     |> setInspection Nothing
                 )
-                    |> withInspectionMeasurement model
+                    |> withInspectionMeasurement model.inspection
 
         InspectorCloseClicked ->
             (model
                 |> setInspection Nothing
             )
-                |> withInspectionMeasurement model
+                |> withInspectionMeasurement model.inspection
 
         PanLeftKeyPressed ->
             model
@@ -1424,6 +1447,7 @@ battlefieldView model =
             , supplyCrates = model.battlefield.supplyCrates
             , visibleTiles = model.battlefield.visibleTiles
             , frame = model.frame
+            , armyStyle = Nothing
             , selected = inspectionPosition model
             , selectedUnitId = selectedUnit model |> Maybe.map .id
             , facingUnits = facingUnits model

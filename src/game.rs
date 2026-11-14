@@ -272,9 +272,16 @@ impl Game {
     }
 
     pub fn view(&self, session: Option<&SessionToken>) -> FieldResult<GameSnapshot> {
+        self.player_view(self.viewing_session(session)?)
+    }
+
+    fn viewing_session<'a>(
+        &'a self,
+        session: Option<&'a SessionToken>,
+    ) -> FieldResult<&'a SessionToken> {
         // The opt-in fixture previews Player1 without changing browser identity.
         if let GameAccess::DevelopmentPreview = self.access {
-            return self.player_view(&self.host);
+            return Ok(&self.host);
         }
         let identity = session.ok_or_else(|| {
             FieldError::from(
@@ -288,7 +295,7 @@ impl Game {
         {
             return error("Only the host can start a game, and only joined players can enter it.");
         }
-        self.player_view(identity)
+        Ok(identity)
     }
 
     pub fn start_snapshot(&self, session: Option<&SessionToken>) -> FieldResult<Snapshot> {
@@ -765,6 +772,23 @@ pub fn get(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
     };
     game.expire_inactive(Instant::now())?;
     game.view(context.identity().as_ref())
+}
+
+pub fn require_player_view(context: &Context, id: &LobbyId) -> FieldResult<()> {
+    let entry = context
+        .store
+        .entry(id)?
+        .ok_or("this game no longer exists.")?;
+    let entry = entry.lock().map_err(|_| {
+        tracing::error!(event = "server_state_lock_unavailable", game_id = %id);
+        server_log::internal_error("the server state is unavailable.")
+    })?;
+    match &*entry {
+        GameRegistry::Game(game) => game
+            .viewing_session(context.identity().as_ref())
+            .map(|_| ()),
+        GameRegistry::Closed | GameRegistry::Lobby(_) => error("this game is unavailable."),
+    }
 }
 
 pub fn resign(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {

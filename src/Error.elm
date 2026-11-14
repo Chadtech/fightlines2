@@ -4,6 +4,7 @@ import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Browser.Dom
 import Deployment
 import Game.OrderPlanning as OrderPlanning
+import Game.TurnPlayback as TurnPlayback
 import Game.UnitId as UnitId exposing (UnitId)
 import Graphql.Http
 import Json.Decode as JD
@@ -21,3 +22,5 @@ type Error
     | ElementScrollFailed Browser.Dom.Error
     | BattlefieldMeasurementFailed Browser.Dom.Error
     | OrderPlanningInvariantViolated OrderPlanning.InvariantViolation
+    | PlanningErrorReportFailed String
+    | TurnPlaybackInvariantViolated TurnPlayback.InvariantViolation

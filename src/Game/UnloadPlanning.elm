@@ -62,6 +62,8 @@ type Step
 
 type InvariantViolation
     = PassengerNotFound UnitId
+    | PassengerNotAboard { passengerId : UnitId, truckId : UnitId }
+    | MovementInvariantViolated Movement.InvariantViolation
 
 
 
@@ -213,9 +215,13 @@ options :
     -> InvariantCheck InvariantViolation (List Movement.Option)
 options map units playerNumbers movementRules supplyCrates occupancy planning =
     let
+        truckId : UnitId
+        truckId =
+            UnloadingTruck.unitId planning.truck
+
         projectTruck : Unit -> Unit
         projectTruck unit =
-            if unit.id == UnloadingTruck.unitId planning.truck then
+            if unit.id == truckId then
                 Unit.setOnMap (UnloadingTruck.destination planning.truck) unit
 
             else
@@ -233,19 +239,27 @@ options map units playerNumbers movementRules supplyCrates occupancy planning =
         UnloadCargo.Passenger passengerId ->
             case ListUtil.find (\unit -> unit.id == passengerId) projectedUnits of
                 Just passenger ->
-                    let
-                        destinations : Occupancy
-                        destinations =
-                            occupancy passenger drafts
-                    in
-                    Movement.optionsAvoiding [] movementRules map projectedUnits passenger
-                        |> List.filter
-                            (Movement.canStop
-                                destinations.reserved
-                                (List.map projectTruck destinations.units)
-                                passenger
-                            )
-                        |> IC.happy
+                    if Unit.carrierId passenger == Just truckId then
+                        let
+                            destinations : Occupancy
+                            destinations =
+                                occupancy passenger drafts
+                        in
+                        Movement.planningOptions movementRules map projectedUnits passenger
+                            |> IC.mapError MovementInvariantViolated
+                            |> IC.map
+                                (List.filter
+                                    (Movement.canStop
+                                        destinations.reserved
+                                        (List.map projectTruck destinations.units)
+                                        passenger
+                                    )
+                                )
+
+                    else
+                        IC.violated
+                            (PassengerNotAboard { passengerId = passengerId, truckId = truckId })
+                            []
 
                 Nothing ->
                     IC.violated (PassengerNotFound passengerId) []
@@ -338,7 +352,7 @@ canComplete rawOptions step =
                                 |> IC.andThen (canComplete rawOptions)
                                 |> IC.andThen tryRemaining
             in
-            rawOptions planning |> IC.andThen tryOptions
+            tryOptions planning.options
 
 
 crateExitOptions :

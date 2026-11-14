@@ -125,9 +125,10 @@ prototype; do not update it unless the task explicitly requires that.
   `Msg` handled by its parent without having a separate `Model` and `update`.
   Split state ownership only when the boundary helps coordination.
 - Use `setShared` to update a page's shared state through its public interface.
-- Use each app's typed `Route.pushUrl` for in-app navigation and `Route.load`
-  for full document navigation. Route modules convert their routes to strings
-  for the common `Effect.pushUrl` and `Effect.loadUrl` helpers.
+- Use the player app's typed `Route.navigate` or `Route.navigateReplacing`
+  with the current deployment state. Use `Route.pushUrl` for in-app navigation
+  in Admin and DevTools. Use `Route.load` for explicit document loads.
+  Route modules convert their routes to strings for the common effects.
   Page updates return `( Model, Eff Msg )` using `Effect`; each entry point
   converts effects to commands. Use `Effect.loadUrl` for browser-provided URLs.
 - Keep initial loading and failure dispatch in the owning app entry point.

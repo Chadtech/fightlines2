@@ -47,7 +47,7 @@ import View.Dialog as Dialog
 
 
 type Page
-    = InitError Decode.Error
+    = InitError Navigation.Key Decode.Error
     | Checking Shared.Model (Maybe Route)
     | Login (Maybe Route) Login.Model
     | LoadingDashboard Shared.Model
@@ -86,8 +86,27 @@ type Msg
 main : Program Decode.Value Page Msg
 main =
     Browser.application
-        { init = \value url key -> init value url key |> Tuple.mapSecond (E.toCmd key)
-        , update = updateWithEffects
+        { init =
+            \value url key ->
+                init value url key |> Tuple.mapSecond (E.toCmd key)
+        , update =
+            \msg page ->
+                let
+                    ( next, effect ) =
+                        superUpdate msg page
+
+                    audio : Eff Msg
+                    audio =
+                        playbackAudio page next
+                in
+                ( next
+                , E.toCmd (getKey page)
+                    (E.batch
+                        [ effect
+                        , audio
+                        ]
+                    )
+                )
         , view = view
         , subscriptions = subscriptions
         , onUrlRequest = LinkClicked
@@ -105,7 +124,7 @@ init : Decode.Value -> Url -> Navigation.Key -> ( Page, Eff Msg )
 init value url key =
     case Decode.decodeValue Flags.decoder value of
         Err error ->
-            ( InitError error, E.none )
+            ( InitError key error, E.none )
 
         Ok flags ->
             let
@@ -131,10 +150,50 @@ init value url key =
 ----------------------------------------------------------------
 
 
+getKey : Page -> Navigation.Key
+getKey page =
+    case page of
+        InitError key _ ->
+            key
+
+        Checking shared _ ->
+            shared.key
+
+        Login _ model ->
+            model.shared.key
+
+        LoadingDashboard shared ->
+            shared.key
+
+        Dashboard model ->
+            model.shared.key
+
+        LoadingReplay shared _ ->
+            shared.key
+
+        Replay model ->
+            model.shared.key
+
+        SigningOut shared ->
+            shared.key
+
+        LogoutFailed shared _ ->
+            shared.key
+
+        Failed shared _ _ ->
+            shared.key
+
+        Disabled shared ->
+            shared.key
+
+        NotFound shared ->
+            shared.key
+
+
 getShared : Page -> Maybe Shared.Model
 getShared page =
     case page of
-        InitError _ ->
+        InitError _ _ ->
             Nothing
 
         Checking shared _ ->
@@ -174,8 +233,8 @@ getShared page =
 setShared : Shared.Model -> Page -> Page
 setShared shared page =
     case page of
-        InitError error ->
-            InitError error
+        InitError _ _ ->
+            page
 
         Checking _ route ->
             Checking shared route
@@ -310,31 +369,6 @@ playbackAudio before after =
                 }
             )
         ]
-
-
-updateWithEffects : Msg -> Page -> ( Page, Cmd Msg )
-updateWithEffects msg page =
-    let
-        ( next, effect ) =
-            superUpdate msg page
-
-        audio : Eff Msg
-        audio =
-            playbackAudio page next
-    in
-    case getShared next of
-        Just shared ->
-            ( next
-            , E.toCmd shared.key
-                (E.batch
-                    [ effect
-                    , audio
-                    ]
-                )
-            )
-
-        Nothing ->
-            ( next, Cmd.none )
 
 
 requiresCurrentDeployment : Msg -> Bool
@@ -691,7 +725,7 @@ view page =
 pageView : Page -> List (Html Msg)
 pageView page =
     case page of
-        InitError error ->
+        InitError _ error ->
             AppInitError.view error
 
         Checking _ _ ->

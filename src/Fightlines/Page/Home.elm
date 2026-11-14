@@ -214,10 +214,10 @@ update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
         CreateALobbyClicked ->
-            ( model, Route.pushUrl Route.NewLobby )
+            ( model, Route.navigate model.shared.deployment Route.NewLobby )
 
         MatchMakingButtonClicked ->
-            ( model, Route.pushUrl Route.MatchMaking )
+            ( model, Route.navigate model.shared.deployment Route.MatchMaking )
 
         FeedbackButtonClicked ->
             ( { model | activeDialog = FeedbackDialog }

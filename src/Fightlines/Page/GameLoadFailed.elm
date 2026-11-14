@@ -85,10 +85,10 @@ update : Msg -> Model -> Eff Msg
 update msg model =
     case msg of
         RetryButtonClicked ->
-            Route.pushUrl (Route.Game model.id)
+            Route.navigate model.shared.deployment (Route.Game model.id)
 
         ReturnHomeButtonClicked ->
-            Route.pushUrl Route.Home
+            Route.navigate model.shared.deployment Route.Home
 
 
 

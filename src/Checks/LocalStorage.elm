@@ -7,6 +7,7 @@ import Error exposing (Error(..))
 import Features
 import Fightlines.Flags as PlayerFlags
 import Fightlines.UserName as UserName
+import Game.ArmyStyle as ArmyStyle
 import Json.Decode as JD
 import Json.Encode as Encode
 import LocalStorage
@@ -99,6 +100,12 @@ checks =
 
                 OrderPlanningInvariantViolated _ ->
                     "unexpected order planning error while reading local storage"
+
+                PlanningErrorReportFailed _ ->
+                    "unexpected planning error report failure while reading local storage"
+
+                TurnPlaybackInvariantViolated _ ->
+                    "unexpected turn playback error while reading local storage"
 
         readPreference : JD.Decoder value -> value -> String -> Result String ( value, Maybe String )
         readPreference decoder defaultValue json =
@@ -392,16 +399,23 @@ featureChecks =
         on =
             Features.setEnabled Features.Placeholder True off
 
-        entry : { key : String, value : Encode.Value }
-        entry =
-            Features.encodePreference on
-
-        roundTrip : Bool
-        roundTrip =
+        roundTrip : Features.Model -> Bool
+        roundTrip features =
+            let
+                entry : { key : String, value : Encode.Value }
+                entry =
+                    Features.encodePreference features
+            in
             Encode.object [ ( entry.key, entry.value ) ]
                 |> JD.decodeValue LocalStorage.decoder
                 |> Result.map Features.init
-                |> (==) (Ok ( on, Nothing ))
+                |> (==) (Ok ( features, Nothing ))
+
+        competingStyles : Features.Model
+        competingStyles =
+            on
+                |> Features.setEnabled (Features.Army ArmyStyle.AmazonCorporate) True
+                |> Features.setEnabled (Features.Army ArmyStyle.UnitedStates) True
 
         invalid : String -> Bool
         invalid json =
@@ -430,7 +444,19 @@ featureChecks =
             (load "{\"features\":[\"mobileLandscape\"]}" == Ok ( off, Nothing ))
         , check "retired mobile feature preserves other features"
             (load "{\"features\":[\"mobileLandscape\",\"placeholder\"]}" == Ok ( on, Nothing ))
-        , check "feature storage round trips" roundTrip
+        , check "feature storage round trips"
+            (roundTrip { enabled = Features.all })
+        , check "army styles default to the standard artwork"
+            (Features.armyStyle on == Nothing)
+        , check "the first listed army style wins regardless of enable order"
+            (Features.armyStyle competingStyles == Just ArmyStyle.AmazonCorporate)
+        , check "disabling the highest priority style reveals the next style"
+            ((competingStyles
+                |> Features.setEnabled (Features.Army ArmyStyle.AmazonCorporate) False
+                |> Features.armyStyle
+             )
+                == Just ArmyStyle.UnitedStates
+            )
         , check "feature enabling checks list membership"
             (Features.enabled Features.Placeholder on)
         , check "enabling a feature twice adds no duplicate"

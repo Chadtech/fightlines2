@@ -141,6 +141,8 @@ async fn endpoints_protect_private_data_and_keep_player_identity_separate() -> T
     ));
     fs::create_dir_all(root.join("public"))?;
     let logs = root.join("logs");
+    let server_logs = root.join("server-logs");
+    fs::create_dir_all(&server_logs)?;
     let auth = Auth::from_hash(Some(hash_password(PASSWORD)?))?;
     let store = web::Data::new(
         Store::new(Seed::new([92; 32])).with_game_logs(game_log::Directory::open(logs.clone())?),
@@ -155,6 +157,10 @@ async fn endpoints_protect_private_data_and_keep_player_identity_separate() -> T
             )))
             .app_data(web::Data::new(crate::feedback::Directory::open(
                 root.join("feedback"),
+                &root.join("public"),
+            )?))
+            .app_data(web::Data::new(crate::planning_error::Directory::open(
+                &server_logs,
                 &root.join("public"),
             )?))
             .route("/graphql", web::post().to(graphql::handle)),
@@ -175,6 +181,7 @@ async fn endpoints_protect_private_data_and_keep_player_identity_separate() -> T
         "{ adminDashboard { concurrentGames } }",
         "{ adminFeedback(offset:0) { total } }",
         "{ adminRecordings(offset:0) { total } }",
+        "{ adminPlanningErrors(offset:0) { total } }",
         "{ loggedGames { __typename } }",
         "{ loggedGame(id:\"bad\") { id } }",
         "{ loggedTurn(id:\"bad\",turnNumber:0,playerNumber:PLAYER1) { id } }",
@@ -241,6 +248,53 @@ async fn endpoints_protect_private_data_and_keep_player_identity_separate() -> T
                 .await;
         assert!(body.get("errors").is_none(), "{body}");
     }
+    let report = format!(
+        "mutation {{ reportPlanningErrors(input: {{ gameId: \"{id}\", clientVersion: \"12\", errors: [{{ turnNumber: 1, details: \"planning unit not found: 2\" }}, {{ turnNumber: 2, details: \"order unit has no position: 3\" }}] }}) }}"
+    );
+    let denied: Value =
+        web_test::read_body_json(send!(&report, None, "https://fightlines.test")).await;
+    assert!(denied.get("errors").is_some(), "{denied}");
+    let invalid = report.replace("turnNumber: 2", "turnNumber: 0");
+    let rejected: Value = web_test::read_body_json(send!(
+        &invalid,
+        Some(host.clone()),
+        "https://fightlines.test"
+    ))
+    .await;
+    assert!(rejected.get("errors").is_some(), "{rejected}");
+    let accepted: Value = web_test::read_body_json(send!(
+        &report,
+        Some(host.clone()),
+        "https://fightlines.test"
+    ))
+    .await;
+    assert_eq!(accepted["data"]["reportPlanningErrors"], true);
+    let reports: Value = web_test::read_body_json(send!(
+        "{ adminPlanningErrors(offset:0) { total unreadable nextOffset reports { gameId turnNumber clientVersion serverVersion details receivedAt } } }",
+        Some(cookie.clone()),
+        "https://fightlines.test"
+    ))
+    .await;
+    let page = &reports["data"]["adminPlanningErrors"];
+    assert_eq!(page["total"], 2);
+    assert_eq!(page["unreadable"], 0);
+    assert!(page["nextOffset"].is_null());
+    let saved = page["reports"]
+        .as_array()
+        .fixture()?
+        .iter()
+        .find(|report| report["turnNumber"] == 1)
+        .fixture()?;
+    assert_eq!(saved["gameId"], id);
+    assert_eq!(saved["turnNumber"], 1);
+    assert_eq!(saved["clientVersion"], "12");
+    assert_eq!(saved["serverVersion"], crate::app_version::current());
+    assert_eq!(saved["details"], "planning unit not found: 2");
+    assert!(page["reports"].as_array().fixture()?.iter().any(|report| {
+        report["turnNumber"] == 2 && report["details"] == "order unit has no position: 3"
+    }));
+    assert!(saved["receivedAt"].as_str().fixture()?.parse::<u128>()? > 0);
+    assert!(!reports.to_string().contains(host.value()));
     let entry = store
         .entry(&crate::lobby_id::LobbyId::from_token(id.into()))
         .fixture()?

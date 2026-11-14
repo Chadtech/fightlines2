@@ -1,10 +1,13 @@
 module Game.Movement exposing
-    ( Option
+    ( InvariantViolation(..)
+    , Option
     , Rule
     , TerrainCost
     , canStop
     , options
     , optionsAvoiding
+    , planningOptions
+    , planningRule
     , pointsLabel
     , preview
     , ruleSelection
@@ -25,8 +28,10 @@ import Game.Terrain as Terrain exposing (Terrain)
 import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Fuel as Fuel exposing (Fuel)
 import Game.Unit.Supplies as Supplies exposing (Supplies)
+import Game.UnitId exposing (UnitId)
 import Game.UnitResources as UnitResources exposing (UnitResources)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
+import InvariantCheck as IC exposing (InvariantCheck)
 import Util.List as ListUtil
 
 
@@ -80,6 +85,10 @@ type SearchGoal
     | ToDestination Coordinate
 
 
+type InvariantViolation
+    = RuleNotFound { unitId : UnitId, kind : UnitKind }
+
+
 ruleSelection : SelectionSet Rule Api.Object.MovementRule
 ruleSelection =
     let
@@ -121,25 +130,60 @@ optionsAvoiding :
     -> List Unit
     -> Unit
     -> List Option
-optionsAvoiding =
-    affordableRoutes AllDestinations
+optionsAvoiding blocked rules map units unit =
+    case ruleFor unit.kind rules of
+        Just rule ->
+            affordableRoutes AllDestinations blocked rule map units unit
+
+        Nothing ->
+            []
+
+
+{-| Planning requires a rule for the selected unit's kind. A valid rule can
+still yield no legal routes.
+-}
+planningOptions :
+    List Rule
+    -> Map
+    -> List Unit
+    -> Unit
+    -> InvariantCheck InvariantViolation (List Option)
+planningOptions rules map units unit =
+    case planningRule rules unit of
+        Ok rule ->
+            IC.happy
+                (affordableRoutes AllDestinations [] rule map units unit)
+
+        Err violation ->
+            IC.violated violation []
+
+
+planningRule : List Rule -> Unit -> Result InvariantViolation Rule
+planningRule rules unit =
+    case ruleFor unit.kind rules of
+        Just rule ->
+            Ok rule
+
+        Nothing ->
+            Err (RuleNotFound { unitId = unit.id, kind = unit.kind })
+
+
+ruleFor : UnitKind -> List Rule -> Maybe Rule
+ruleFor kind =
+    ListUtil.find (\rule -> rule.kind == kind)
 
 
 affordableRoutes :
     SearchGoal
     -> List Coordinate
-    -> List Rule
+    -> Rule
     -> Map
     -> List Unit
     -> Unit
     -> List Option
-affordableRoutes goal blocked rules map units unit =
-    case
-        ( ListUtil.find (\rule -> rule.kind == unit.kind) rules
-        , Unit.physicalPosition units unit
-        )
-    of
-        ( Just rule, Just origin ) ->
+affordableRoutes goal blocked rule map units unit =
+    case Unit.physicalPosition units unit of
+        Just origin ->
             let
                 limit : ResourceLimit
                 limit =
@@ -158,7 +202,7 @@ affordableRoutes goal blocked rules map units unit =
                 |> List.foldl (cheapestDestination limit map) Dict.empty
                 |> Dict.values
 
-        _ ->
+        Nothing ->
             []
 
 
@@ -167,8 +211,7 @@ also track fuel and terrain supply expenditure independently.
 -}
 tileLimit : List Rule -> List Unit -> Unit -> Maybe Int
 tileLimit rules units unit =
-    rules
-        |> ListUtil.find (\rule -> rule.kind == unit.kind)
+    ruleFor unit.kind rules
         |> Maybe.andThen (\rule -> (resourceLimit rule units unit).tiles)
 
 
@@ -480,11 +523,6 @@ start position =
 trace : List Rule -> Map -> List Unit -> Unit -> Option -> Coordinate -> Maybe Option
 trace rules map units unit current destination =
     let
-        rule : Maybe Rule
-        rule =
-            rules
-                |> ListUtil.find (\entry -> entry.kind == unit.kind)
-
         costAt : Rule -> Coordinate -> Maybe Int
         costAt movementRule position =
             movementRule.terrainCosts
@@ -495,7 +533,7 @@ trace rules map units unit current destination =
         prefix =
             takeThrough destination current.path
     in
-    case rule of
+    case ruleFor unit.kind rules of
         Nothing ->
             Nothing
 
@@ -531,7 +569,7 @@ trace rules map units unit current destination =
                 affordableRoutes
                     (ToDestination destination)
                     current.path
-                    [ remainingRule ]
+                    remainingRule
                     map
                     units
                     remainingUnit

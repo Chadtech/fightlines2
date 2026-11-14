@@ -35,8 +35,8 @@ behind a busy game. Lobby-to-game and terminal transitions update it under the
 same owning lock. Counts and busy indicators are snapshots, and busy rows label
 their last completed update. Polling does not renew activity or mutate gameplay.
 `Game` owns started/last-activity times; its existing inactivity clocks remain the
-authority for warnings. Feedback and archive listings read bounded pages and
-surface individual corrupt entries without hiding readable data.
+authority for warnings. Feedback, archive, and planning error listings read
+bounded pages and surface corrupt entries alongside readable data.
 
 ## State and identity
 
@@ -144,7 +144,8 @@ outcome, without resolving pending orders or changing the board. The earliest
 expired player loses; exactly tied deadlines with both players absent yield a
 draw. Archive replay preserves this distinct outcome and final-board projection.
 
-`GamePage.superUpdate` classifies meaningful input with `isUserInteraction`.
+`GamePage.superUpdate` uses `isUserInteraction` to identify meaningful input
+and records activity using the turn state after the update.
 `Game.Inactivity` throttles reports to once per ten seconds, except for an immediate
 response during the warning, and sequences reports/polls to reject stale countdowns.
 A private native warning dialog remains actionable above menus and onboarding;
@@ -249,10 +250,11 @@ refresh camera framing; finishing playback restores the saved view and may load
 the next turn. Loading a turn without animation frames also advances continuous
 playback. Unrelated messages do not run a presentation pass after `update`.
 
-Live `GamePage.superUpdate` checks layout changes after every update, adds the
-message's UI audio cue, synchronizes newly active native dialogs, and records
-their loss diagnostics. The layout check requests measurement only when selection
-visibility, submission readiness, turn activity, or outcomes change.
+Live `GamePage.superUpdate` synchronizes playback audio, adds the message's UI
+audio cue, and checks workspace layout changes. The layout check requests
+measurement when selection visibility, submission readiness, turn activity, or
+outcomes change.
+Changes to the selected unit reset the mobile tab in the page's state setters.
 `GamePage.playAudio` explicitly handles every message and nested message type;
 continuous input and background work select `Audio.none`.
 Playback start closes the menu and explicitly remeasures the workspace; the
@@ -695,9 +697,11 @@ page dialogs and the shared dev panel; Admin replay dialogs use the same adapter
 overriding its geometry. Its title stays fixed and its body scrolls. Mobile mode
 also suppresses the floating audio/version overlay so it cannot cover titles.
 
-Both apps use the common `Effect.Eff msg` type and interpreter. Each route
-module exposes `pushUrl : Route -> Eff msg`, converting its typed route to a
-string for `Effect.pushUrl`. `Effect` has no dependency on either route module.
+The apps use the common `Effect.Eff msg` type and interpreter. The player route
+helpers use the current deployment state to choose a concrete navigation effect
+at the call site. Admin and DevTools routes use `Effect.pushUrl` for in-app
+navigation. `Effect` interprets the chosen operation independently of routes
+and deployment state.
 
 `Shared.Model.devPanel` owns the page-independent dev panel state in both apps.
 `DevPanel.Model.selectedTab` stores the selected `DevPanel.Tab`.
@@ -711,7 +715,10 @@ The features tab lists `Features.all` with checkboxes. `Shared` handles feature
 changes by updating `Shared.Model.features` immediately and saving the enabled
 list through `Effect.setLocalStorage`. `Features.Model` contains `List Feature`;
 `Feature` remains a custom type and availability checks use list membership.
-The `features` storage key contains string names (currently `placeholder`).
+The `features` storage key contains string names such as `placeholder` and
+`army-united-states`. `Features.armyStyle` resolves enabled army styles in
+the order shown in the panel. `GamePage` supplies that style and the current
+player's slots to `Battlefield` for infantry and tank sprite selection.
 Initialization and storage notifications reload this model, defaulting to an empty
 list and recording malformed values in shared diagnostics. Backend flags are not
 loaded. The panel receives the feature model without importing `Shared`.
@@ -865,8 +872,9 @@ individual flash cues. They share the exposed-infantry renderer's 1920ms window
 and recorded attack/return-fire timing, excluding bazookas, static trenches,
 non-firing targets, and formations whose last figure has disappeared.
 `PlaybackPresentation.firingInfantry` gates these snapshots on playback pause,
-camera holds, and visible combat panels. Both app entry points synchronize them
-alongside movement and ambience, including an empty snapshot on navigation.
+camera holds, and visible combat panels. Live `GamePage.superUpdate` synchronizes
+them alongside movement and ambience, and `Fightlines` clears active snapshots on
+route changes out of the current game. Replay apps synchronize their own snapshots.
 `Audio.syncInfantryFire` encodes `{ "infantryFire": [{ "unitId": "...",
 "elapsedMs": 100, "remainingMs": 1820 }] }`. The manager seeks into the approved
 burst and schedules its stop at the remaining deadline, accounting for load
@@ -877,11 +885,10 @@ nodes and are independent of the UI/impact voice limits.
 
 `PlaybackPresentation.movingUnits` derives typed unit IDs and movement sounds
 from the same projected `TurnPlayback.movingPositions` edges used by sprites.
-Each page supplies its pause, camera-hold and loss-dialog state. Both app entry
-points send `Audio.syncMovement` snapshots after updates, including an empty
-snapshot when leaving playback. Active snapshots repeat so returning from a
-hidden tab can restore sound without restarting continuing voices on ordinary
-frames. This adds no movement state to `GamePage.superUpdate` or the game rules.
+Each page supplies its pause, camera-hold and loss-dialog state for
+`Audio.syncMovement` snapshots, including an empty snapshot when leaving
+playback. Active snapshots repeat so returning from a hidden tab can restore
+sound without restarting continuing voices on ordinary frames.
 The browser manager keeps one loop source per unit, starting it at a random
 offset in its approved recording (12.909 seconds for infantry and field guns,
 six for vehicles) and preserving it across consecutive tiles. Random offsets are browser audio variation only and do not affect game
@@ -892,10 +899,10 @@ moving units. Runtime assets and their source status live in
 
 `CombatTheater.ambience` resolves the displayed scene positions, including the
 later building cut, into typed `Audio.AmbientScene` values. `PlaybackPresentation`
-returns these only for an open, unpaused theater. Each page exposes its current
-ambience; the app entry points synchronize it alongside movement audio, including
-an empty snapshot on navigation. Active snapshots refresh after hidden tabs
-return, without restarting continuing loops. `Audio.syncAmbience` encodes
+returns these only for an open, unpaused theater. Ambience synchronizes
+alongside movement audio, including an empty snapshot on navigation.
+Active snapshots refresh after hidden tabs return, without restarting
+continuing loops. `Audio.syncAmbience` encodes
 `{ "ambience": [{ "environment": "plains", "pan": -0.35 }] }`.
 Only projected participants contribute; concealed firing origins stay absent.
 Map peeks and the capped card clock preserve the environment; replay pause stops it.
@@ -1296,8 +1303,8 @@ The order guide is a `ReadingGuide` state inside the selected unit's
 `OrderMenu`, alongside `ChoosingOrder`. It retains the focused menu option
 and drafts while open. `OrderPlanning` owns opening, dismissal, and submission
 gating; locked lifecycle phases convert the selection to inspection and discard
-the guide. `GamePage` derives the native dialog from that interaction and opens
-it through the dialog-change effect in `superUpdate`.
+the guide. `GamePage` derives the native dialog from that interaction.
+`Fightlines.syncDialog` opens it when it becomes the active dialog.
 
 `Fightlines.View.OrderMenu` renders the board-anchored order popup and emits order choices
 and arrow-key events. `GamePage.update` chooses the adjacent enabled order,
@@ -1331,7 +1338,9 @@ visibility changes; the page maps these messages and delegates to its `update`.
 `Game.View.Battlefield.Msg` describes shared board events; each page interprets them.
 Each page wraps `Game.View.Battlefield.toSvg` in its camera container using
 `camera`, and applies `viewportAttributes` to the outer navigation
-surface. The player page places its order overlay outside the camera transform.
+surface. The camera sets the SVG's rendered width from the zoom and offsets the
+centered board for panning. This lets WebKit paint the board at its displayed
+resolution. The player page places its order overlay outside the camera container.
 The shared view accepts no parent-message mapping or page content. The page reads
 its camera for order positioning and queries `active` and `suppressesClick`
 when handling previews and selection. `GamePage.keyCommands` retains keyboard
@@ -1497,10 +1506,28 @@ its violation as `Error.OrderPlanningInvariantViolated` in `Shared.Model.errors`
 Pure transitions use `GamePage.mapPlanning`. Inspections, view queries, unavailable
 orders, unreachable destinations, and out-of-phase events remain silent.
 Cargo eligibility retains its invariant check through checkbox updates, so failed
-placement lookups reach the same diagnostic boundary. Rendering explicitly disables
-a choice when its eligibility check reports a violation. `InvariantCheck.resolve`
-delivers the optional diagnostic and retained value together at such boundaries;
-there is no unchecked value accessor.
+placement lookups and passengers assigned to a different location reach the same
+diagnostic boundary. Opening a route or computing a passenger exit reports a
+missing movement rule and retains an empty list of options. Submission prepares
+default holds for unassigned units. If a hold has no physical origin, the page
+records the violation and keeps the drafts editable without sending the request.
+The unload checklist uses the eligibility result to disable unavailable choices.
+Checkbox actions and exit planning record violations they encounter while handling
+the action. `InvariantCheck.resolve` delivers the optional diagnostic and retained
+value together at these boundaries.
+
+The game page records each distinct order-planning violation once per turn and
+queues up to eight for a single `reportPlanningErrors` request per minute. Reports
+retain their originating turn and include the game ID and frontend version. The
+resolver applies IP and session budgets and checks game access before saving
+private reports with the backend version and receipt time. Admin reads reports
+newest first across deployment directories. See
+[deployment](DEPLOYMENT.md#browser-planning-errors) for storage and limits.
+
+Selecting the opening frame of a newly resolved live turn or starting archive
+playback records a diagnostic if there are fewer than two frames. The final
+projected battlefield remains available, and continuous replay pauses on the
+affected turn.
 
 `movement.rs` owns the movement table exposed as `GameSnapshot.movementRules`.
 Budgets and terrain entry costs use integer half-points (2 means one displayed
@@ -2338,12 +2365,9 @@ explosion, sprite disappearance, and board spotlight; `View.Dialog.atBottom`
 supplies native focus trapping with lower-screen placement and a transparent backdrop.
 
 `UnitLoss.resolve` combines projected losses with the page's roster lookup for
-both dialog rendering and update-time error reporting. `GamePage.superUpdate`
-logs `Error.UnitOwnerNotFound` in `Shared.Model.errors` only when opening a
-newly active loss dialog. Native-dialog identity comes from the same
-`GamePage.dialog` selection used by rendering, through `View.Dialog.htmlId`.
-Unchanged or absent dialogs do not log additional errors, and rendering does
-not log errors.
+dialog rendering and error reporting. When a native loss dialog opens,
+`GamePage` checks that its HTML ID matches the current casualty and records any
+`Error.UnitOwnerNotFound` in `Shared.Model.errors`.
 
 ## Turn introduction
 
@@ -2356,9 +2380,10 @@ then returns to the pending introduction. Acknowledgment releases those frames;
 replay is available only from the new-turn card, never during planning or after
 the game ends. Same-turn polling preserves the retained frames.
 The page presents it only when planning is unlocked, after all
-playback and loss dialogs have finished. `GamePage.init` opens the initial
-native modal after rendering; `superUpdate` opens subsequent introductions when
-snapshot arrival or playback completion changes the active dialog.
+playback and loss dialogs have finished. `Fightlines.syncDialog` opens the
+native modal after rendering when initial load, snapshot arrival, or playback
+completion makes it the active dialog. Dismissing the briefing or introduction
+can start the timeout for recent chat messages.
 `Fightlines.View.TurnIntroduction` supplies the card artwork and
 actions through `Dialog.announcement`, which owns wide modal placement. The
 introduction owns its animation styles, mounted once in the application shell;

@@ -172,7 +172,8 @@ update msg model =
                         |> setBusy False
                     , E.batch
                         [ UserName.remember submittedName
-                        , Route.pushUrl (Route.Lobby lobbyId)
+                        , Route.navigate model.shared.deployment
+                            (Route.Lobby lobbyId)
                         ]
                     )
 

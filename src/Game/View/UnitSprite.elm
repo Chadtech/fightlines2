@@ -1,6 +1,7 @@
 module Game.View.UnitSprite exposing
     ( Appearance
     , appearance
+    , battlefieldToSvg
     , imagePaths
     , portraitFooting
     , portraitToSvg
@@ -13,6 +14,7 @@ import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 import Api.Enum.SpriteFacing as SpriteFacingEnum exposing (SpriteFacing)
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Css
+import Game.ArmyStyle as ArmyStyle exposing (ArmyStyle)
 import Game.Unit exposing (Unit)
 import Html.Styled.Lazy as Lazy
 import Svg.Styled as Svg exposing (Svg)
@@ -126,6 +128,56 @@ toSvg column unit =
         Lazy.lazy4 spriteView column unit.kind unit.playerNumber (unit.spriteFacing == SpriteFacingEnum.Left)
 
 
+battlefieldToSvg : Maybe ArmyStyle -> Int -> Unit -> Svg msg
+battlefieldToSvg style column unit =
+    case Maybe.andThen (armyAtlas unit) style of
+        Just path ->
+            Lazy.lazy5 atlasView
+                path
+                32
+                column
+                (teamRow unit.playerNumber)
+                (unit.spriteFacing == SpriteFacingEnum.Left)
+
+        Nothing ->
+            toSvg column unit
+
+
+armyAtlas : Unit -> ArmyStyle -> Maybe String
+armyAtlas unit style =
+    let
+        filename : String
+        filename =
+            ArmyStyle.slug style ++ ".png"
+    in
+    case unit.kind of
+        Kind.Infantry ->
+            if unit.entrenchment == Entrenchment.Entrenched then
+                Nothing
+
+            else
+                Just ("assets/army-infantry-v1/" ++ filename)
+
+        Kind.Tank ->
+            Just ("assets/army-tanks-v1/" ++ filename)
+
+        Kind.Truck ->
+            Nothing
+
+        Kind.FieldGun ->
+            Nothing
+
+
+teamRow : PlayerNumber -> Int
+teamRow playerNumber =
+    case playerNumber of
+        PlayerNumber.Player1 ->
+            0
+
+        PlayerNumber.Player2 ->
+            1
+
+
 spriteView : Int -> UnitKind -> PlayerNumber -> Bool -> Svg msg
 spriteView column kind playerNumber facingLeft =
     let
@@ -144,14 +196,14 @@ spriteView column kind playerNumber facingLeft =
                 Kind.FieldGun ->
                     9
             )
-                + (case playerNumber of
-                    PlayerNumber.Player1 ->
-                        0
+                + teamRow playerNumber
+    in
+    atlasView atlasPath 192 column row facingLeft
 
-                    PlayerNumber.Player2 ->
-                        1
-                  )
 
+atlasView : String -> Int -> Int -> Int -> Bool -> Svg msg
+atlasView path sheetHeight column row facingLeft =
+    let
         sideProfile : String
         sideProfile =
             if facingLeft then
@@ -164,9 +216,9 @@ spriteView column kind playerNumber facingLeft =
         [ SA.transform sideProfile
         ]
         [ Sprite.toSvg
-            { path = atlasPath
+            { path = path
             , sheetWidth = 64
-            , sheetHeight = 192
+            , sheetHeight = sheetHeight
             , column = column
             , row = row
             }

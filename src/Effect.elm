@@ -9,10 +9,10 @@ module Effect exposing
     , loadUrl
     , map
     , measure
-    , navigation
     , none
     , now
     , pushUrl
+    , replaceDocument
     , replaceUrl
     , request
     , scrollToBottom
@@ -162,6 +162,13 @@ replaceUrl =
     ReplaceUrl
 
 
+{-| Load a new document and replace the current browser history entry.
+-}
+replaceDocument : String -> Eff msg
+replaceDocument url =
+    ToJsMsg (ToJs.ReplaceDocument { url = url })
+
+
 {-| Load a new document from a URL, including external and cross-app links.
 -}
 loadUrl : String -> Eff msg
@@ -265,39 +272,3 @@ toCmd key effect =
 measure : String -> (Result Browser.Dom.Error Browser.Dom.Element -> msg) -> Eff msg
 measure =
     Measure
-
-
-{-| Interpret player navigation at the deployment boundary, preserving all other effects.
--}
-navigation : (String -> { url : String, fullLoad : Bool }) -> Eff msg -> Eff msg
-navigation resolve effect =
-    let
-        replaceDocument : String -> Eff msg
-        replaceDocument destination =
-            ToJsMsg (ToJs.ReplaceDocument { url = destination })
-
-        navigate : (String -> Eff msg) -> (String -> Eff msg) -> String -> Eff msg
-        navigate construct loadDocument url =
-            let
-                target : { url : String, fullLoad : Bool }
-                target =
-                    resolve url
-            in
-            if target.fullLoad then
-                loadDocument target.url
-
-            else
-                construct target.url
-    in
-    case effect of
-        Batch effects ->
-            Batch (List.map (navigation resolve) effects)
-
-        PushUrl url ->
-            navigate PushUrl Load url
-
-        ReplaceUrl url ->
-            navigate ReplaceUrl replaceDocument url
-
-        _ ->
-            effect

@@ -14,7 +14,7 @@ use juniper::{
 use std::{
     backtrace::Backtrace,
     env, fmt, fs, io, panic,
-    path::Path,
+    path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -96,14 +96,13 @@ impl fmt::Display for RequestId {
     }
 }
 
-pub fn init(frontend: &Path) -> io::Result<WorkerGuard> {
-    let directory = env::var_os("FIGHTLINES_SERVER_LOG_DIR")
+pub fn directory() -> PathBuf {
+    env::var_os("FIGHTLINES_SERVER_LOG_DIR")
         .map(Into::into)
-        .unwrap_or_else(|| Path::new("server-logs").to_path_buf());
-    init_in(&directory, frontend)
+        .unwrap_or_else(|| PathBuf::from("server-logs"))
 }
 
-fn init_in(directory: &Path, frontend: &Path) -> io::Result<WorkerGuard> {
+pub fn init(directory: &Path, frontend: &Path) -> io::Result<WorkerGuard> {
     let appender = open(directory, frontend)?;
     // Apply backpressure rather than silently dropping errors when the queue fills.
     let (writer, guard) = NonBlockingBuilder::default().lossy(false).finish(appender);
@@ -439,7 +438,7 @@ mod tests {
         let root = directory("requests")?;
         let logs = root.join("diagnostics");
         let archive_path = root.join("archives");
-        let guard = init_in(&logs, &root.join("public"))?;
+        let guard = init(&logs, &root.join("public"))?;
         let store = Store::new(Seed::new([51; 32]))
             .with_game_logs(game_log::Directory::open(archive_path.clone())?);
         let app = web_test::init_service(

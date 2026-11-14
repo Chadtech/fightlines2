@@ -184,13 +184,12 @@ for (const order of ['move', 'attack move']) {
     await orders.getByRole('button', { name: order, exact: true }).tap();
     await expect(page.getByText('drag to trace a route, or tap a destination.')).toBeVisible();
 
-    const bounds = await battlefield.boundingBox();
+    let bounds = await battlefield.boundingBox();
     const tile = (x, y) => ({
       x: bounds.x + (x + 0.5) * bounds.width / 17,
       y: bounds.y + (y + 0.5) * bounds.height / 17,
     });
-    const origin = tile(4, 8);
-    const destination = tile(5, 8);
+    const pinchAnchor = tile(4, 8);
     // The direct route would skip both waypoints. Trace around the corner instead.
     const points = '72,136 72,120 88,120 88,136';
     const preview = battlefield.locator('polyline[stroke-width="1.5"]');
@@ -200,6 +199,21 @@ for (const order of ['move', 'attack move']) {
       session.send('Input.dispatchTouchEvent', { type, touchPoints });
 
     try {
+      const pinch = distance => [-distance, distance].map((offset, id) => ({
+        x: pinchAnchor.x + offset, y: pinchAnchor.y, id,
+      }));
+      const initialWidth = bounds.width;
+      await touch('touchStart', pinch(24));
+      await touch('touchMove', pinch(48));
+      await touch('touchEnd');
+      await expect.poll(async () => (await battlefield.boundingBox()).width).toBeGreaterThan(initialWidth * 1.9);
+      bounds = await battlefield.boundingBox();
+      // The SVG must lay out at the displayed width so WebKit paints at that size.
+      const svgWidth = await battlefield.evaluate(element => parseFloat(getComputedStyle(element).width));
+      expect(svgWidth).toBeCloseTo(bounds.width, 0);
+      const origin = tile(4, 8);
+      const destination = tile(5, 8);
+
       await touch('touchStart', [origin]);
       await touch('touchMove', [tile(4, 9)]);
       await expect(preview).toHaveAttribute('points', '72,136 72,152');

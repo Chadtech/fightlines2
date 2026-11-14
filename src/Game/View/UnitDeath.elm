@@ -11,6 +11,7 @@ module Game.View.UnitDeath exposing
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.UnitKind as Kind
 import Css
+import Game.ArmyStyle exposing (ArmyStyle)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
 import Game.PlayerNumber as PlayerNumber
@@ -77,13 +78,13 @@ styles =
 {-| Replace a destroyed unit's artwork with an explosion and a casualty marker.
 The projected casualty remains inspectable for its server-timed presentation frame.
 -}
-toSvg : Int -> Unit -> Svg msg
-toSvg column unit =
-    Lazy.lazy2 deathAnimation column unit
+toSvg : Maybe ArmyStyle -> Int -> Unit -> Svg msg
+toSvg armyStyle column unit =
+    Lazy.lazy3 deathAnimation armyStyle column unit
 
 
-deathAnimation : Int -> Unit -> Svg msg
-deathAnimation column unit =
+deathAnimation : Maybe ArmyStyle -> Int -> Unit -> Svg msg
+deathAnimation armyStyle column unit =
     Svg.g
         [ SA.pointerEvents "none"
         , Aria.label "unit destroyed"
@@ -97,7 +98,7 @@ deathAnimation column unit =
                     ]
                 ]
             ]
-            [ UnitSprite.toSvg column unit
+            [ UnitSprite.battlefieldToSvg armyStyle column unit
             ]
         , CombatExplosion.casualtyToSvg unit.spriteFacing
         , Svg.image

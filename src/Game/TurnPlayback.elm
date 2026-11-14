@@ -3,6 +3,7 @@ module Game.TurnPlayback exposing
     , Encounter(..)
     , Frame
     , ImpactEncounter
+    , InvariantViolation(..)
     , Loss
     , LossCause(..)
     , LossEvent
@@ -63,6 +64,7 @@ import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Location exposing (Location)
 import Game.UnitId as UnitId exposing (UnitId)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
+import InvariantCheck as IC exposing (InvariantCheck)
 import Point exposing (Point)
 import Util.List as ListUtil
 
@@ -79,6 +81,10 @@ type alias Frame =
     , depots : List Depot
     , supplyCrates : List Supply.GroundCrate
     }
+
+
+type InvariantViolation
+    = TooFewFrames { resolvedTurn : Int, frameCount : Int }
 
 
 type alias Departure =
@@ -1079,10 +1085,22 @@ carrierLossSelection unit =
             )
 
 
-initial : List Frame -> Frame -> Frame
-initial frames fallback =
-    List.head frames
-        |> Maybe.withDefault fallback
+{-| Use the opening frame of a resolved turn, or the snapshot's final board
+if playback cannot start.
+-}
+initial :
+    { resolvedTurn : Int, frames : List Frame }
+    -> Frame
+    -> InvariantCheck InvariantViolation Frame
+initial { resolvedTurn, frames } fallback =
+    case frames of
+        first :: _ :: _ ->
+            IC.happy first
+
+        _ ->
+            IC.violated
+                (TooFewFrames { resolvedTurn = resolvedTurn, frameCount = List.length frames })
+                fallback
 
 
 {-| Prepare a nonempty sequence of projected snapshots for local playback.

@@ -95,18 +95,18 @@ checks =
                 , check "admin dashboard and sign-out use stable routes" (List.all adminRoundTrips [ AdminRoute.Dashboard, AdminRoute.SignOut ])
                 , check "dev tools use stable routes" (List.all devToolsRoundTrips [ DevToolsRoute.Home, DevToolsRoute.CombatChart, DevToolsRoute.BackdropReview, DevToolsRoute.MapEditor, DevToolsRoute.LoggedGames ])
                 , check "replay routes remain stable" replayRoutesParse
-                , check "accepting home remains an SPA navigation" (Deployment.navigation accepting "/" == { url = "/", fullLoad = False })
-                , check "draining home loads current document" (Deployment.navigation draining "/" == { url = "/", fullLoad = True })
-                , check "draining matchmaking loads canonical entry" (Deployment.navigation draining "/match-making" == { url = "/match-making", fullLoad = True })
+                , check "accepting home remains an SPA navigation" (not (Deployment.requiresDocumentLoad accepting "/"))
+                , check "draining home loads current document" (Deployment.requiresDocumentLoad draining "/")
+                , check "draining matchmaking loads canonical entry" (Deployment.requiresDocumentLoad draining "/match-making")
                 , check "delayed responses cannot undo draining" (Deployment.observe Deployment.AcceptingNewGames draining == draining)
-                , check "entering a game loads its owner-selected document" (Deployment.navigation accepting gamePath == { url = gamePath, fullLoad = True })
-                , check "lobby to game stays on the same connection" (Deployment.navigation gameDocument gamePath == { url = gamePath, fullLoad = False })
+                , check "entering a game loads its owner-selected document" (Deployment.requiresDocumentLoad accepting gamePath)
+                , check "lobby to game stays on the same connection" (not (Deployment.requiresDocumentLoad gameDocument gamePath))
                 , check "game documents identify their session" (Deployment.init { url | path = gamePath } == gameDocument)
                 , check "map documents identify their session" (Deployment.init { url | path = lobbyPath ++ "/maps" } == gameDocument)
-                , check "lobby maps stay on the same connection" (Deployment.navigation gameDocument (lobbyPath ++ "/maps") == { url = lobbyPath ++ "/maps", fullLoad = False })
-                , check "draining does not interrupt same-game navigation" (Deployment.navigation { gameDocument | status = Deployment.Draining Nothing } gamePath == { url = gamePath, fullLoad = False })
-                , check "another game's invite loads its own document" (Deployment.navigation gameDocument "/lobby/abcdef0123456789abcdef0123456789ab" == { url = "/lobby/abcdef0123456789abcdef0123456789ab", fullLoad = True })
-                , check "leaving a game loads the current entry document" (Deployment.navigation gameDocument "/new" == { url = "/new", fullLoad = True })
+                , check "lobby maps stay on the same connection" (not (Deployment.requiresDocumentLoad gameDocument (lobbyPath ++ "/maps")))
+                , check "draining does not interrupt same-game navigation" (not (Deployment.requiresDocumentLoad { gameDocument | status = Deployment.Draining Nothing } gamePath))
+                , check "another game's invite loads its own document" (Deployment.requiresDocumentLoad gameDocument "/lobby/abcdef0123456789abcdef0123456789ab")
+                , check "leaving a game loads the current entry document" (Deployment.requiresDocumentLoad gameDocument "/new")
                 , pollingChecks gameDocument
                 ]
 

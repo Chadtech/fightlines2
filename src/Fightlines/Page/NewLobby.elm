@@ -168,7 +168,8 @@ update msg model =
                 Ok lobbyId ->
                     ( model
                         |> setBusy False
-                    , Route.pushUrl (Route.Lobby lobbyId)
+                    , Route.navigate model.shared.deployment
+                        (Route.Lobby lobbyId)
                     )
 
                 Err error ->

@@ -12,6 +12,7 @@ import Browser
 import Browser.Dom
 import DevTools.Page.LoggedGames as LoggedGames
 import Effect as E exposing (Eff)
+import Error
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot
 import Game.CombatHealth exposing (CombatHealth)
@@ -227,6 +228,11 @@ checks shared =
                         |> step (GameReplay.TurnResponseReceived (redTurn 1) (Ok opening))
                         |> step (GameReplay.TurnResponseReceived (redTurn 2) (Ok turn))
 
+                oneFrameTurn : GameReplay.Model
+                oneFrameTurn =
+                    loading
+                        |> step (GameReplay.TurnResponseReceived (redTurn 1) (Ok (recordedTurn [ frame [ { x = 1, y = 1 } ] ])))
+
                 revealedPosition : { turn : Int, player : PlayerNumber.PlayerNumber, fogOfWar : Bool }
                 revealedPosition =
                     { turn = 1, player = PlayerNumber.Player1, fogOfWar = False }
@@ -314,7 +320,8 @@ checks shared =
                     (framed.viewport == Just { size = { x = 800, y = 600 }, bottomInset = 100, rightInset = 200 })
                 , expect "sprite timers and hover events do not initialize the playback camera" ((step GameReplay.AnimationTimerElapsed unframed).timeline == unframed.timeline && (step (GameReplay.BattlefieldMsg (Battlefield.MouseOverTile { x = 1, y = 1 })) unframed).timeline == unframed.timeline)
                 , expect "completed playback returns to the saved camera" (BattlefieldNavigation.returning finishedFirst.navigation && not (BattlefieldNavigation.returning (step GameReplay.CameraReturnFinished finishedFirst).navigation))
-                , expect "starting board has no live turn introduction or loss dialog" (GameReplay.dialog initial == Nothing)
+                , expect "starting board has no live turn introduction, loss dialog or playback diagnostic"
+                    ((GameReplay.dialog initial == Nothing) && List.isEmpty initial.shared.errors.errors)
                 , expect "play requests the first recorded turn and rewinds projected sight" (playing.position == redTurn 1 && playing.battlefield.visibleTiles == [])
                 , expect "pause freezes animation and projected board state" ((tick paused).timeline == paused.timeline && (tick paused).battlefield == paused.battlefield)
                 , expect "paused navigation releases the held playback camera without advancing the board" (pannedPause.timeline /= framedPause.timeline && pannedPause.navigation.offset.x == framedPause.navigation.offset.x - 48 && pannedPause.battlefield == framedPause.battlefield)
@@ -329,7 +336,20 @@ checks shared =
                 , expect "changing turns retains the saved camera" (selected.navigation == zoomed.navigation)
                 , expect "changing viewers requests that viewer and preserves camera state" (switched.position == blue && switched.navigation == zoomed.navigation)
                 , expect "keyboard inspection can be cleared without entering planning" (inspected.inspection /= Nothing && (step GameReplay.EscapePressed inspected).inspection == Nothing)
-                , expect "continuous play advances through a turn with no animation frames" (emptyTurn.position == redTurn 2)
+                , expect "continuous replay pauses on a turn with missing frames and records it once"
+                    ((emptyTurn.position == redTurn 1)
+                        && (emptyTurn.battlefield == opening.battlefield)
+                        && ((tick emptyTurn).shared.errors.errors
+                                == [ Error.TurnPlaybackInvariantViolated (TurnPlayback.TooFewFrames { resolvedTurn = 1, frameCount = 0 }) ]
+                           )
+                    )
+                , expect "a one-frame replay retains the final board and reports the incomplete sequence"
+                    ((oneFrameTurn.position == redTurn 1)
+                        && (oneFrameTurn.battlefield == opening.battlefield)
+                        && (oneFrameTurn.shared.errors.errors
+                                == [ Error.TurnPlaybackInvariantViolated (TurnPlayback.TooFewFrames { resolvedTurn = 1, frameCount = 1 }) ]
+                           )
+                    )
                 ]
             , E.batch [ lossEffects, audioEffects ]
             )

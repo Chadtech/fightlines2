@@ -304,7 +304,10 @@ enterGame : ReadyMatch -> Model -> ( Model, Eff Msg )
 enterGame found model =
     model
         |> setStage EnteringGame
-        |> E.with (Route.replaceUrl (Route.Game found.gameId))
+        |> E.with
+            (Route.navigateReplacing model.shared.deployment
+                (Route.Game found.gameId)
+            )
 
 
 join : Model -> ( Model, Eff Msg )

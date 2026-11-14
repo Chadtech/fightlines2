@@ -70,7 +70,7 @@ import View.Dialog as Dialog exposing (Dialog)
 
 
 type Page
-    = AppInitError Decode.Error
+    = AppInitError Navigation.Key Decode.Error
     | Home Home.Model
     | NewLobby NewLobby.Model
     | LoadingMatchMaking Shared.Model VisitId
@@ -122,18 +122,8 @@ main =
                     |> Tuple.mapSecond (E.toCmd key)
         , update =
             \msg page ->
-                let
-                    ( newPage, eff ) =
-                        update msg page
-                            |> syncDialog page
-                            |> E.andThen (withPlaybackAudio page)
-                in
-                case getShared newPage of
-                    Just shared ->
-                        ( newPage, eff |> E.navigation (Deployment.navigation shared.deployment) |> E.toCmd shared.key )
-
-                    Nothing ->
-                        ( newPage, Cmd.none )
+                superUpdate msg page
+                    |> Tuple.mapSecond (E.toCmd (getKey page))
         , view = view
         , subscriptions = subscriptions
         , onUrlRequest = LinkClicked
@@ -169,7 +159,7 @@ init value url key =
                 |> E.and (E.audio (Audio.SetVolumes shared.audioVolumes))
 
         Err error ->
-            ( AppInitError error, E.none )
+            ( AppInitError key error, E.none )
 
 
 
@@ -204,10 +194,56 @@ syncDialog previous ( page, effect ) =
             ( page, effect )
 
 
+getKey : Page -> Navigation.Key
+getKey page =
+    case page of
+        AppInitError key _ ->
+            key
+
+        Home model ->
+            model.shared.key
+
+        NewLobby model ->
+            model.shared.key
+
+        LoadingMatchMaking shared _ ->
+            shared.key
+
+        MatchMakingLoadFailed shared _ ->
+            shared.key
+
+        MatchMaking model ->
+            model.shared.key
+
+        LoadingLobby shared _ _ ->
+            shared.key
+
+        LobbyLoadFailed _ model ->
+            model.shared.key
+
+        JoinLobby _ model ->
+            model.shared.key
+
+        Lobby _ model ->
+            model.shared.key
+
+        LoadingGame shared _ ->
+            shared.key
+
+        GameLoadFailed _ model ->
+            model.shared.key
+
+        Game _ model ->
+            model.shared.key
+
+        NotFound shared ->
+            shared.key
+
+
 getShared : Page -> Maybe Shared.Model
 getShared page =
     case page of
-        AppInitError _ ->
+        AppInitError _ _ ->
             Nothing
 
         Home model ->
@@ -253,7 +289,7 @@ getShared page =
 setShared : Shared.Model -> Page -> Page
 setShared shared page =
     case page of
-        AppInitError _ ->
+        AppInitError _ _ ->
             page
 
         Home model ->
@@ -363,43 +399,10 @@ handleRoute shared route =
 ----------------------------------------------------------------
 
 
-withPlaybackAudio : Page -> Page -> ( Page, Eff Msg )
-withPlaybackAudio before after =
-    let
-        moving : Page -> List Audio.MovingUnit
-        moving page =
-            case page of
-                Game _ model ->
-                    GamePage.movingUnits model
-
-                _ ->
-                    []
-
-        ambient : Page -> List Audio.AmbientScene
-        ambient page =
-            case page of
-                Game _ model ->
-                    GamePage.ambience model
-
-                _ ->
-                    []
-
-        firing : Page -> List Audio.FiringInfantry
-        firing page =
-            case page of
-                Game _ model ->
-                    GamePage.firingInfantry model
-
-                _ ->
-                    []
-    in
-    ( after
-    , E.batch
-        [ E.audio (Audio.syncMovement { before = moving before, after = moving after })
-        , E.audio (Audio.syncAmbience { before = ambient before, after = ambient after })
-        , E.audio (Audio.syncInfantryFire { before = firing before, after = firing after })
-        ]
-    )
+superUpdate : Msg -> Page -> ( Page, Eff Msg )
+superUpdate msg page =
+    update msg page
+        |> syncDialog page
 
 
 update : Msg -> Page -> ( Page, Eff Msg )
@@ -426,7 +429,12 @@ update msg page =
                     ( page, E.none )
 
         ReturnHomeButtonClicked ->
-            ( page, Route.pushUrl Route.Home )
+            case getShared page of
+                Just shared ->
+                    ( page, Route.navigate shared.deployment Route.Home )
+
+                Nothing ->
+                    ( page, E.none )
 
         HomeMsg homeMsg ->
             case page of
@@ -446,7 +454,12 @@ update msg page =
                 Browser.Internal url ->
                     case Route.fromUrl url of
                         Just route ->
-                            ( page, Route.pushUrl route )
+                            case getShared page of
+                                Just shared ->
+                                    ( page, Route.navigate shared.deployment route )
+
+                                Nothing ->
+                                    ( page, E.none )
 
                         Nothing ->
                             ( page, E.loadUrl (Url.toString url) )
@@ -461,6 +474,9 @@ update msg page =
                         departure : Eff Msg
                         departure =
                             case page of
+                                Game _ model ->
+                                    GamePage.stopPlaybackAudio model
+
                                 MatchMaking model ->
                                     if route == Just Route.MatchMaking then
                                         E.none
@@ -516,8 +532,8 @@ update msg page =
 
         MatchMakingRetryButtonClicked ->
             case page of
-                MatchMakingLoadFailed _ _ ->
-                    ( page, Route.pushUrl Route.MatchMaking )
+                MatchMakingLoadFailed shared _ ->
+                    ( page, Route.navigate shared.deployment Route.MatchMaking )
 
                 _ ->
                     ( page, E.none )
@@ -809,7 +825,7 @@ shell page =
         content : List (Html Msg)
         content =
             case page of
-                AppInitError error ->
+                AppInitError _ error ->
                     AppInitError.view error
 
                 Home model ->

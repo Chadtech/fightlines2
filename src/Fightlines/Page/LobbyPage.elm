@@ -37,6 +37,7 @@ import ApiRequest
 import Audio
 import Browser.Dom
 import Browser.Events
+import Deployment
 import EditableMap exposing (NamedMap)
 import Effect as E
     exposing
@@ -285,7 +286,7 @@ init location shared flags =
         routeCorrection : Eff Msg
         routeCorrection =
             if mustReturnToLobby then
-                Route.pushUrl (Route.Lobby lobby.id)
+                Route.navigate shared.deployment (Route.Lobby lobby.id)
 
             else
                 E.none
@@ -315,7 +316,7 @@ init location shared flags =
     in
     ( model
     , E.batch
-        [ gameNavigation
+        [ gameNavigation shared.deployment
             { isMember = lobby.isMember
             , gameUrl = lobby.gameUrl
             }
@@ -570,7 +571,8 @@ receive snapshot model =
         membershipNavigation : Eff Msg
         membershipNavigation =
             if model.isMember && not snapshot.isMember then
-                Route.pushUrl (Route.Lobby snapshot.id)
+                Route.navigate model.shared.deployment
+                    (Route.Lobby snapshot.id)
 
             else
                 E.none
@@ -586,7 +588,7 @@ receive snapshot model =
     ( { model | id = snapshot.id, name = snapshot.name, mapType = snapshot.mapType, players = snapshot.players, isHost = snapshot.isHost, isMember = snapshot.isMember, gameUrl = snapshot.gameUrl }
         |> setError Nothing
     , E.batch
-        [ gameNavigation
+        [ gameNavigation model.shared.deployment
             { isMember = snapshot.isMember
             , gameUrl = snapshot.gameUrl
             }
@@ -599,14 +601,13 @@ receive snapshot model =
 
 
 gameNavigation :
-    { isMember : Bool
-    , gameUrl : Maybe String
-    }
+    Deployment.Model
+    -> { isMember : Bool, gameUrl : Maybe String }
     -> LobbyId
     -> Eff msg
-gameNavigation args lobbyId =
+gameNavigation deployment args lobbyId =
     if args.isMember && args.gameUrl /= Nothing then
-        Route.pushUrl (Route.Game lobbyId)
+        Route.navigate deployment (Route.Game lobbyId)
 
     else
         E.none
@@ -973,10 +974,15 @@ update msg model =
                 ( model, E.none )
 
             else
-                ( model, Route.pushUrl (Route.LobbyMaps model.id) )
+                ( model
+                , Route.navigate model.shared.deployment
+                    (Route.LobbyMaps model.id)
+                )
 
         BackToLobbyButtonClicked ->
-            ( model, Route.pushUrl (Route.Lobby model.id) )
+            ( model
+            , Route.navigate model.shared.deployment (Route.Lobby model.id)
+            )
 
         MapSearchInputChanged search ->
             case model.screen of
@@ -1039,7 +1045,8 @@ update msg model =
                             returnToLobby : Eff Msg
                             returnToLobby =
                                 if snapshot.gameUrl == Nothing then
-                                    Route.pushUrl (Route.Lobby model.id)
+                                    Route.navigate model.shared.deployment
+                                        (Route.Lobby model.id)
 
                                 else
                                     E.none
@@ -1059,7 +1066,7 @@ update msg model =
                         )
 
         HomeButtonClicked ->
-            ( model, Route.pushUrl Route.Home )
+            ( model, Route.navigate model.shared.deployment Route.Home )
 
         CloseLobbyButtonClicked ->
             if not (canManageLobby model) then
@@ -1116,7 +1123,9 @@ update msg model =
             else
                 case result of
                     Ok _ ->
-                        ( model, Route.pushUrl Route.Home )
+                        ( model
+                        , Route.navigate model.shared.deployment Route.Home
+                        )
 
                     Err error ->
                         ( model

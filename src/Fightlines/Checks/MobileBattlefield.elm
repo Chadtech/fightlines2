@@ -10,22 +10,27 @@ import Api.Enum.UnitKind as Kind
 import Api.Scalar exposing (MapId(..))
 import Browser
 import Browser.Dom
+import Error
 import Fightlines.Page.GamePage as GamePage
 import Fightlines.View.MobileBattlefield as MobileBattlefield
 import Fightlines.View.OrderMenu as OrderMenu
 import Game.CurrentTurn as CurrentTurn
 import Game.Inactivity as Inactivity
 import Game.Map as Map
+import Game.Movement as Movement
 import Game.OrderPlanning as OrderPlanning
+import Game.Outcome as GameOutcome
 import Game.Selection exposing (Selection(..), UnitInteraction(..))
 import Game.Terrain as Terrain
+import Game.Turn as Turn
 import Game.TurnLifecycle as TurnLifecycle
 import Game.TurnPlayback as TurnPlayback
-import Game.Unit exposing (Unit)
+import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Location as Location
 import Game.UnitId as UnitId exposing (UnitId)
 import Game.UnitOrder as UnitOrder
 import Game.View.Battlefield as Battlefield
+import Game.View.Chat as ChatView
 import Game.View.TurnControls as TurnControls
 import LobbyId exposing (LobbyId)
 import LocalStorage
@@ -97,66 +102,69 @@ main =
 checks : LobbyId -> UnitId -> UnitId -> Shared.Model -> List String
 checks lobbyId friendlyId enemyId shared =
     let
-        initial : GamePage.Model
-        initial =
-            GamePage.init shared
-                { messages = []
-                , snapshot =
-                    { inactivity = Inactivity.Disabled
-                    , battlefield =
-                        { name = "mobile fixture"
-                        , mapType = MapId "fixture"
-                        , unitStats = []
-                        , players =
-                            [ { name = "commander"
-                              , playerNumber = PlayerNumber.Player1
-                              , isYou = True
-                              }
-                            ]
-                        , map =
-                            Map.fromFeatures
-                                { width = 4
-                                , height = 4
-                                , baseTile = Terrain.Plain
-                                , theme = MapTheme.GreenForest
-                                , features = []
-                                }
-                        , units =
-                            [ unit friendlyId PlayerNumber.Player1 0
-                            , unit enemyId PlayerNumber.Player2 3
-                            ]
-                        , depots = []
-                        , supplyCrates = []
-                        , visibleTiles = []
-                        }
-                    , supplyRules =
-                        { depotCapacity = 100
-                        , crateCapacity = 10
-                        , fuelDepotCapacity = 100
-                        , fuelDrumCapacity = 10
-                        }
-                    , movementRules =
-                        [ { kind = Kind.Infantry
-                          , budget = 8
-                          , terrainCosts =
-                                [ { terrain = Terrain.Plain
-                                  , cost = 2
-                                  }
-                                ]
-                          , roadFuelPerTile = 0
-                          , roadFuelPerCargoSlot = 0
+        flags : GamePage.Flags
+        flags =
+            { messages = []
+            , snapshot =
+                { inactivity = Inactivity.Disabled
+                , battlefield =
+                    { name = "mobile fixture"
+                    , mapType = MapId "fixture"
+                    , unitStats = []
+                    , players =
+                        [ { name = "commander"
+                          , playerNumber = PlayerNumber.Player1
+                          , isYou = True
                           }
                         ]
-                    , turn =
-                        { number = 1
-                        , outcome = Nothing
-                        , submitted = False
-                        , opponentSubmitted = False
-                        , resolution = Nothing
-                        }
-                    , playbackFrames = []
+                    , map =
+                        Map.fromFeatures
+                            { width = 4
+                            , height = 4
+                            , baseTile = Terrain.Plain
+                            , theme = MapTheme.GreenForest
+                            , features = []
+                            }
+                    , units =
+                        [ unit friendlyId PlayerNumber.Player1 0
+                        , unit enemyId PlayerNumber.Player2 3
+                        ]
+                    , depots = []
+                    , supplyCrates = []
+                    , visibleTiles = []
                     }
+                , supplyRules =
+                    { depotCapacity = 100
+                    , crateCapacity = 10
+                    , fuelDepotCapacity = 100
+                    , fuelDrumCapacity = 10
+                    }
+                , movementRules =
+                    [ { kind = Kind.Infantry
+                      , budget = 8
+                      , terrainCosts =
+                            [ { terrain = Terrain.Plain
+                              , cost = 2
+                              }
+                            ]
+                      , roadFuelPerTile = 0
+                      , roadFuelPerCargoSlot = 0
+                      }
+                    ]
+                , turn =
+                    { number = 1
+                    , outcome = Nothing
+                    , submitted = False
+                    , opponentSubmitted = False
+                    , resolution = Nothing
+                    }
+                , playbackFrames = []
                 }
+            }
+
+        initial : GamePage.Model
+        initial =
+            GamePage.init shared flags
                 |> Tuple.first
                 |> step GamePage.WelcomeBriefingDismissed
 
@@ -179,6 +187,18 @@ checks lobbyId friendlyId enemyId shared =
         ready : GamePage.Model
         ready =
             { initial | currentTurn = CurrentTurn.acknowledgeIntroduction initial.currentTurn }
+
+        awaitingActivity : GamePage.Model
+        awaitingActivity =
+            { ready | inactivity = Inactivity.init shared.now (Inactivity.Enabled (Just 30)) }
+
+        leavesInactivityAlone : GamePage.Msg -> Bool
+        leavesInactivityAlone msg =
+            (step msg awaitingActivity).inactivity == awaitingActivity.inactivity
+
+        afterWarningAcknowledgment : GamePage.Model
+        afterWarningAcknowledgment =
+            step GamePage.StillHereClicked awaitingActivity
 
         select : UnitId -> GamePage.Model -> GamePage.Model
         select id =
@@ -340,6 +360,130 @@ checks lobbyId friendlyId enemyId shared =
         savedThenClosed =
             step GamePage.InspectorCloseClicked saved
 
+        unloadWithMissingRule : GamePage.Model
+        unloadWithMissingRule =
+            let
+                truck : Unit
+                truck =
+                    unit friendlyId PlayerNumber.Player1 0
+                        |> Unit.setKind Kind.Truck
+
+                passenger : Unit
+                passenger =
+                    unit enemyId PlayerNumber.Player1 1
+                        |> Unit.setLocation (Location.Aboard friendlyId)
+
+                missingRule : GamePage.Model
+                missingRule =
+                    { ready | movementRules = [] }
+            in
+            missingRule
+                |> GamePage.setUnits [ truck, passenger ]
+                |> select friendlyId
+                |> step (GamePage.OrderMenuMsg (OrderMenu.OrderPicked UnitOrder.HoldPosition))
+
+        unloadViolation : OrderPlanning.InvariantViolation
+        unloadViolation =
+            OrderPlanning.MovementInvariantViolated
+                (Movement.RuleNotFound { unitId = enemyId, kind = Kind.Infantry })
+
+        orphanedPassenger : Unit
+        orphanedPassenger =
+            unit enemyId PlayerNumber.Player1 3
+                |> Unit.setLocation (Location.Aboard enemyId)
+
+        failedPreparation : GamePage.Model
+        failedPreparation =
+            savedThenClosed
+                |> GamePage.setUnits
+                    [ unit friendlyId PlayerNumber.Player1 0
+                    , orphanedPassenger
+                    ]
+                |> step (GamePage.TurnControlsMsg TurnControls.SubmitClicked)
+
+        reportTime : Int
+        reportTime =
+            Time.posixToMillis shared.now + 1000
+
+        reportTick : Int -> GamePage.Model -> GamePage.Model
+        reportTick millis =
+            step (GamePage.PlanningErrorReportTick (Time.millisToPosix millis))
+
+        reported : GamePage.Model
+        reported =
+            reportTick reportTime failedPreparation
+
+        repeatedFailure : GamePage.Model
+        repeatedFailure =
+            reported
+                |> step (GamePage.TurnControlsMsg TurnControls.SubmitClicked)
+
+        distinctFailure : GamePage.Model
+        distinctFailure =
+            let
+                fresh : GamePage.Model
+                fresh =
+                    { ready | movementRules = [], planningReports = repeatedFailure.planningReports }
+            in
+            fresh
+                |> select friendlyId
+                |> step (GamePage.OrderMenuMsg (OrderMenu.OrderPicked UnitOrder.Move))
+
+        resolvedFlags : GamePage.Flags
+        resolvedFlags =
+            let
+                { snapshot } =
+                    flags
+
+                turn : Turn.Snapshot
+                turn =
+                    snapshot.turn
+            in
+            { flags
+                | snapshot =
+                    { snapshot
+                        | turn = { turn | number = 2 }
+                        , playbackFrames =
+                            [ { durationMs = 0
+                              , units = []
+                              , departures = []
+                              , losses = []
+                              , sabotages = []
+                              , indirectImpacts = []
+                              , shots = []
+                              , visibleTiles = []
+                              , depots = []
+                              , supplyCrates = []
+                              }
+                            ]
+                    }
+            }
+
+        advanced : GamePage.Model
+        advanced =
+            step (GamePage.PollResponseReceived (Ok resolvedFlags.snapshot)) savedThenClosed
+
+        resigned : GamePage.Model
+        resigned =
+            let
+                { snapshot } =
+                    resolvedFlags
+
+                turn : Turn.Snapshot
+                turn =
+                    snapshot.turn
+            in
+            step
+                (GamePage.PollResponseReceived
+                    (Ok
+                        { snapshot
+                            | turn = { turn | outcome = Just (GameOutcome.Resignation PlayerNumber.Player1) }
+                            , playbackFrames = []
+                        }
+                    )
+                )
+                savedThenClosed
+
         battlefieldElement : Browser.Dom.Element
         battlefieldElement =
             { scene =
@@ -419,7 +563,57 @@ checks lobbyId friendlyId enemyId shared =
                 == Maybe.map Dialog.htmlId (GamePage.dialog initial)
             )
         , expect "mobile viewport updates without a mounted selection panel" viewportWithoutSelection
+        , expect "hover, focus, dialog open, and polling leave the inactivity clock alone"
+            (List.all leavesInactivityAlone
+                [ GamePage.BattlefieldMsg (Battlefield.MouseOverUnit friendlyId)
+                , GamePage.FocusCompleted (Ok ())
+                , GamePage.ChatMsg ChatView.DialogOpened
+                , GamePage.CurrentTurnMsg CurrentTurn.PollTimerElapsed
+                ]
+            )
+        , expect "selecting a unit renews activity during a warning"
+            (Inactivity.pending (select friendlyId awaitingActivity).inactivity)
+        , expect "typing in chat renews activity during a warning"
+            (Inactivity.pending
+                (step (GamePage.ChatMsg (ChatView.TextChanged "hi")) awaitingActivity).inactivity
+            )
+        , expect "acknowledging the warning renews activity"
+            (Inactivity.pending afterWarningAcknowledgment.inactivity)
         , expect "direct submission retains the missing-orders warning" warnedBeforeSubmission
+        , expect "opening an unload checklist queues the passenger rule error without a checkbox event"
+            ((Maybe.map Dialog.htmlId (GamePage.dialog unloadWithMissingRule) == Just "unload-passengers")
+                && (unloadWithMissingRule.shared.errors.errors == [ Error.OrderPlanningInvariantViolated unloadViolation ])
+                && (unloadWithMissingRule.planningReports.pending == [ { turnNumber = 1, violation = unloadViolation } ])
+            )
+        , expect "a missing default hold leaves saved drafts editable and reports the unit"
+            ((failedPreparation.currentTurn.phase == savedThenClosed.currentTurn.phase)
+                && (failedPreparation.currentTurn.error /= Nothing)
+                && (failedPreparation.shared.errors.errors
+                        == [ Error.OrderPlanningInvariantViolated (OrderPlanning.OrderUnitHasNoPosition enemyId) ]
+                   )
+            )
+        , expect "a planning violation is queued once even when the action fails again after sending"
+            ((List.length failedPreparation.planningReports.pending == 1)
+                && List.isEmpty repeatedFailure.planningReports.pending
+                && (repeatedFailure.shared.errors == failedPreparation.shared.errors)
+            )
+        , expect "another violation waits for the reporting interval"
+            ((List.length distinctFailure.planningReports.pending == 1)
+                && ((reportTick (reportTime + 59999) distinctFailure).planningReports
+                        == distinctFailure.planningReports
+                   )
+                && List.isEmpty (reportTick (reportTime + 60000) distinctFailure).planningReports.pending
+            )
+        , expect "a new resolved turn with one frame displays the snapshot board and records a single error"
+            ((advanced.currentTurn.number == 2)
+                && (advanced.units == resolvedFlags.snapshot.battlefield.units)
+                && (TurnLifecycle.playback advanced.currentTurn.phase == Nothing)
+                && ((step (GamePage.PollResponseReceived (Ok resolvedFlags.snapshot)) advanced).shared.errors.errors
+                        == [ Error.TurnPlaybackInvariantViolated (TurnPlayback.TooFewFrames { resolvedTurn = 1, frameCount = 1 }) ]
+                   )
+            )
+        , expect "resignation needs no new playback frames"
+            ((resigned.currentTurn.outcome /= Nothing) && List.isEmpty resigned.shared.errors.errors)
         , expect "surrender opens confirmation without changing the turn"
             ((GamePage.dialog surrenderRequested /= Nothing)
                 && (surrenderRequested.currentTurn == ready.currentTurn)

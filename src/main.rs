@@ -28,6 +28,7 @@ mod map_thumbnail;
 mod match_making;
 mod movement;
 mod movement_resolution;
+mod planning_error;
 mod player;
 mod player_name;
 mod player_number;
@@ -82,7 +83,8 @@ fn main() -> io::Result<()> {
     let frontend = env::var_os("FIGHTLINES_FRONTEND_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("public"));
-    let _log_guard = server_log::init(&frontend)?;
+    let log_directory = server_log::directory();
+    let _log_guard = server_log::init(&log_directory, &frontend)?;
     match environment {
         Ok(_) => {}
         Err(dotenvy::Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => {}
@@ -98,14 +100,14 @@ fn main() -> io::Result<()> {
             ));
         }
     }
-    let result = actix_web::rt::System::new().block_on(run(frontend));
+    let result = actix_web::rt::System::new().block_on(run(frontend, log_directory));
     if let Err(error) = &result {
         tracing::error!(event = "server_failed", error = %error, "server stopped with an error");
     }
     result
 }
 
-async fn run(frontend: PathBuf) -> io::Result<()> {
+async fn run(frontend: PathBuf, log_directory: PathBuf) -> io::Result<()> {
     let environment = Environment::load()?;
     let admin_auth = admin::Auth::load()?;
     environment.validate_arguments(env::args().skip(1))?;
@@ -140,6 +142,8 @@ async fn run(frontend: PathBuf) -> io::Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("feedback"));
     let feedback = web::Data::new(feedback::Directory::open(feedback_path, &frontend)?);
+    let planning_errors =
+        web::Data::new(planning_error::Directory::open(&log_directory, &frontend)?);
     let listener = TcpListener::bind(&address)?;
     let server_start = logs.record_server_start(seed)?;
     tracing::info!(record = %server_start.display(), "private server-start record saved");
@@ -185,6 +189,7 @@ async fn run(frontend: PathBuf) -> io::Result<()> {
             .app_data(store.clone())
             .app_data(endpoint.clone())
             .app_data(feedback.clone())
+            .app_data(planning_errors.clone())
             .route("/", web::get().to(player_index))
             .route("/graphql", web::post().to(graphql::handle))
             .route("/_routing", web::get().to(deployment_routing::route))

@@ -71,6 +71,18 @@ matchMaking object____ =
     Object.selectionForCompositeField "matchMaking" [] object____ Basics.identity
 
 
+type alias AdminPlanningErrorsRequiredArguments =
+    { offset : Int }
+
+
+adminPlanningErrors :
+    AdminPlanningErrorsRequiredArguments
+    -> SelectionSet decodesTo Api.Object.PlanningErrorPage
+    -> SelectionSet decodesTo RootQuery
+adminPlanningErrors requiredArgs____ object____ =
+    Object.selectionForCompositeField "adminPlanningErrors" [ Argument.required "offset" requiredArgs____.offset Encode.int ] object____ Basics.identity
+
+
 type alias ChatRequiredArguments =
     { id : String
     , after : Int

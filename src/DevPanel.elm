@@ -184,7 +184,7 @@ featuresView features =
         ]
         [ H.p
             []
-            [ H.text "features saved on this device" ]
+            [ H.text "features saved on this device. the first checked army style applies to your board units." ]
         , H.div
             [ A.css
                 [ S.col

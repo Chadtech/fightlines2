@@ -23,6 +23,7 @@ pub enum Operation {
     SubmitTurn,
     SendChat,
     SubmitFeedback,
+    ReportPlanningError,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -101,6 +102,14 @@ impl RateKey {
             (Client::Address(_), Operation::SubmitFeedback) => Budget {
                 burst: 5,
                 refill_every: Duration::from_secs(60),
+            },
+            (Client::Session(_), Operation::ReportPlanningError) => Budget {
+                burst: 6,
+                refill_every: Duration::from_secs(60),
+            },
+            (Client::Address(_), Operation::ReportPlanningError) => Budget {
+                burst: 18,
+                refill_every: Duration::from_secs(15),
             },
             (Client::Session(_), Operation::SubmitTurn) => Budget {
                 burst: 6,

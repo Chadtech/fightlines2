@@ -21,6 +21,7 @@ import Game.PlannedTransport as PlannedTransport
 import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Supplies as Supplies exposing (Supplies)
 import Game.UnitResources as UnitResources
+import InvariantCheck as IC exposing (InvariantCheck)
 
 
 
@@ -58,7 +59,7 @@ start :
     -> List PlannedOrder
     -> Unit
     -> Coordinate
-    -> MovePlanning
+    -> InvariantCheck Movement.InvariantViolation MovePlanning
 start purpose map units movementRules drafts unit origin =
     let
         destinations : PlannedTransport.Occupancy
@@ -68,14 +69,17 @@ start purpose map units movementRules drafts unit origin =
         dismounting : Bool
         dismounting =
             PlannedTransport.isDismounting units unit
+
+        withOptions : List Movement.Option -> MovePlanning
+        withOptions options =
+            { purpose = purpose
+            , preview = Movement.start origin
+            , options = List.filter (canStopAt purpose destinations dismounting unit) options
+            , destinationFeedback = NoDestinationFeedback
+            }
     in
-    { purpose = purpose
-    , preview = Movement.start origin
-    , options =
-        Movement.optionsAvoiding [] movementRules map units (movementUnit purpose unit)
-            |> List.filter (canStopAt purpose destinations dismounting unit)
-    , destinationFeedback = NoDestinationFeedback
-    }
+    Movement.planningOptions movementRules map units (movementUnit purpose unit)
+        |> IC.map withOptions
 
 
 traceTo :

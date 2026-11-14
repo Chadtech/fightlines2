@@ -23,10 +23,12 @@ module Game.View.Battlefield exposing
     )
 
 import Api.Enum.Direction exposing (Direction)
+import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Api.Enum.SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind
 import Css
 import Game.AnimationFrame as AnimationFrame
+import Game.ArmyStyle exposing (ArmyStyle)
 import Game.BattlefieldNavigation as Navigation exposing (TouchInput)
 import Game.Camera as Camera exposing (Camera)
 import Game.CombatRules exposing (CombatRules)
@@ -524,7 +526,8 @@ viewportAttributes view =
     ]
 
 
-{-| Apply to the board's camera container, leaving page overlays outside it.
+{-| Size the board at the camera's zoom so WebKit paints the SVG at its
+displayed size. The viewport centers the board before applying the pan offset.
 -}
 camera :
     { camera : Camera
@@ -534,22 +537,25 @@ camera :
     -> Html Msg
 camera view =
     let
-        cameraTransition : Css.Style
-        cameraTransition =
+        durationMs : Float
+        durationMs =
             if view.transitioning then
-                S.transformTransition PlaybackPresentation.cameraPanDurationMs
+                PlaybackPresentation.cameraPanDurationMs
 
             else
-                S.transformTransition 0
+                0
     in
     H.div
         [ A.css
             [ S.relative
-            , S.widthValue Camera.boardWidth
+            , S.widthValue (Camera.boardWidth view.camera)
             , S.shrink0
-            , S.transform (Camera.transform view.camera)
-            , cameraTransition
-            , S.reducedMotion [ S.transformTransition 0 ]
+            , S.leftValue (String.fromFloat view.camera.offset.x ++ "px")
+            , S.topValue (String.fromFloat view.camera.offset.y ++ "px")
+            , Css.property "transition-property" "left, top, width"
+            , Css.property "transition-timing-function" "ease-in-out"
+            , Css.property "transition-duration" (String.fromFloat durationMs ++ "ms")
+            , S.reducedMotion [ Css.property "transition-duration" "0ms" ]
             ]
         ]
 
@@ -690,6 +696,7 @@ type alias Args =
     , supplyCrates : List Supply.GroundCrate
     , visibleTiles : List Coordinate
     , frame : AnimationFrame.Frame
+    , armyStyle : Maybe { style : ArmyStyle, players : List PlayerNumber }
     , selected : Maybe Coordinate
     , selectedUnitId : Maybe UnitId
     , facingUnits : List UnitId
@@ -1038,16 +1045,30 @@ toSvg args =
 
                     else
                         0
+
+                armyStyle : Maybe ArmyStyle
+                armyStyle =
+                    case args.armyStyle of
+                        Just army ->
+                            if List.member unit.playerNumber army.players then
+                                Just army.style
+
+                            else
+                                Nothing
+
+                        Nothing ->
+                            Nothing
             in
             Svg.g
                 [ SA.opacity (String.fromFloat (TurnPlayback.unitOpacity animation unit.id)) ]
-                [ SvgLazy.lazy6 boardUnit
+                [ SvgLazy.lazy7 boardUnit
                     unit
                     (previewedUnit unit).spriteFacing
                     (unitTransform unit position)
                     (List.member unit.id orderedUnits)
                     passengerCount
                     (AnimationFrame.unitColumn args.frame unit.id)
+                    armyStyle
                 ]
 
         pathPoint : Coordinate -> String
@@ -1435,8 +1456,16 @@ orderedUnitFilter =
         ]
 
 
-boardUnit : Unit -> SpriteFacing -> String -> Bool -> Int -> Int -> Svg Msg
-boardUnit unit facing transform ordered passengerCount column =
+boardUnit :
+    Unit
+    -> SpriteFacing
+    -> String
+    -> Bool
+    -> Int
+    -> Int
+    -> Maybe ArmyStyle
+    -> Svg Msg
+boardUnit unit facing transform ordered passengerCount column armyStyle =
     let
         freightCount : Int
         freightCount =
@@ -1495,7 +1524,7 @@ boardUnit unit facing transform ordered passengerCount column =
         artwork : List (Svg Msg)
         artwork =
             if Unit.isDying unit then
-                [ UnitDeath.toSvg column unit
+                [ UnitDeath.toSvg armyStyle column unit
                     |> StyledSvg.toUnstyled
                 ]
 
@@ -1504,8 +1533,7 @@ boardUnit unit facing transform ordered passengerCount column =
                     spriteFilter
                     [ unit
                         |> Unit.setSpriteFacing facing
-                        |> UnitSprite.toSvg
-                            column
+                        |> UnitSprite.battlefieldToSvg armyStyle column
                         |> StyledSvg.toUnstyled
                     ]
                 , UnitCargo.toSvg passengerCount

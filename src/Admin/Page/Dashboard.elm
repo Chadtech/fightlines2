@@ -25,6 +25,8 @@ import Api.Object.DeploymentStatus as DeploymentStatusApi
 import Api.Object.FeedbackPage as FeedbackPageApi
 import Api.Object.FeedbackReadError as FeedbackErrorApi
 import Api.Object.FeedbackRecord as FeedbackApi
+import Api.Object.PlanningErrorPage as PlanningErrorsApi
+import Api.Object.PlanningErrorRecord as PlanningErrorApi
 import Api.Object.RecordingsPage as RecordingsApi
 import Api.Query
 import Api.Scalar exposing (MapId)
@@ -34,6 +36,7 @@ import Game.Archive as Archive exposing (Entry(..))
 import Game.MapId as MapId
 import Game.PlayerNumber as PlayerNumber
 import Graphql.Http
+import Graphql.Operation exposing (RootQuery)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -138,17 +141,38 @@ type alias RecordingsPage =
     }
 
 
+type alias PlanningError =
+    { receivedAt : String
+    , gameId : LobbyId
+    , turnNumber : Int
+    , clientVersion : String
+    , serverVersion : String
+    , details : String
+    }
+
+
+type alias PlanningErrors =
+    { reports : List PlanningError
+    , unreadable : Int
+    , total : Int
+    , nextOffset : Maybe Int
+    }
+
+
 type alias Model =
     { shared : Shared.Model
     , snapshot : Snapshot
     , feedback : FeedbackPage
     , recordings : RecordingsPage
+    , planningErrors : PlanningErrors
     , selectedGame : Maybe LobbyId
     , selectedFeedback : Maybe FeedbackId
     , feedbackExpanded : Bool
     , recordingsExpanded : Bool
     , feedbackOffset : Int
     , recordingOffset : Int
+    , planningErrorOffset : Int
+    , planningErrorsExpanded : Bool
     , request : Request
     , listError : Maybe String
     , error : Maybe String
@@ -162,6 +186,7 @@ type Request
     | Refreshing
     | LoadingFeedback Int
     | LoadingRecordings Int
+    | LoadingPlanningErrors Int
 
 
 type Msg
@@ -178,6 +203,9 @@ type Msg
     | FeedbackResponseReceived Int (Response FeedbackPage)
     | RecordingPageClicked Int
     | RecordingsResponseReceived Int (Response RecordingsPage)
+    | PlanningErrorsToggled
+    | PlanningErrorsPageClicked Int
+    | PlanningErrorsReceived Int (Response PlanningErrors)
 
 
 
@@ -190,6 +218,7 @@ type alias Flags =
     { snapshot : Snapshot
     , feedback : FeedbackPage
     , recordings : RecordingsPage
+    , planningErrors : PlanningErrors
     }
 
 
@@ -199,12 +228,15 @@ init shared flags =
     , snapshot = flags.snapshot
     , feedback = flags.feedback
     , recordings = flags.recordings
+    , planningErrors = flags.planningErrors
     , selectedGame = Nothing
     , selectedFeedback = Nothing
     , feedbackExpanded = False
     , recordingsExpanded = False
     , feedbackOffset = 0
     , recordingOffset = 0
+    , planningErrorOffset = 0
+    , planningErrorsExpanded = False
     , request = Idle
     , listError = Nothing
     , error = Nothing
@@ -228,6 +260,7 @@ load =
                 }
                 recordingsSelection
             )
+        |> SS.with (planningErrorsSelection 0)
         |> ApiRequest.queryRequest
 
 
@@ -316,6 +349,27 @@ recordingsSelection =
         |> SS.with RecordingsApi.nextOffset
 
 
+planningErrorsSelection : Int -> SelectionSet PlanningErrors RootQuery
+planningErrorsSelection offset =
+    let
+        report : SelectionSet PlanningError Api.Object.PlanningErrorRecord
+        report =
+            SS.succeed PlanningError
+                |> SS.with PlanningErrorApi.receivedAt
+                |> SS.with (PlanningErrorApi.gameId |> SS.mapOrFail LobbyId.fromString)
+                |> SS.with PlanningErrorApi.turnNumber
+                |> SS.with PlanningErrorApi.clientVersion
+                |> SS.with PlanningErrorApi.serverVersion
+                |> SS.with PlanningErrorApi.details
+    in
+    SS.succeed PlanningErrors
+        |> SS.with (PlanningErrorsApi.reports report)
+        |> SS.with PlanningErrorsApi.unreadable
+        |> SS.with PlanningErrorsApi.total
+        |> SS.with PlanningErrorsApi.nextOffset
+        |> Api.Query.adminPlanningErrors { offset = offset }
+
+
 needsLogin : Msg -> Bool
 needsLogin msg =
     case msg of
@@ -329,6 +383,9 @@ needsLogin msg =
             ApiRequest.requiresAdminLogin error
 
         RecordingsResponseReceived _ (Err error) ->
+            ApiRequest.requiresAdminLogin error
+
+        PlanningErrorsReceived _ (Err error) ->
             ApiRequest.requiresAdminLogin error
 
         _ ->
@@ -404,6 +461,9 @@ requiresCurrentDeployment msg =
         RecordingsResponseReceived _ (Err error) ->
             ApiRequest.requiresCurrentDeployment error
 
+        PlanningErrorsReceived _ (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
         _ ->
             False
 
@@ -467,8 +527,10 @@ update msg model =
                         | snapshot = flags.snapshot
                         , feedback = flags.feedback
                         , recordings = flags.recordings
+                        , planningErrors = flags.planningErrors
                         , feedbackOffset = 0
                         , recordingOffset = 0
+                        , planningErrorOffset = 0
                         , request = Idle
                         , listError = Nothing
                         , error = Nothing
@@ -576,6 +638,39 @@ update msg model =
                     }
                         |> E.withOut
 
+        PlanningErrorsToggled ->
+            { model | planningErrorsExpanded = not model.planningErrorsExpanded }
+                |> E.withOut
+
+        PlanningErrorsPageClicked offset ->
+            if model.request /= Idle then
+                model |> E.withOut
+
+            else
+                ( { model | request = LoadingPlanningErrors offset }
+                , planningErrorsSelection offset
+                    |> ApiRequest.queryRequest
+                    |> E.request (PlanningErrorsReceived offset)
+                )
+
+        PlanningErrorsReceived offset result ->
+            case result of
+                Ok reports ->
+                    { model
+                        | planningErrors = reports
+                        , planningErrorOffset = offset
+                        , request = Idle
+                        , listError = Nothing
+                    }
+                        |> E.withOut
+
+                Err error ->
+                    { model
+                        | request = Idle
+                        , listError = Just (ApiRequest.errorMessage error)
+                    }
+                        |> E.withOut
+
 
 
 ----------------------------------------------------------------
@@ -665,6 +760,7 @@ view model =
                         [ feedbackView model
                         , recordingsView model
                         ]
+                   , planningErrorsView model
                    , H.p
                         []
                         [ H.text
@@ -1088,6 +1184,106 @@ feedbackView model =
         (Card.simple
             |> Card.withHeader
                 (CardHeader.simple ("feedback · " ++ String.fromInt model.feedback.total))
+        )
+        content
+
+
+planningErrorsView : Model -> Html Msg
+planningErrorsView model =
+    let
+        page : PlanningErrors
+        page =
+            model.planningErrors
+
+        recordView : PlanningError -> Html Msg
+        recordView report =
+            H.article
+                [ A.css
+                    [ S.col
+                    , S.g2
+                    , S.wrapAnywhere
+                    ]
+                ]
+                [ H.p
+                    [ A.css [ S.textGray5 ] ]
+                    [ H.text report.details ]
+                , H.p
+                    []
+                    [ H.text
+                        ("game "
+                            ++ LobbyId.toString report.gameId
+                            ++ " · turn "
+                            ++ String.fromInt report.turnNumber
+                        )
+                    ]
+                , H.p
+                    []
+                    [ H.text
+                        (Archive.startedAtLabel report.receivedAt
+                            ++ " · client v"
+                            ++ report.clientVersion
+                            ++ " · server v"
+                            ++ report.serverVersion
+                        )
+                    ]
+                ]
+
+        visible : List PlanningError
+        visible =
+            if model.planningErrorsExpanded then
+                page.reports
+
+            else
+                List.take 3 page.reports
+
+        rows : List (Html Msg)
+        rows =
+            List.map recordView visible |> List.intersperse divider
+
+        notices : List (Html Msg)
+        notices =
+            if page.total == 0 then
+                [ H.p [] [ H.text "no planning errors reported." ] ]
+
+            else if page.unreadable > 0 then
+                [ H.p
+                    [ Aria.role Aria.Status ]
+                    [ H.text ("unreadable reports on this page · " ++ String.fromInt page.unreadable) ]
+                ]
+
+            else
+                []
+
+        controls : List (Html Msg)
+        controls =
+            if model.planningErrorsExpanded then
+                [ Button.secondary "show fewer" PlanningErrorsToggled
+                    |> Button.toHtml
+                , pageButtons
+                    { onPage = PlanningErrorsPageClicked
+                    , request = model.request
+                    , offset = model.planningErrorOffset
+                    , nextOffset = page.nextOffset
+                    , pageSize = 20
+                    }
+                ]
+
+            else if page.total > 3 then
+                [ Button.secondary "browse planning errors" PlanningErrorsToggled
+                    |> Button.toHtml
+                ]
+
+            else
+                []
+
+        content : List (Html Msg)
+        content =
+            notices ++ rows ++ controls
+    in
+    Card.toHtml
+        (Card.simple
+            |> Card.withHeader
+                (CardHeader.simple ("planning errors · " ++ String.fromInt page.total))
         )
         content
 

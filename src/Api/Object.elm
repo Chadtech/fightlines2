@@ -217,6 +217,14 @@ type OnMap
     = OnMap
 
 
+type PlanningErrorPage
+    = PlanningErrorPage
+
+
+type PlanningErrorRecord
+    = PlanningErrorRecord
+
+
 type PlayerDeploymentStatus
     = PlayerDeploymentStatus
 

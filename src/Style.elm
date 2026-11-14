@@ -457,7 +457,6 @@ module Style exposing
     , transform
     , transformNone
     , transformOriginTopLeft
-    , transformTransition
     , translateXNeg50pct
     , transparent
     , underline
@@ -3698,11 +3697,6 @@ maxH35Viewport =
 maxH40Viewport : Css.Style
 maxH40Viewport =
     Css.maxHeight (Css.vh 40)
-
-
-transformTransition : Float -> Css.Style
-transformTransition milliseconds =
-    Css.property "transition" ("transform " ++ String.fromFloat milliseconds ++ "ms ease-in-out")
 
 
 childButtons : List Css.Style -> Css.Style
