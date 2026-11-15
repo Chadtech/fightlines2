@@ -31,15 +31,17 @@ function generate(root, bump = false) {
 
 -- Generated from VERSION and VERSION_RELEASED_AT by tools/app-version.cjs. Do not edit manually.
 
+import Time
+
 
 current : String
 current =
     "${version}"
 
 
-releasedAt : String
+releasedAt : Time.Posix
 releasedAt =
-    "${releasedAt.replace('T', ' ').replace('Z', ' utc')}"
+    Time.millisToPosix ${Date.parse(releasedAt)}
 `);
   return version;
 }

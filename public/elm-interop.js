@@ -3,6 +3,35 @@ function newSessionId() {
   return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function browserTimeZone(now) {
+  const minutesPerDay = 24 * 60;
+  const offsetAt = minute => -new Date(minute * 60_000).getTimezoneOffset();
+  const end = Date.UTC(now.getUTCFullYear() + 2, 0, 1) / 60_000;
+  const defaultOffset = offsetAt(0);
+  const eras = [];
+  let offset = defaultOffset;
+
+  // Sample browser offsets from the Unix epoch, then locate each change to the minute.
+  for (let minute = minutesPerDay; minute <= end; minute += minutesPerDay) {
+    const nextOffset = offsetAt(minute);
+    if (nextOffset === offset) continue;
+
+    let previous = minute - minutesPerDay;
+    let next = minute;
+    while (next - previous > 1) {
+      const midpoint = Math.floor((previous + next) / 2);
+      if (offsetAt(midpoint) === offset) previous = midpoint;
+      else next = midpoint;
+    }
+
+    // elm/time checks starts strictly and uses the first matching era.
+    eras.push({ start: previous, offset: nextOffset });
+    offset = nextOffset;
+  }
+
+  return { defaultOffset, eras: eras.reverse() };
+}
+
 function startElmApp(elmApp, handleMessage) {
   const ELM_LOCALSTORAGE_KEY = "fightlines.localStorage";
 
@@ -18,9 +47,11 @@ function startElmApp(elmApp, handleMessage) {
     return {};
   }
 
+  const now = new Date();
   const app = elmApp.init({
     flags: {
-      now: Date.now(),
+      now: now.getTime(),
+      timeZone: browserTimeZone(now),
       isProduction: window.FIGHTLINES_BUILD?.isProduction,
       screenSize: {
         width: window.innerWidth,

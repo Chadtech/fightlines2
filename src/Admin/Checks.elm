@@ -41,6 +41,12 @@ checks url key =
                 flags =
                     Encode.object
                         [ ( "now", Encode.int 1700000000000 )
+                        , ( "timeZone"
+                          , Encode.object
+                                [ ( "defaultOffset", Encode.int 0 )
+                                , ( "eras", Encode.list identity [] )
+                                ]
+                          )
                         , ( "seed", Encode.int 17 )
                         , ( "sessionId", Encode.string "00000000000000000000000000000001" )
                         , ( "screenSize"

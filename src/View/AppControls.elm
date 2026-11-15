@@ -5,15 +5,20 @@ import Html.Styled.Attributes as A
 import OperatingSystem exposing (OperatingSystem)
 import ScreenSize
 import Style as S
+import Time
 import View.AppVersion as AppVersion
 
 
-toHtml : Maybe OperatingSystem -> List (Html msg) -> Html msg
-toHtml operatingSystem controls =
+toHtml :
+    Maybe OperatingSystem
+    -> Time.Zone
+    -> List (Html msg)
+    -> Html msg
+toHtml operatingSystem zone controls =
     let
         content : List (Html msg)
         content =
-            controls ++ [ AppVersion.toHtml ]
+            controls ++ [ AppVersion.toHtml zone ]
 
         mobileVisibility : S.Style
         mobileVisibility =

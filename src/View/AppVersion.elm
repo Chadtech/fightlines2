@@ -3,13 +3,20 @@ module View.AppVersion exposing (toHtml)
 import AppVersion
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import LocalTime
 import Style as S
+import Time
 
 
-toHtml : Html msg
-toHtml =
+toHtml : Time.Zone -> Html msg
+toHtml zone =
+    let
+        releaseTime : String
+        releaseTime =
+            LocalTime.formatSeconds zone AppVersion.releasedAt
+    in
     H.span
-        [ A.title ("version " ++ AppVersion.current ++ " released " ++ AppVersion.releasedAt)
+        [ A.title ("version " ++ AppVersion.current ++ " released " ++ releaseTime)
         , A.css
             [ S.textGray4
             , S.textShadowBlack
@@ -24,5 +31,5 @@ toHtml =
                     ]
                 ]
             ]
-            [ H.text (" · " ++ AppVersion.releasedAt) ]
+            [ H.text (" · " ++ releaseTime) ]
         ]

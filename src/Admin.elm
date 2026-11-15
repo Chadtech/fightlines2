@@ -132,6 +132,7 @@ init value url key =
                 shared =
                     Shared.init
                         flags.now
+                        flags.timeZone
                         flags.seed
                         flags.sessionId
                         flags.operatingSystem
@@ -651,6 +652,7 @@ view page =
         overlays =
             [ AppControls.toHtml
                 (Maybe.map .operatingSystem (getShared page))
+                (Maybe.map .timeZone (getShared page) |> Maybe.withDefault Time.utc)
                 controls
             ]
 

@@ -339,38 +339,33 @@ join model =
         )
 
 
-activityText : Maybe Int -> String
-activityText seconds =
+activityText : Int -> String
+activityText elapsed =
     let
         ago : Int -> String -> String
         ago count unit =
             "last game started " ++ String.fromInt count ++ " " ++ unit ++ " ago"
     in
-    case seconds of
-        Nothing ->
-            "no games started yet"
+    if elapsed < 60 then
+        "last game started just now"
 
-        Just elapsed ->
-            if elapsed < 60 then
-                "last game started just now"
+    else if elapsed < 120 then
+        ago 1 "minute"
 
-            else if elapsed < 120 then
-                ago 1 "minute"
+    else if elapsed < 3600 then
+        ago (elapsed // 60) "minutes"
 
-            else if elapsed < 3600 then
-                ago (elapsed // 60) "minutes"
+    else if elapsed < 7200 then
+        ago 1 "hour"
 
-            else if elapsed < 7200 then
-                ago 1 "hour"
+    else if elapsed < 86400 then
+        ago (elapsed // 3600) "hours"
 
-            else if elapsed < 86400 then
-                ago (elapsed // 3600) "hours"
+    else if elapsed < 172800 then
+        ago 1 "day"
 
-            else if elapsed < 172800 then
-                ago 1 "day"
-
-            else
-                ago (elapsed // 86400) "days"
+    else
+        ago (elapsed // 86400) "days"
 
 
 handoff : Graphql.Http.Error Snapshot -> Eff Msg
@@ -743,20 +738,30 @@ waitingStatus text =
 
 waitingContent : Maybe Int -> Button.Button Msg -> List (Html Msg)
 waitingContent lastGameSecondsAgo cancel =
-    [ waitingStatus "finding a game…"
-    , H.p
-        [ A.css
-            [ S.m0
-            , S.textAlignCenter
-            , S.py3
-            ]
-        ]
-        [ H.text (activityText lastGameSecondsAgo)
-        ]
-    , cancel
-        |> Button.fullWidth
-        |> Button.toHtml
-    ]
+    let
+        recentActivity : List (Html Msg)
+        recentActivity =
+            case lastGameSecondsAgo of
+                Nothing ->
+                    []
+
+                Just elapsed ->
+                    [ H.p
+                        [ A.css
+                            [ S.m0
+                            , S.textAlignCenter
+                            , S.py3
+                            ]
+                        ]
+                        [ H.text (activityText elapsed) ]
+                    ]
+    in
+    waitingStatus "finding a game…"
+        :: recentActivity
+        ++ [ cancel
+                |> Button.fullWidth
+                |> Button.toHtml
+           ]
 
 
 readyContent : ReadyMatch -> Int -> List (Html Msg)

@@ -233,7 +233,13 @@ clockFlagChecks =
     let
         commonFlags : List ( String, Encode.Value )
         commonFlags =
-            [ ( "isProduction", Encode.bool False )
+            [ ( "timeZone"
+              , Encode.object
+                    [ ( "defaultOffset", Encode.int 0 )
+                    , ( "eras", Encode.list identity [] )
+                    ]
+              )
+            , ( "isProduction", Encode.bool False )
             , ( "screenSize"
               , Encode.object
                     [ ( "width", Encode.int 1280 )
@@ -289,6 +295,12 @@ screenSizeFlagChecks =
         baseFields =
             [ ( "now"
               , Encode.int 1700000000123
+              )
+            , ( "timeZone"
+              , Encode.object
+                    [ ( "defaultOffset", Encode.int 0 )
+                    , ( "eras", Encode.list identity [] )
+                    ]
               )
             , ( "isProduction"
               , Encode.bool False

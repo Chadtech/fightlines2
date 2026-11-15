@@ -49,6 +49,7 @@ import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import LobbyId exposing (LobbyId)
+import LocalTime
 import Shared
 import Style as S
 import Time
@@ -851,7 +852,7 @@ view model =
                         , recordingsView model
                         ]
                    , planningErrorsView model
-                   , AnalyticsView.view model.analytics |> H.map AnalyticsViewMsg
+                   , AnalyticsView.view model.shared.timeZone model.analytics |> H.map AnalyticsViewMsg
                    , H.p
                         []
                         [ H.text
@@ -1180,7 +1181,7 @@ feedbackView model =
                     ]
                 ]
                 [ Button.secondary
-                    (Archive.startedAtLabel record.submittedAt
+                    (LocalTime.timestampLabel model.shared.timeZone record.submittedAt
                         ++ " · v"
                         ++ record.serverVersion
                     )
@@ -1297,7 +1298,7 @@ planningErrorsView model =
                 , H.p
                     []
                     [ H.text
-                        (Archive.startedAtLabel report.receivedAt
+                        (LocalTime.timestampLabel model.shared.timeZone report.receivedAt
                             ++ " · client v"
                             ++ report.clientVersion
                             ++ " · server v"
@@ -1400,7 +1401,7 @@ recordingsView model =
                             ]
                         , H.p
                             []
-                            [ H.text (Archive.startedAtLabel game.startedAt)
+                            [ H.text (LocalTime.timestampLabel model.shared.timeZone game.startedAt)
                             ]
                         ]
 

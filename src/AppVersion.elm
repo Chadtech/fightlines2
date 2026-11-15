@@ -5,12 +5,14 @@ module AppVersion exposing
 
 -- Generated from VERSION and VERSION_RELEASED_AT by tools/app-version.cjs. Do not edit manually.
 
+import Time
+
 
 current : String
 current =
-    "28"
+    "29"
 
 
-releasedAt : String
+releasedAt : Time.Posix
 releasedAt =
-    "2026-11-15 07:50:36 utc"
+    Time.millisToPosix 1794764483000

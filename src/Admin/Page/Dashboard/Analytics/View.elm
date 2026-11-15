@@ -16,6 +16,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Keyed as Keyed
 import Style as S
+import Time
 import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
@@ -46,8 +47,8 @@ type Controls
 ----------------------------------------------------------------
 
 
-view : Analytics -> Html Msg
-view analytics =
+view : Time.Zone -> Analytics -> Html Msg
+view zone analytics =
     let
         status : List (Html Msg)
         status =
@@ -85,13 +86,13 @@ view analytics =
                     ]
 
                 Analytics.Loaded loaded ->
-                    analyticsContents Ready (Just loaded)
+                    analyticsContents zone Ready (Just loaded)
 
                 Analytics.Loading pending ->
-                    analyticsContents Busy pending.previous
+                    analyticsContents zone Busy pending.previous
 
                 Analytics.Failed failure ->
-                    analyticsContents Ready failure.previous
+                    analyticsContents zone Ready failure.previous
 
         cardContent : List (Html Msg)
         cardContent =
@@ -115,16 +116,17 @@ retryHtmlId =
 
 
 analyticsContents :
-    Controls
+    Time.Zone
+    -> Controls
     -> Maybe LoadedResults
     -> List (Html Msg)
-analyticsContents controls previous =
+analyticsContents zone controls previous =
     case previous of
         Just analytics ->
             analyticsLogControls
                 controls
                 (LoadedResults.results analytics)
-                :: analyticsResults analytics
+                :: analyticsResults zone analytics
                 :: analyticsPagination controls analytics
 
         Nothing ->
@@ -196,8 +198,8 @@ analyticsLogControls controls results =
         content
 
 
-analyticsResults : LoadedResults -> Html Msg
-analyticsResults analytics =
+analyticsResults : Time.Zone -> LoadedResults -> Html Msg
+analyticsResults zone analytics =
     let
         results : QueryResults
         results =
@@ -227,7 +229,7 @@ analyticsResults analytics =
         rows : List (Html Msg)
         rows =
             results.records
-                |> List.map analyticsRow
+                |> List.map (analyticsRow zone)
                 |> List.intersperse Divider.toHtml
 
         content : List (Html Msg)
@@ -311,8 +313,8 @@ analyticsButton controls label location =
                 |> Button.toHtml
 
 
-analyticsRow : Record -> Html Msg
-analyticsRow record =
+analyticsRow : Time.Zone -> Record -> Html Msg
+analyticsRow zone record =
     H.details
         [ A.css [ S.wrapAnywhere ] ]
         [ H.summary
@@ -325,7 +327,7 @@ analyticsRow record =
             [ H.text (Record.title record)
             , H.span
                 [ A.css [ S.textGray4 ] ]
-                [ H.text (" · " ++ Record.receiptLabel record) ]
+                [ H.text (" · " ++ Record.receiptLabel zone record) ]
             ]
         , H.pre
             [ A.css

@@ -84,9 +84,8 @@ acknowledgment. Both scenes share the continue, see-map, and automatic-close con
 
 Open the game and choose **match making** to find a human opponent.
 Enter your user name and choose **find a game**. The waiting page shows the
-existing activity bar, **cancel**, and how recently the last match making game
-started. This is recent activity, rather than a predicted waiting time. With no
-matches since the server started, it shows **no games started yet**.
+activity bar and **cancel**. If a match making game has started since the
+server started, the page also shows how long ago that game started.
 When another player joins, a **get ready** step shows your opponent and the
 randomly selected map, with a shared 16-second countdown. Both enter the game
 automatically when it ends, with random sides. Refreshing recovers your queue

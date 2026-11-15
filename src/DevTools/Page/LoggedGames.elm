@@ -20,8 +20,10 @@ import Graphql.Http
 import Graphql.SelectionSet exposing (SelectionSet)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import LocalTime
 import Shared
 import Style as S
+import Time
 import View.Aria as Aria
 import View.Card as Card
 import View.CardHeader as CardHeader
@@ -99,7 +101,7 @@ view model =
                 ]
 
             else
-                List.map entryRow model.entries
+                List.map (entryRow model.shared.timeZone) model.entries
 
         content : List (Html msg)
         content =
@@ -127,14 +129,14 @@ view model =
     ]
 
 
-entryRow : Entry -> Html msg
-entryRow entry =
+entryRow : Time.Zone -> Entry -> Html msg
+entryRow zone entry =
     let
         content : List (Html msg)
         content =
             case entry of
                 Readable game ->
-                    gameContent game
+                    gameContent zone game
 
                 Unreadable error ->
                     [ H.h2
@@ -158,14 +160,14 @@ entryRow entry =
         content
 
 
-gameContent : Game -> List (Html msg)
-gameContent game =
+gameContent : Time.Zone -> Game -> List (Html msg)
+gameContent zone game =
     [ H.h2
         []
         [ H.text game.name ]
     , H.p
         []
-        [ H.text (Archive.startedAtLabel game.startedAt ++ " · " ++ MapId.label game.mapType) ]
+        [ H.text (LocalTime.timestampLabel zone game.startedAt ++ " · " ++ MapId.label game.mapType) ]
     , H.p
         []
         [ H.text (String.join " · " (List.map Archive.playerLabel game.players)) ]

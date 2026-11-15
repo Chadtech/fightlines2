@@ -64,10 +64,13 @@ import Url exposing (Url)
 by the shared clock subscription. `origin` contains the scheme, hostname, and
 optional port for constructing complete application links. `screenSize` is the
 viewport size from startup flags or the last page to measure it.
+`timeZone` comes from the browser's startup offsets and is used to display
+calendar dates and clock times.
 -}
 type alias Model =
     { deployment : Deployment.Model
     , now : Time.Posix
+    , timeZone : Time.Zone
     , key : Navigation.Key
     , screenSize : ScreenSize
     , operatingSystem : OperatingSystem
@@ -103,6 +106,7 @@ type Msg
 
 init :
     Time.Posix
+    -> Time.Zone
     -> Random.Seed
     -> SessionId
     -> OperatingSystem
@@ -111,7 +115,7 @@ init :
     -> Url
     -> Navigation.Key
     -> Model
-init now seed sessionId operatingSystem screenSize localStorage url key =
+init now timeZone seed sessionId operatingSystem screenSize localStorage url key =
     let
         ( features, featuresError ) =
             Features.init localStorage
@@ -124,6 +128,7 @@ init now seed sessionId operatingSystem screenSize localStorage url key =
     in
     { deployment = Deployment.init url
     , now = now
+    , timeZone = timeZone
     , key = key
     , screenSize = screenSize
     , operatingSystem = operatingSystem

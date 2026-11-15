@@ -66,6 +66,7 @@ main =
                     shared =
                         Shared.init
                             (Time.millisToPosix 1700000000000)
+                            Time.utc
                             (Random.initialSeed 42)
                             SessionId.test
                             OperatingSystem.Unknown

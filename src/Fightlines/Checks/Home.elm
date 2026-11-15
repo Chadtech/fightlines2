@@ -72,6 +72,7 @@ main =
                     shared =
                         Shared.init
                             initialTime
+                            Time.utc
                             (Random.initialSeed 42)
                             SessionId.test
                             OperatingSystem.Unknown

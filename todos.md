@@ -3,14 +3,13 @@
 ## doing now
 
 ## Bugs
-- I set up a field gun ambush on an infantry, but he ran up and attack moved and destroyed the field gun. Should that have happened?
-- UI not clear about doing infantry moves when unloading from truck, a dialog should appear?
+
 
 ## Immediately
-- if there was no previous game on match making, just dont show any text, rather than say no previous game
 - invite match makers to play against ai
 - refactor screen size handling, take it out of shared
 - Review button module and feedback thing
+- More clarity on what is going on when attacked by unknown field guns
 - Frontend AI engine
 - Tutorial missions
 - Key commands section in settings

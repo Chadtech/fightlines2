@@ -47,6 +47,7 @@ initialize _ url key =
         (checks
             (Shared.init
                 (Time.millisToPosix 1700000000000)
+                Time.utc
                 (Random.initialSeed 17)
                 SessionId.test
                 OperatingSystem.Unknown

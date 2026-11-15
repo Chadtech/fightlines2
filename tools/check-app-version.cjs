@@ -27,7 +27,7 @@ test('builds preserve release identity; bumps update the version and UTC release
     assert.equal(version(), '9\n');
     assert.match(elm(), /"9"/);
     assert.equal(releasedAt(), '2026-10-01T12:30:45Z\n');
-    assert.match(elm(), /"2026-10-01 12:30:45 utc"/);
+    assert.ok(elm().includes(`Time.millisToPosix ${Date.parse(releasedAt().trim())}`));
     const before = Math.floor(Date.now() / 1000) * 1000;
     assert.equal(generate(root, true), '10');
     const after = Date.now();
@@ -40,7 +40,7 @@ test('builds preserve release identity; bumps update the version and UTC release
     assert.equal(generate(root), '10');
     assert.equal(version(), '10\n');
     assert.equal(releasedAt(), bumpedRelease);
-    assert.ok(elm().includes(bumpedRelease.trim().replace('T', ' ').replace('Z', ' utc')));
+    assert.ok(elm().includes(`Time.millisToPosix ${Date.parse(bumpedRelease.trim())}`));
   });
 });
 

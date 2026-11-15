@@ -143,10 +143,10 @@ Rust embeds it at compile time; `make app-version` generates the committed
 the version's release timestamp as `YYYY-MM-DDTHH:mm:ssZ`. Frontend builds and
 checks regenerate the constants without changing that timestamp. The label beside
 the upper-left speaker and the dev panel show the frontend's compiled version and
-release time as `YYYY-MM-DD HH:mm:ss utc`. The mobile layout hides the floating
-speaker and version label. Every structured server diagnostic
-includes the backend's compiled `version` field, so an old browser tab can be
-compared with the deployed server.
+release time as `YYYY-MM-DD HH:mm:ss` in the browser's time zone. The mobile
+layout hides the floating speaker and version label. Every structured server
+diagnostic includes the backend's compiled `version` field, so an old browser
+tab can be compared with the deployed server.
 
 The check-in workflow runs `make bump-version` once before checks and approval:
 `1` becomes `2`, then `3`, and so on. This updates `VERSION`, records the current

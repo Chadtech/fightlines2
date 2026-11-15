@@ -7,8 +7,9 @@ module Admin.Page.Dashboard.Analytics.Record exposing
 
 import Api.Object
 import Api.Object.AnalyticsRecord as RecordApi
-import Game.Archive as Archive
 import Graphql.SelectionSet as SS exposing (SelectionSet)
+import LocalTime
+import Time
 
 
 type alias Record =
@@ -40,6 +41,6 @@ title record =
             record.name
 
 
-receiptLabel : Record -> String
-receiptLabel record =
-    Archive.startedAtLabel record.receivedAt ++ " · server v" ++ record.version
+receiptLabel : Time.Zone -> Record -> String
+receiptLabel zone record =
+    LocalTime.timestampLabel zone record.receivedAt ++ " · server v" ++ record.version

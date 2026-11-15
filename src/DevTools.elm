@@ -37,6 +37,7 @@ import Random
 import Shared
 import Style as S
 import Subscriptions
+import Time
 import Url
     exposing
         ( Url
@@ -140,6 +141,7 @@ init value url key =
                 shared =
                     Shared.init
                         flags.now
+                        flags.timeZone
                         flags.seed
                         flags.sessionId
                         flags.operatingSystem
@@ -648,6 +650,7 @@ view page =
         overlayContent =
             [ AppControls.toHtml
                 (Maybe.map .operatingSystem shared)
+                (Maybe.map .timeZone shared |> Maybe.withDefault Time.utc)
                 audioContent
             ]
 
@@ -697,6 +700,7 @@ dialog page =
         Just shared ->
             if shared.devPanelOpen then
                 DevPanel.dialog
+                    shared.timeZone
                     (Shared.devPanelErrors shared)
                     shared.features
                     shared.devPanel

@@ -8,7 +8,7 @@ const vm = require('node:vm');
 
 const key = 'fightlines.localStorage';
 const interopSource = readFileSync('public/elm-interop.js', 'utf8');
-function boot(initial, { readFails = false, writeFails = false, randomSample = 0.5, now = 1700000000123, build, entryPoint = 'Fightlines', clipboardFails = false, thumbnailFails = false } = {}) {
+function boot(initial, { readFails = false, writeFails = false, randomSample = 0.5, now = 1700000000123, offsetAt = () => 0, build, entryPoint = 'Fightlines', clipboardFails = false, thumbnailFails = false } = {}) {
   const stored = new Map(initial === undefined ? [] : [[key, initial]]);
   const messages = [];
   const warnings = [];
@@ -76,7 +76,13 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
       if (thumbnailFails) throw new Error('thumbnail failed');
       return 'test-png';
     },
-    Date: { now: () => now },
+    Date: class extends Date {
+      constructor(milliseconds = now) {
+        super(milliseconds);
+      }
+      static now() { return now; }
+      getTimezoneOffset() { return offsetAt(this.getTime()); }
+    },
     Math: { floor: Math.floor, min: Math.min, random: () => randomSample },
     localStorage: storage,
     document: { addEventListener() {}, getElementById(id) { return dialogs.get(id); } },
@@ -125,6 +131,19 @@ async function checkInterop() {
         'startup flags carry the actual browser viewport dimensions');
     }
   }
+  const spring = Date.UTC(2026, 2, 8, 7);
+  const fall = Date.UTC(2026, 10, 1, 6);
+  const { timeZone } = boot(undefined, {
+    now: Date.UTC(2026, 6, 1),
+    offsetAt: milliseconds => milliseconds >= spring && milliseconds < fall ? 240 : 300,
+  }).flags;
+  assert.deepEqual(JSON.parse(JSON.stringify(timeZone)), {
+    defaultOffset: -300,
+    eras: [
+      { start: fall / 60_000 - 1, offset: -300 },
+      { start: spring / 60_000 - 1, offset: -240 },
+    ],
+  }, 'startup flags carry newest-first offsets effective at each transition minute');
   assert.equal(boot(undefined).flags.isProduction, undefined);
   const sessionId = boot(undefined).flags.sessionId;
   assert.match(sessionId, /^[0-9a-f]{32}$/);

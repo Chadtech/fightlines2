@@ -5,6 +5,7 @@ module Fightlines.Flags exposing
 
 import Json.Decode as Decode exposing (Decoder)
 import LocalStorage exposing (LocalStorage)
+import LocalTime
 import OperatingSystem exposing (OperatingSystem)
 import Random
 import ScreenSize exposing (ScreenSize)
@@ -14,6 +15,7 @@ import Time
 
 type alias Flags =
     { now : Time.Posix
+    , timeZone : Time.Zone
     , isProduction : Bool
     , screenSize : ScreenSize
     , operatingSystem : OperatingSystem
@@ -25,9 +27,10 @@ type alias Flags =
 
 decoder : Decoder Flags
 decoder =
-    Decode.map7
+    Decode.map8
         Flags
         (Decode.field "now" (Decode.map Time.millisToPosix Decode.int))
+        (Decode.field "timeZone" LocalTime.decoder)
         (Decode.field "isProduction" Decode.bool)
         (Decode.field "screenSize" ScreenSize.decoder)
         (Decode.field "operatingSystem" OperatingSystem.decoder)

@@ -12,8 +12,10 @@ import AppVersion
 import Features exposing (Feature)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import LocalTime
 import NonEmptyList
 import Style as S
+import Time
 import View.Aria as Aria
 import View.Button as Button
 import View.Checkbox as Checkbox
@@ -86,14 +88,24 @@ init =
 
 {-| Errors are presentation data supplied by the caller, independent of Shared.
 -}
-dialog : List Error -> Features.Model -> Model -> Dialog Msg
-dialog errors features model =
+dialog :
+    Time.Zone
+    -> List Error
+    -> Features.Model
+    -> Model
+    -> Dialog Msg
+dialog zone errors features model =
+    let
+        releaseTime : String
+        releaseTime =
+            LocalTime.formatSeconds zone AppVersion.releasedAt
+    in
     Dialog.make htmlId
         "dev panel"
         Canceled
         [ H.p
             []
-            [ H.text ("frontend version " ++ AppVersion.current ++ " · released " ++ AppVersion.releasedAt) ]
+            [ H.text ("frontend version " ++ AppVersion.current ++ " · released " ++ releaseTime) ]
         , H.div
             [ A.css
                 [ S.grid

@@ -70,6 +70,7 @@ main =
                         checks
                             (Shared.init
                                 (Time.millisToPosix 1700000000000)
+                                Time.utc
                                 (Random.initialSeed 0)
                                 SessionId.test
                                 OperatingSystem.Unknown

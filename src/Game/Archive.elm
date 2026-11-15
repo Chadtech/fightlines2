@@ -7,7 +7,6 @@ module Game.Archive exposing
     , entrySelection
     , playerLabel
     , selection
-    , startedAtLabel
     , statusLabel
     )
 
@@ -25,7 +24,6 @@ import Api.Union.LoggedGameEntry as EntryApi
 import Game.LogId as GameLogId exposing (GameLogId)
 import Game.PlayerNumber as PlayerNumber
 import Graphql.SelectionSet as SS exposing (SelectionSet)
-import Time
 
 
 
@@ -145,64 +143,6 @@ statusLabel status =
 
         Draw ->
             "draw"
-
-
-startedAtLabel : String -> String
-startedAtLabel timestamp =
-    let
-        pad : Int -> String
-        pad value =
-            String.padLeft 2 '0' (String.fromInt value)
-
-        month : Time.Month -> Int
-        month value =
-            case value of
-                Time.Jan ->
-                    1
-
-                Time.Feb ->
-                    2
-
-                Time.Mar ->
-                    3
-
-                Time.Apr ->
-                    4
-
-                Time.May ->
-                    5
-
-                Time.Jun ->
-                    6
-
-                Time.Jul ->
-                    7
-
-                Time.Aug ->
-                    8
-
-                Time.Sep ->
-                    9
-
-                Time.Oct ->
-                    10
-
-                Time.Nov ->
-                    11
-
-                Time.Dec ->
-                    12
-
-        format : Int -> String
-        format milliseconds =
-            let
-                time : Time.Posix
-                time =
-                    Time.millisToPosix milliseconds
-            in
-            String.fromInt (Time.toYear Time.utc time) ++ "-" ++ pad (month (Time.toMonth Time.utc time)) ++ "-" ++ pad (Time.toDay Time.utc time) ++ " " ++ pad (Time.toHour Time.utc time) ++ ":" ++ pad (Time.toMinute Time.utc time) ++ " utc"
-    in
-    timestamp |> String.toInt |> Maybe.map format |> Maybe.withDefault "start time unavailable"
 
 
 playerLabel : Player -> String
