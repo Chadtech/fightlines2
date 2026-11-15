@@ -40,6 +40,11 @@ adminLogout =
     Object.selectionForField "Bool" "adminLogout" [] Decode.bool
 
 
+adminSendTestSms : SelectionSet Bool RootMutation
+adminSendTestSms =
+    Object.selectionForField "Bool" "adminSendTestSms" [] Decode.bool
+
+
 type alias JoinMatchMakingRequiredArguments =
     { name : String }
 

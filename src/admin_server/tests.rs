@@ -180,6 +180,7 @@ async fn endpoints_protect_private_data_and_keep_player_identity_separate() -> T
     }
     for query in [
         "{ adminDashboard { concurrentGames } }",
+        "mutation { adminSendTestSms }",
         "{ adminFeedback(offset:0) { total } }",
         "{ adminRecordings(offset:0) { total } }",
         "{ adminPlanningErrors(offset:0) { total } }",
@@ -216,6 +217,24 @@ async fn endpoints_protect_private_data_and_keep_player_identity_separate() -> T
     let body: Value = web_test::read_body_json(response).await;
     assert_eq!(body["data"]["adminLogin"], "SIGNED_IN");
     assert!(!body.to_string().contains(PASSWORD));
+    let test_sms = "mutation { adminSendTestSms }";
+    let wrong_origin: Value = web_test::read_body_json(send!(
+        test_sms,
+        Some(cookie.clone()),
+        "https://attacker.test"
+    ))
+    .await;
+    assert!(wrong_origin.get("errors").is_some(), "{wrong_origin}");
+    let disabled: Value = web_test::read_body_json(send!(
+        test_sms,
+        Some(cookie.clone()),
+        "https://fightlines.test"
+    ))
+    .await;
+    assert_eq!(
+        disabled["errors"][0]["message"],
+        "matchmaking sms is disabled."
+    );
     let overview = "{ adminDashboard { concurrentGames waitingLobbies retainedFinishedGames entries { id busy } } adminFeedback(offset:0) { total } adminRecordings(offset:0) { total } }";
     let body: Value = web_test::read_body_json(send!(
         overview,

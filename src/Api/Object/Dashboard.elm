@@ -46,6 +46,11 @@ retainedFinishedGames =
     Object.selectionForField "Int" "retainedFinishedGames" [] Decode.int
 
 
+matchmakingSmsEnabled : SelectionSet Bool Api.Object.Dashboard
+matchmakingSmsEnabled =
+    Object.selectionForField "Bool" "matchmakingSmsEnabled" [] Decode.bool
+
+
 entries :
     SelectionSet decodesTo Api.Object.AdminEntry
     -> SelectionSet (List decodesTo) Api.Object.Dashboard

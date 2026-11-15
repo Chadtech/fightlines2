@@ -19,13 +19,14 @@ identified by their filename stems. Add a valid `lowercase-hyphenated-id.json`
 file to add a map without rebuilding the server or frontend.
 Each definition has `"releaseStatus": "Draft"` or `"Released"`; an omitted status
 defaults to `Draft`. Public map lists and new games accept only released maps.
-Crossroads and Winter Front are drafts. Localhost requests with `--map-editor`
-can list, select, and playtest all maps. Remote requests remain limited to released
-maps even when the editor is enabled.
+Crossroads and Winter Front are drafts. Localhost requests with
+`--map-editor` can list, select, and playtest all maps. Remote requests remain
+limited to released maps even when the editor is enabled.
 Released maps with `"matchMaking": true` form the public match making pool.
 The field defaults to false. Match making always excludes drafts, including for
 local editor users, and chooses uniformly from the eligible maps. The current
-pool is Supply Point, Ridgeway, Three Crossings, Convoy Country, and Bastion Pass.
+pool is Supply Point, Ridgeway, Three Crossings, Convoy Country, Bastion Pass,
+and Frostbend.
 In the editor, toggle
 **match making** and save to change a map's eligibility without a rebuild.
 An empty pool prevents new queue entries and games, with an explicit error;
@@ -135,9 +136,9 @@ when a map is edited. The files in [`maps/`](../maps/) are the source of truth.
 The released catalog includes **supply point**, **el alamein**, **blood gulch**,
 **sidewinder**, **black forest**, **ridgeway**,
 **three crossings**, **lake of pennsylvania**, **convoy country**, **bastion pass**,
-or **tobruk**. Crossroads and Winter Front remain available for local authoring
-and playtesting. Each map has its own starting
-force, with full starting resources.
+**frostbend**, and **tobruk**. Crossroads and Winter Front remain available for local
+authoring and playtesting. Each map has its own starting force, with full
+starting resources.
 Each `maps/*.json` definition includes a `description` shown with its preview in
 the map library. The editor API preserves this text when saving battlefield edits.
 The catalog below reflects the current map files. Counts are per player;
@@ -156,6 +157,7 @@ asymmetric forces use **red / blue**. All layouts remain editable.
 | Lake Of Pennsylvania | 40 × 29 | 4 / 6 | 2 / 3 | 2 / 3 | 4 / 3 | 12 / 15 |
 | Convoy Country | 25 × 19 | 3 | 2 | 1 | 2 | 8 |
 | Bastion Pass | 25 × 21 | 5 | 2 | 2 | 2 | 11 |
+| Frostbend | 27 × 21 | 5 | 2 | 3 | 2 | 12 |
 | Tobruk | 29 × 21 | 6 | 5 / 2 | 2 / 3 | 3 / 2 | 16 / 13 |
 | Winter Front | 64 × 64 | 64 | 24 | 16 | 24 | 128 |
 
@@ -234,6 +236,10 @@ gun and trucks near the base. Depot squares stay clear.
   A long road follows the southern bend, with a shorter route through the central
   woods. Exposed vehicle routes compete with slower concealed approaches;
   scattered supply and fuel depots support both.
+- **Frostbend**: a smaller snowy horseshoe inspired by Sidewinder, with a
+  wooded saddle across the middle and a long convoy road around the south.
+  Each side has a rear supply and fuel depot. Contested supply depots sit
+  in the saddle and at the bend, with a fuel depot at the southern tip.
 - **Black Forest**: two irregular clearings separated by thick forest, inspired
   by Age of Empires. Scattered trees and small grass pockets soften sections of the
   tree line, offering concealed infiltration positions. A single narrow, winding

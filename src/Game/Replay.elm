@@ -66,7 +66,7 @@ import Style as S
 import Time
 import Util.List as ListUtil
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Checkbox as Checkbox
 import View.Dialog as Dialog exposing (Dialog)
 import View.Layout as Layout
@@ -1578,7 +1578,7 @@ controls model =
         playing =
             isPlaying model && not (isPaused model)
 
-        playButton : Button.Button Msg
+        playButton : Button Msg
         playButton =
             if busy || (model.game.turnCount == 0) then
                 Button.disabled "play"
@@ -1589,7 +1589,7 @@ controls model =
             else
                 Button.primary "play" PlayClicked
 
-        previous : Button.Button Msg
+        previous : Button Msg
         previous =
             if busy || (model.position.turn == 0) then
                 Button.disabled "previous"
@@ -1597,7 +1597,7 @@ controls model =
             else
                 Button.secondary "previous" PreviousClicked
 
-        next : Button.Button Msg
+        next : Button Msg
         next =
             if busy || (model.position.turn >= model.game.turnCount) then
                 Button.disabled "next"
@@ -1616,66 +1616,33 @@ controls model =
                     "turn " ++ String.fromInt turn
             }
 
-        loadingStatus : String
-        loadingStatus =
-            if busy then
-                "loading turn…"
-
-            else
-                ""
-
-        feedback : Html Msg
-        feedback =
-            case model.request of
-                Failed _ message ->
-                    H.div
-                        []
-                        [ H.p
-                            [ Aria.role Aria.Status ]
-                            [ H.text message ]
-                        , Button.secondary "retry" RetryClicked
-                            |> Button.toHtml
-                        ]
-
-                _ ->
-                    H.p
-                        [ Aria.role Aria.Status
-                        , A.css [ S.h6 ]
-                        ]
-                        [ H.text loadingStatus ]
-
         turnSelector : Html Msg
         turnSelector =
-            H.label
+            H.div
                 [ A.css
-                    [ S.col
-                    , S.g1
-                    , S.flex1
-                    , S.minW0
+                    [ S.w40
+                    , S.maxWFull
                     ]
                 ]
-                [ H.text "turn"
-                , Select.new
+                [ Select.new
                     { selected = model.position.turn
                     , options = List.map turnOption (List.range 0 model.game.turnCount)
                     , onChange = TurnSelected
                     }
+                    |> Select.accessibleLabel "turn"
                     |> Select.disabled busy
                     |> Select.toHtml
                 ]
 
         playerSelector : Html Msg
         playerSelector =
-            H.label
+            H.div
                 [ A.css
-                    [ S.col
-                    , S.g1
-                    , S.flex1
-                    , S.minW0
+                    [ S.widthValue "10.75rem"
+                    , S.maxWFull
                     ]
                 ]
-                [ H.text "view"
-                , Select.new
+                [ Select.new
                     { selected = model.position.player
                     , options =
                         [ { value = PlayerNumber.Player1
@@ -1687,6 +1654,7 @@ controls model =
                         ]
                     , onChange = PlayerSelected
                     }
+                    |> Select.accessibleLabel "view"
                     |> Select.disabled busy
                     |> Select.toHtml
                 ]
@@ -1695,68 +1663,164 @@ controls model =
         [ H.div
             [ A.css
                 [ S.col
-                , S.g2
                 , S.minW0
-                , S.flex1
+                , S.maxWFull
                 ]
             ]
-            [ H.div
-                [ A.css
-                    [ S.row
-                    , S.flexWrap
-                    , S.justifySpaceBetween
-                    , S.g2
-                    ]
-                ]
-                [ H.p
-                    []
-                    [ H.text model.game.name ]
-                , H.a
-                    [ A.href model.returnUrl
-                    , A.css [ S.link ]
-                    ]
-                    [ H.text "back to recordings" ]
-                ]
+            [ controlsHeader
+                { gameName = model.game.name
+                , returnUrl = model.returnUrl
+                , zoomPercent = round (model.navigation.zoom * 100)
+                }
             , H.div
                 [ A.css
                     [ S.row
                     , S.flexWrap
-                    , S.g2
+                    , S.itemsCenter
+                    , S.g1
+                    , S.mt2
                     ]
                 ]
-                [ Button.toHtml previous
-                , Button.secondary "message history" ChatHistoryClicked
-                    |> Button.withHtmlId replayChatButtonHtmlId
-                    |> Button.toHtml
-                , Button.toHtml playButton
-                , Button.toHtml next
-                ]
-            , H.div
-                [ A.css
-                    [ S.row
-                    , S.g2
+                [ H.div
+                    [ Aria.role Aria.Group
+                    , Aria.label "playback"
+                    , A.css
+                        [ S.row
+                        , S.flexWrap
+                        , S.g1
+                        ]
+                    ]
+                    [ Button.toHtml previous
+                    , Button.toHtml playButton
+                    , Button.toHtml next
+                    ]
+                , H.div
+                    [ A.css
+                        [ S.row
+                        , S.flexWrap
+                        , S.g1
+                        ]
+                    ]
+                    [ turnSelector
+                    , playerSelector
+                    ]
+                , H.div
+                    [ A.css
+                        [ S.row
+                        , S.flexWrap
+                        , S.g2
+                        , S.compactViewport [ S.minH11 ]
+                        ]
+                    ]
+                    [ Checkbox.new
+                        { label = "fog of war"
+                        , checked = fogOfWar
+                        , onCheck = FogOfWarChanged
+                        }
+                        |> Checkbox.disabled busy
+                        |> Checkbox.toHtml [ H.text "fog of war" ]
+                    , Checkbox.new
+                        { label = "show orders"
+                        , checked = model.showOrders
+                        , onCheck = ShowOrdersChanged
+                        }
+                        |> Checkbox.toHtml [ H.text "show orders" ]
                     ]
                 ]
-                [ turnSelector
-                , playerSelector
-                ]
-            , Checkbox.new
-                { label = "fog of war"
-                , checked = fogOfWar
-                , onCheck = FogOfWarChanged
-                }
-                |> Checkbox.disabled busy
-                |> Checkbox.toHtml [ H.text "fog of war" ]
-            , Checkbox.new
-                { label = "show orders"
-                , checked = model.showOrders
-                , onCheck = ShowOrdersChanged
-                }
-                |> Checkbox.toHtml [ H.text "show orders" ]
-            , feedback
+            , requestFeedback model.request
             ]
-        , Battlefield.navigationControls (round (model.navigation.zoom * 100))
-            |> H.map BattlefieldMsg
+        ]
+
+
+controlsHeader :
+    { gameName : String, returnUrl : String, zoomPercent : Int }
+    -> Html Msg
+controlsHeader header =
+    H.div
+        [ A.css
+            [ S.row
+            , S.flexWrap
+            , S.itemsCenter
+            , S.justifySpaceBetween
+            , S.g2
+            ]
+        ]
+        [ H.h1
+            [ A.css
+                [ S.wrapAnywhere
+                , S.textGray4
+                ]
+            ]
+            [ H.text header.gameName ]
+        , H.div
+            [ A.css
+                [ S.maxWFull
+                , S.compactViewport [ S.w36 ]
+                ]
+            ]
+            [ Battlefield.navigationControls header.zoomPercent
+                |> H.map BattlefieldMsg
+            ]
+        , H.div
+            [ A.css
+                [ S.row
+                , S.flexWrap
+                , S.itemsCenter
+                , S.g2
+                ]
+            ]
+            [ Button.secondary "message history" ChatHistoryClicked
+                |> Button.withHtmlId replayChatButtonHtmlId
+                |> Button.small
+                |> Button.toHtml
+            , H.a
+                [ A.href header.returnUrl
+                , A.css [ S.link ]
+                ]
+                [ H.text "back to recordings" ]
+            ]
+        ]
+
+
+requestFeedback : TurnRequest -> Html Msg
+requestFeedback request =
+    let
+        status : String
+        status =
+            case request of
+                Failed _ message ->
+                    message
+
+                Loading _ ->
+                    "loading turn…"
+
+                Idle ->
+                    ""
+
+        retryButton : Html Msg
+        retryButton =
+            case request of
+                Failed _ _ ->
+                    Button.secondary "retry" RetryClicked
+                        |> Button.toHtml
+
+                _ ->
+                    H.text ""
+    in
+    H.div
+        [ A.css
+            [ S.row
+            , S.flexWrap
+            , S.itemsCenter
+            , S.wrapAnywhere
+            , S.g2
+            , S.when (request /= Idle) [ S.mt2 ]
+            ]
+        ]
+        [ H.p
+            [ Aria.role Aria.Status ]
+            [ H.text status ]
+        , retryButton
         ]
 
 

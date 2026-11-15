@@ -194,9 +194,10 @@ reloads and synchronize across tabs.
   scenes steady. Other scenes can shake briefly at impact, with reduced
   motion using a steady backdrop.
 - Use displayed environments for theater ambience. Matching environments share
-  a centered recording. Blend different environments quietly. A concealed
-  firing origin contributes neither a portrait nor a sound layer. An
-  unconfirmed indirect landing can show its impact without suggesting a
+  a centered recording. Blend different environments quietly. When no
+  indirect-fire gun is observed, show a faded neutral gun with a question mark
+  beside the landing. Give the placeholder no terrain, team details, or audio.
+  An unconfirmed indirect landing can show its impact without suggesting a
   confirmed hit.
 - The theater offers **continue**, **see map**, and remembered **automatically
   close**. Holding **see map** peeks at the battlefield and postpones automatic

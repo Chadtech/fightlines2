@@ -3,6 +3,7 @@ module Game.View.UnitSprite exposing
     , appearance
     , battlefieldToSvg
     , imagePaths
+    , neutralFieldGunPortrait
     , portraitFooting
     , portraitToSvg
     , portraitWidth
@@ -94,29 +95,40 @@ portraitView kind playerNumber facingLeft =
 
                         PlayerNumber.Player2 ->
                             "blue"
-
-                sideProfile : String
-                sideProfile =
-                    if facingLeft then
-                        "translate(40 0) scale(-1 1)"
-
-                    else
-                        ""
             in
-            Svg.image
-                [ SA.xlinkHref (fieldGunPath team)
-                , SA.width "40"
-                , SA.height "16"
-                , SA.preserveAspectRatio "xMidYMid meet"
-                , SA.transform sideProfile
-                , SA.css
-                    [ Css.property "image-rendering" "auto"
-                    ]
-                ]
-                []
+            fieldGunPortrait team facingLeft
 
         _ ->
             Lazy.lazy4 spriteView 0 kind playerNumber facingLeft
+
+
+neutralFieldGunPortrait : Svg msg
+neutralFieldGunPortrait =
+    fieldGunPortrait "neutral" False
+
+
+fieldGunPortrait : String -> Bool -> Svg msg
+fieldGunPortrait team facingLeft =
+    let
+        sideProfile : String
+        sideProfile =
+            if facingLeft then
+                "translate(40 0) scale(-1 1)"
+
+            else
+                ""
+    in
+    Svg.image
+        [ SA.xlinkHref (fieldGunPath team)
+        , SA.width "40"
+        , SA.height "16"
+        , SA.preserveAspectRatio "xMidYMid meet"
+        , SA.transform sideProfile
+        , SA.css
+            [ Css.property "image-rendering" "auto"
+            ]
+        ]
+        []
 
 
 toSvg : Int -> Unit -> Svg msg
@@ -271,4 +283,10 @@ entrenchedPath team =
 
 imagePaths : List String
 imagePaths =
-    [ atlasPath, fieldGunPath "red", fieldGunPath "blue", entrenchedPath "red", entrenchedPath "blue" ]
+    [ atlasPath
+    , fieldGunPath "red"
+    , fieldGunPath "blue"
+    , entrenchedPath "red"
+    , entrenchedPath "blue"
+    , fieldGunPath "neutral"
+    ]

@@ -19,7 +19,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Checkbox as Checkbox
 import View.Dialog as Dialog exposing (Dialog)
 
@@ -182,7 +182,7 @@ conclusion config =
             else
                 H.text ""
 
-        returnButton : Button.Button Msg
+        returnButton : Button Msg
         returnButton =
             if config.showMatchMaking then
                 Button.secondary "return to battlefield" BattlefieldViewClicked

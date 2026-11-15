@@ -804,17 +804,58 @@ impl Combat {
         stopped: &mut BTreeSet<UnitId>,
         frames: &mut Vec<TurnFrame>,
     ) {
-        self.engage_contacts(board, stopped, frames, &[], &BTreeSet::new());
+        self.engage_contacts(board, stopped, frames, &[], &BTreeSet::new(), |_| None);
     }
 
-    /// An ambushing field gun gets the first shot when a tank contacts it or aims
-    /// an opposing ambush at it inside its observable firing area. Initial-contact
-    /// deferral must not let a tank charge down that area before the gun responds.
-    fn field_gun_interceptions(
+    fn attack_move_engagement(
         &self,
         board: &Scenario,
-        contacts: &[(UnitId, UnitId)],
-    ) -> Vec<Engagement> {
+        shooter_id: UnitId,
+        target_id: UnitId,
+    ) -> Option<Engagement> {
+        let shooter = board
+            .units
+            .iter()
+            .find(|unit| unit.unit_id() == shooter_id)?;
+        let target = board
+            .units
+            .iter()
+            .find(|unit| unit.unit_id() == target_id)?;
+        let origin = shooter.board_position()?;
+        let destination = target.board_position()?;
+        // Allied traffic can retract a participant's step before combat.
+        Direction::between(origin, destination)?;
+        if !self.can_fire(shooter)
+            || !target.is_alive()
+            || shooter.player_number() == target.player_number()
+        {
+            return None;
+        }
+        Some(Engagement {
+            shooter: shooter_id,
+            target: target_id,
+            shot: Shot {
+                kind: CombatKind::AttackMove,
+                origin,
+                destination,
+                damage: self.damage(board, shooter, target, CombatKind::AttackMove),
+                flank_bonus: self.flank_bonus(shooter, target, CombatKind::AttackMove),
+                attacker: theater_participant(shooter),
+                target: theater_participant(target),
+                attacker_health: CombatHealth {
+                    before: shooter.hit_points(),
+                    after: shooter.hit_points(),
+                },
+                target_health: CombatHealth {
+                    before: target.hit_points(),
+                    after: target.hit_points(),
+                },
+            },
+        })
+    }
+
+    /// An ambushing field gun fires first against an opposing tank ambush.
+    fn field_gun_interceptions(&self, board: &Scenario) -> Vec<Engagement> {
         board
             .units
             .iter()
@@ -826,15 +867,13 @@ impl Combat {
                     .units
                     .iter()
                     .filter(|tank| {
-                        let contact = contacts.contains(&(tank.unit_id(), gun.unit_id()));
-                        let deferred = self
-                            .deferred_targets
-                            .get(&gun.unit_id())
-                            .is_some_and(|targets| targets.contains(&tank.unit_id()));
-                        let opposing_ambush = self.ambushers.contains(&tank.unit_id())
-                            && !deferred
-                            && self.engagement(board, tank, gun).is_some();
-                        tank.kind() == UnitKind::Tank && (contact || opposing_ambush)
+                        tank.kind() == UnitKind::Tank
+                            && self.ambushers.contains(&tank.unit_id())
+                            && !self
+                                .deferred_targets
+                                .get(&gun.unit_id())
+                                .is_some_and(|targets| targets.contains(&tank.unit_id()))
+                            && self.engagement(board, tank, gun).is_some()
                     })
                     .filter_map(|tank| self.engagement(board, gun, tank))
                     .min_by_key(|engagement| {
@@ -857,71 +896,17 @@ impl Combat {
         frames: &mut Vec<TurnFrame>,
         contacts: &[(UnitId, UnitId)],
         arrived: &BTreeSet<UnitId>,
+        next_attack_step: impl Fn(UnitId) -> Option<Coordinate>,
     ) {
-        // Resolving an allied traffic jam can retract a participant's movement.
-        // Only contacts that remain physically adjacent can trigger direct fire
-        // or a field gun's contact interception from the settled board positions.
-        let adjacent_contacts: Vec<_> = contacts
-            .iter()
-            .copied()
-            .filter(|(shooter_id, target_id)| {
-                let position = |id| {
-                    board
-                        .units
-                        .iter()
-                        .find(|unit| unit.unit_id() == id)
-                        .and_then(Unit::board_position)
-                };
-                match (position(*shooter_id), position(*target_id)) {
-                    (Some(origin), Some(destination)) => {
-                        (destination.x() - origin.x()).abs() + (destination.y() - origin.y()).abs()
-                            == 1
-                    }
-                    _ => false,
-                }
-            })
-            .collect();
-        let interceptions = self.field_gun_interceptions(board, &adjacent_contacts);
+        let interceptions = self.field_gun_interceptions(board);
         self.volley(board, &interceptions, frames);
-        // Survivors may return fire with their reduced strength; other encounters
-        // retain simultaneous resolution within their usual volley.
         let mut opening = Vec::new();
         let mut attacking = BTreeSet::new();
-        for (shooter_id, target_id) in &adjacent_contacts {
-            let shooter = board
-                .units
-                .iter()
-                .find(|unit| unit.unit_id() == *shooter_id);
-            let target = board.units.iter().find(|unit| unit.unit_id() == *target_id);
-            if let (Some(shooter), Some(target)) = (shooter, target)
-                && self.can_fire(shooter)
-                && target.is_alive()
-                && shooter.player_number() != target.player_number()
-                && let (Some(origin), Some(destination)) =
-                    (shooter.board_position(), target.board_position())
-                && attacking.insert(*shooter_id)
+        for &(shooter, target) in contacts {
+            if let Some(engagement) = self.attack_move_engagement(board, shooter, target)
+                && attacking.insert(shooter)
             {
-                opening.push(Engagement {
-                    shooter: *shooter_id,
-                    target: *target_id,
-                    shot: Shot {
-                        kind: CombatKind::AttackMove,
-                        origin,
-                        destination,
-                        damage: self.damage(board, shooter, target, CombatKind::AttackMove),
-                        flank_bonus: self.flank_bonus(shooter, target, CombatKind::AttackMove),
-                        attacker: theater_participant(shooter),
-                        target: theater_participant(target),
-                        attacker_health: CombatHealth {
-                            before: shooter.hit_points(),
-                            after: shooter.hit_points(),
-                        },
-                        target_health: CombatHealth {
-                            before: target.hit_points(),
-                            after: target.hit_points(),
-                        },
-                    },
-                });
+                opening.push(engagement);
             }
         }
         // Contact fire exposes even a concealed attacker to the same volley.
@@ -971,7 +956,26 @@ impl Combat {
                     )
                 })
         });
-        opening.extend(ambushes.cloned());
+        for ambush in ambushes {
+            let mover = ambush.target;
+            // Resolve the charge at the cleared approach square. A mover still
+            // passing through an ally must settle its position before contact.
+            if !stopped.contains(&mover)
+                && !attacking.contains(&mover)
+                && next_attack_step(mover) == Some(ambush.shot.origin)
+                && !board.units.iter().any(|unit| {
+                    unit.unit_id() != mover
+                        && unit.is_alive()
+                        && unit.board_position() == Some(ambush.shot.destination)
+                })
+                && let Some(reply) = self.attack_move_engagement(board, mover, ambush.shooter)
+            {
+                stopped.extend([mover, ambush.shooter]);
+                attacking.insert(mover);
+                opening.push(reply);
+            }
+            opening.push(ambush.clone());
+        }
         opening.sort_by_key(|engagement| (engagement.shooter, engagement.target));
         for engagement in &opening {
             let continues_attack_move = engagement.shot.kind == CombatKind::Ambush
@@ -1485,6 +1489,7 @@ mod tests {
                 &mut frames,
                 &[(attacker, defender)],
                 &BTreeSet::new(),
+                |_| None,
             );
             let shots: Vec<_> = frames.iter().flat_map(|frame| &frame.shots).collect();
             assert_eq!(shots.len(), 1);
@@ -1865,7 +1870,7 @@ mod tests {
     }
 
     #[test]
-    fn tank_charging_a_ready_gun_cannot_bypass_initial_contact_deferral() -> TestResult<()> {
+    fn tank_charging_an_adjacent_ready_gun_fires_in_the_same_volley() -> TestResult<()> {
         let (board, mut orders) =
             fixture(UnitKind::FieldGun, UnitKind::Tank, Coordinate::new(4, 3))?;
         orders.get_mut(1).fixture()?.action = CombatAction::AttackMove;
@@ -1875,15 +1880,24 @@ mod tests {
             .path
             .push(Coordinate::new(3, 3));
         let result = resolve_completed_movement(&board, &orders, 1)?;
-        let shots = shots(&result);
-        assert_eq!(shots.len(), 1);
-        assert_eq!(shots.first().fixture()?.kind, CombatKind::Ambush);
-        assert_eq!(shots.first().fixture()?.target_health.after.current(), 0);
-        assert_eq!(shots.first().fixture()?.attacker_health.after.current(), 16);
+        let volley = result
+            .frames
+            .iter()
+            .find(|frame| !frame.shots.is_empty())
+            .fixture()?;
+        assert_eq!(volley.shots.len(), 2);
+        let ambush = volley
+            .shots
+            .iter()
+            .find(|shot| shot.kind == CombatKind::Ambush)
+            .fixture()?;
+        assert_eq!(ambush.target_health.after.current(), 0);
+        assert_eq!(ambush.attacker_health.after.current(), 0);
+        assert_eq!(shots(&result).len(), 2);
         orders.reverse();
         let reversed = resolve_completed_movement(&board, &orders, 1)?;
         assert_eq!(result.paths, reversed.paths);
-        assert_eq!(self::shots(&reversed).first().fixture()?.damage, 16);
+        assert_eq!(shots(&reversed).len(), 2);
         Ok(())
     }
 
@@ -1892,12 +1906,12 @@ mod tests {
         let (board, mut orders) = fixture(
             UnitKind::FieldGun,
             UnitKind::Infantry,
-            Coordinate::new(5, 3),
+            Coordinate::new(6, 3),
         )?;
         let infantry = orders.get_mut(1).fixture()?;
         infantry.action = CombatAction::AttackMove;
-        let covered = Coordinate::new(4, 3);
-        infantry.path.extend([covered, Coordinate::new(3, 3)]);
+        let covered = Coordinate::new(5, 3);
+        infantry.path.extend([covered, Coordinate::new(4, 3)]);
         let result = resolve_fixture_movement(&board, &orders, 1)?;
         let hits = shots(&result);
         assert_eq!(hits.len(), 1);
@@ -1910,7 +1924,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_attack_contacts_require_cardinal_adjacency_before_interception() -> TestResult<()> {
+    fn stale_attack_contacts_require_cardinal_adjacency() -> TestResult<()> {
         for defender in [UnitKind::Infantry, UnitKind::FieldGun] {
             for position in [Coordinate::new(5, 3), Coordinate::new(4, 4)] {
                 let (mut board, mut orders) = fixture(defender, UnitKind::Tank, position)?;
@@ -1927,6 +1941,7 @@ mod tests {
                     &mut frames,
                     &[(tank_id, defender_id)],
                     &BTreeSet::new(),
+                    |_| None,
                 );
                 assert!(frames.iter().all(|frame| frame.shots.is_empty()));
                 assert_eq!(board.units, prepared);
@@ -1938,11 +1953,11 @@ mod tests {
     #[test]
     fn tank_and_field_gun_contact_depends_on_the_guns_readiness_and_firing_area() -> TestResult<()>
     {
-        for (facing, ready, expected_kind, tank_health, gun_health) in [
-            (Direction::East, true, CombatKind::Ambush, 0, 16),
-            (Direction::North, true, CombatKind::AttackMove, 16, 0),
-            (Direction::West, true, CombatKind::AttackMove, 16, 0),
-            (Direction::East, false, CombatKind::AttackMove, 16, 0),
+        for (facing, ready, gun_fires) in [
+            (Direction::East, true, true),
+            (Direction::North, true, false),
+            (Direction::West, true, false),
+            (Direction::East, false, false),
         ] {
             let (mut board, mut orders) =
                 fixture(UnitKind::FieldGun, UnitKind::Tank, Coordinate::new(4, 3))?;
@@ -1962,18 +1977,16 @@ mod tests {
                 &mut frames,
                 &[(tank_id, gun_id)],
                 &BTreeSet::new(),
+                |_| None,
             );
             let shots: Vec<_> = frames.iter().flat_map(|frame| &frame.shots).collect();
-            assert_eq!(shots.len(), 1);
-            assert_eq!(shots.first().fixture()?.kind, expected_kind);
+            assert_eq!(shots.len(), if gun_fires { 2 } else { 1 });
+            assert!(shots.iter().any(|shot| shot.kind == CombatKind::AttackMove));
             assert_eq!(
                 board.units.get(1).fixture()?.hit_points().current(),
-                tank_health
+                if gun_fires { 0 } else { 16 }
             );
-            assert_eq!(
-                board.units.first().fixture()?.hit_points().current(),
-                gun_health
-            );
+            assert_eq!(board.units.first().fixture()?.hit_points().current(), 0);
         }
         Ok(())
     }
@@ -1994,13 +2007,21 @@ mod tests {
             &mut frames,
             &[(tank_id, gun_id)],
             &BTreeSet::new(),
+            |_| None,
         );
-        let shots: Vec<_> = frames.iter().flat_map(|frame| &frame.shots).collect();
+        let shots = &frames.first().fixture()?.shots;
         assert_eq!(shots.len(), 2);
-        assert_eq!(shots.first().fixture()?.kind, CombatKind::Ambush);
-        assert_eq!(shots.first().fixture()?.damage, 5);
-        assert_eq!(shots.get(1).fixture()?.attacker_health.before.current(), 11);
-        assert_eq!(shots.get(1).fixture()?.damage, 16);
+        let ambush = shots
+            .iter()
+            .find(|shot| shot.kind == CombatKind::Ambush)
+            .fixture()?;
+        assert_eq!(ambush.damage, 5);
+        let charge = shots
+            .iter()
+            .find(|shot| shot.kind == CombatKind::AttackMove)
+            .fixture()?;
+        assert_eq!(charge.attacker_health.before.current(), 16);
+        assert_eq!(charge.damage, 16);
         assert_eq!(board.units.first().fixture()?.hit_points().current(), 0);
         assert_eq!(board.units.get(1).fixture()?.hit_points().current(), 11);
 
@@ -2018,6 +2039,7 @@ mod tests {
             &mut frames,
             &[(tank_id, gun_id)],
             &BTreeSet::new(),
+            |_| None,
         );
         assert_eq!(frames.iter().flat_map(|frame| &frame.shots).count(), 1);
         assert_eq!(board.units.first().fixture()?.hit_points().current(), 0);
@@ -2053,6 +2075,7 @@ mod tests {
                     &mut frames,
                     &[(infantry_id, gun_id)],
                     &BTreeSet::new(),
+                    |_| None,
                 );
                 let hit = frames
                     .iter()
@@ -2889,6 +2912,45 @@ mod tests {
     }
 
     #[test]
+    fn direct_attack_move_and_ambush_share_a_volley_on_adjacent_arrival() -> TestResult<()> {
+        let (scenario, mut orders) =
+            fixture(UnitKind::Infantry, UnitKind::Tank, Coordinate::new(5, 3))?;
+        let tank = orders.get_mut(1).fixture()?;
+        let tank_id = tank.unit_id;
+        tank.action = CombatAction::AttackMove;
+        let approach = Coordinate::new(4, 3);
+        tank.path.extend([approach, Coordinate::new(3, 3)]);
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
+        let volleys: Vec<_> = result
+            .frames
+            .iter()
+            .filter(|frame| !frame.shots.is_empty())
+            .collect();
+        assert_eq!(volleys.len(), 1);
+        let shots = &volleys.first().fixture()?.shots;
+        assert_eq!(shots.len(), 2);
+        let ambush = shots
+            .iter()
+            .find(|shot| shot.kind == CombatKind::Ambush)
+            .fixture()?;
+        assert_eq!(ambush.damage, 1);
+        assert_eq!(ambush.target_health.after.current(), 15);
+        let charge = shots
+            .iter()
+            .find(|shot| shot.kind == CombatKind::AttackMove)
+            .fixture()?;
+        assert_eq!(charge.origin, approach);
+        assert_eq!(charge.attacker_health.before.current(), 16);
+        assert_eq!(charge.target_health.after.current(), 0);
+        assert_eq!(
+            result.paths.get(&tank_id).fixture()?.last(),
+            Some(&approach)
+        );
+        assert!(result.stopped.contains(&tank_id));
+        Ok(())
+    }
+
+    #[test]
     fn infantry_flank_ambush_damages_a_passing_tank_without_return_fire() -> TestResult<()> {
         let (scenario, mut orders) =
             fixture(UnitKind::Infantry, UnitKind::Tank, Coordinate::new(4, 2))?;
@@ -3101,6 +3163,7 @@ mod tests {
                     &mut frames,
                     &[(attacker_id, defender_id)],
                     &BTreeSet::new(),
+                    |_| None,
                 );
                 combat.finish(&mut board, &mut BTreeSet::new(), &mut frames);
                 let shots: Vec<_> = frames.iter().flat_map(|frame| &frame.shots).collect();
@@ -3297,6 +3360,7 @@ mod tests {
             &mut frames,
             &[(attacker_id, defender_id)],
             &BTreeSet::new(),
+            |_| None,
         );
         let volley = frames.first().fixture()?;
         assert_eq!(volley.shots.len(), 2);

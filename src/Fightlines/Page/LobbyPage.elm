@@ -75,7 +75,7 @@ import Shared
 import Style as S
 import Time
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Card as Card
 import View.CardHeader as CardHeader
 import View.Dialog as Dialog
@@ -2276,7 +2276,7 @@ startControlsView model =
         blockedReason =
             startGameBlockedReason model
 
-        startControl : Button.Button Msg
+        startControl : Button Msg
         startControl =
             case blockedReason of
                 Nothing ->
@@ -2536,7 +2536,7 @@ playerSlotView model playerNumber =
                 Just player ->
                     if canConfigure && (player.controller == Human) then
                         let
-                            button : Button.Button Msg
+                            button : Button Msg
                             button =
                                 if isBusy model then
                                     Button.disabled "kick"

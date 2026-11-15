@@ -22,6 +22,7 @@ import Admin.Route as Route
 import Api.Enum.Controller as Controller exposing (Controller)
 import Api.Enum.EntryStatus as Status exposing (EntryStatus)
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
+import Api.Mutation
 import Api.Object
 import Api.Object.AdminEntry as EntryApi
 import Api.Object.AdminPlayer as PlayerApi
@@ -54,7 +55,7 @@ import Shared
 import Style as S
 import Time
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Card as Card
 import View.CardHeader as CardHeader
 import View.Divider as Divider
@@ -72,6 +73,7 @@ type alias Snapshot =
     , concurrentGames : Int
     , waitingLobbies : Int
     , retainedFinishedGames : Int
+    , matchmakingSmsEnabled : Bool
     , entries : List LiveEntry
     }
 
@@ -184,6 +186,7 @@ type alias Model =
     , planningErrorOffset : Int
     , planningErrorsExpanded : Bool
     , analytics : Analytics
+    , smsTest : SmsTest
     , request : Request
     , listError : Maybe String
     , error : Maybe String
@@ -200,11 +203,20 @@ type Request
     | LoadingPlanningErrors Int
 
 
+type SmsTest
+    = SmsReady
+    | SmsPending
+    | SmsAccepted
+    | SmsFailed String
+
+
 type Msg
     = PollTimerElapsed Time.Posix
     | SnapshotResponseReceived (Response Snapshot)
     | RefreshButtonClicked
     | LogoutButtonClicked
+    | SendTestSmsClicked
+    | TestSmsResponseReceived (Response ())
     | RefreshResponseReceived (Response Flags)
     | FeedbackListToggled
     | RecordingListToggled
@@ -252,6 +264,7 @@ init shared flags =
     , planningErrorOffset = 0
     , planningErrorsExpanded = False
     , analytics = Analytics.NotLoaded
+    , smsTest = SmsReady
     , request = Idle
     , listError = Nothing
     , error = Nothing
@@ -300,6 +313,7 @@ snapshotSelection =
         |> SS.with DashboardApi.concurrentGames
         |> SS.with DashboardApi.waitingLobbies
         |> SS.with DashboardApi.retainedFinishedGames
+        |> SS.with DashboardApi.matchmakingSmsEnabled
         |> SS.with (DashboardApi.entries entrySelection)
 
 
@@ -416,6 +430,9 @@ needsLogin msg =
         AnalyticsResponseReceived _ (Err error) ->
             ApiRequest.requiresAdminLogin error
 
+        TestSmsResponseReceived (Err error) ->
+            ApiRequest.requiresAdminLogin error
+
         _ ->
             False
 
@@ -495,6 +512,9 @@ requiresCurrentDeployment msg =
         AnalyticsResponseReceived _ (Err error) ->
             ApiRequest.requiresCurrentDeployment error
 
+        TestSmsResponseReceived (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
         _ ->
             False
 
@@ -526,6 +546,27 @@ update msg model =
     case msg of
         LogoutButtonClicked ->
             ( model, Route.pushUrl Route.SignOut )
+
+        SendTestSmsClicked ->
+            if model.snapshot.matchmakingSmsEnabled && (model.smsTest /= SmsPending) then
+                ( { model | smsTest = SmsPending }
+                , Api.Mutation.adminSendTestSms
+                    |> SS.map (always ())
+                    |> ApiRequest.mutationRequest
+                    |> E.request TestSmsResponseReceived
+                )
+
+            else
+                model |> E.withOut
+
+        TestSmsResponseReceived result ->
+            case result of
+                Ok () ->
+                    { model | smsTest = SmsAccepted } |> E.withOut
+
+                Err error ->
+                    { model | smsTest = SmsFailed (ApiRequest.errorMessage error) }
+                        |> E.withOut
 
         PollTimerElapsed _ ->
             if model.request /= Idle then
@@ -835,6 +876,7 @@ view model =
                             ]
                         ]
                    , deploymentsView model
+                   , smsPanel model.snapshot.matchmakingSmsEnabled model.smsTest
                    , entriesPanel model "games in progress" live
                    , entriesPanel model "waiting lobbies" lobbies
                    , H.div
@@ -881,7 +923,7 @@ view model =
 toolbar : Model -> Html Msg
 toolbar model =
     let
-        refresh : Button.Button Msg
+        refresh : Button Msg
         refresh =
             if model.request == Idle then
                 Button.secondary "refresh all" RefreshButtonClicked
@@ -916,6 +958,56 @@ toolbar model =
                 , Button.secondary "log out" LogoutButtonClicked
                     |> Button.toHtml
                 ]
+            ]
+        ]
+
+
+smsPanel : Bool -> SmsTest -> Html Msg
+smsPanel enabled test =
+    let
+        button : Button Msg
+        button =
+            if not enabled then
+                Button.disabled "send test sms"
+
+            else if test == SmsPending then
+                Button.disabled "sending…"
+
+            else
+                Button.secondary "send test sms" SendTestSmsClicked
+
+        status : String
+        status =
+            if not enabled then
+                "no sms recipient configured."
+
+            else
+                case test of
+                    SmsReady ->
+                        "alerts enabled."
+
+                    SmsPending ->
+                        "requesting a test sms…"
+
+                    SmsAccepted ->
+                        "test sms accepted by textbelt. check your phone."
+
+                    SmsFailed message ->
+                        message
+    in
+    Card.toHtml (Card.simple |> Card.withHeader (CardHeader.simple "matchmaking sms"))
+        [ H.div
+            [ A.css
+                [ S.row
+                , S.flexWrap
+                , S.itemsCenter
+                , S.g3
+                ]
+            ]
+            [ Button.toHtml button
+            , H.p
+                [ Aria.role Aria.Status ]
+                [ H.text status ]
             ]
         ]
 

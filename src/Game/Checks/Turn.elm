@@ -2172,6 +2172,28 @@ combatPlaybackChecks first second =
                 peekFiring panel =
                     CombatTheater.firingInfantry { panel | elapsed = 1300, mapView = TurnPlayback.SeeingMap }
 
+                bazookaSounds : Float -> Float -> List Audio.Event
+                bazookaSounds earlier later =
+                    let
+                        bazookaShot : Shot
+                        bazookaShot =
+                            zeroDamage
+                                (shot |> setShotAttacker (Unit.setKind Kind.Infantry attacker))
+
+                        showing : Maybe TurnPlayback.Playback
+                        showing =
+                            focused [ before, opening |> TurnPlayback.setFrameShots [ bazookaShot ], waiting ]
+                                |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+
+                        atPanelTime : Float -> Maybe TurnPlayback.Playback
+                        atPanelTime elapsed =
+                            showing |> Maybe.andThen (TurnPlayback.tick elapsed >> Tuple.first)
+                    in
+                    PlaybackPresentation.audioBetween
+                        { before = atPanelTime earlier
+                        , after = atPanelTime later
+                        }
+
                 firingState :
                     { playback : Maybe TurnPlayback.Playback
                     , paused : Bool
@@ -2257,6 +2279,16 @@ combatPlaybackChecks first second =
                     (delayForShots
                         [ zeroDamage (shot |> setShotAttacker (Unit.setKind Kind.Infantry attacker)) ]
                         == Just 1170
+                    )
+                ++ expect "each bazooka launch plays one tank cue, including zero-damage shots"
+                    (List.isEmpty (bazookaSounds 1199 1339)
+                        && bazookaSounds 1339 1340
+                        == [ Audio.tankFire ]
+                        && List.isEmpty (bazookaSounds 1340 1429)
+                        && bazookaSounds 1429 1430
+                        == [ Audio.tankFire ]
+                        && bazookaSounds 1430 2000
+                        == List.repeat 2 Audio.tankFire
                     )
                 ++ expect "small-arms impacts retain their midpoint timing, including zero damage and return fire"
                     (delayForShots [ zeroDamage infantryShot ]
@@ -2816,6 +2848,50 @@ crowdedReturnFireChecks fixture =
                 conflicting : Shot
                 conflicting =
                     unrelated |> setShotTarget fixture.opening.target
+
+                truck : Unit
+                truck =
+                    unrelated.attacker
+                        |> Unit.setKind Kind.Truck
+                        |> Unit.setOnMap unrelated.origin
+
+                movedTruck : Unit
+                movedTruck =
+                    truck |> Unit.setOnMap unrelated.destination
+
+                beforeMovement : TurnPlayback.Frame
+                beforeMovement =
+                    fixture.before
+                        |> TurnPlayback.setFrameUnits (fixture.before.units ++ [ truck ])
+
+                afterMovement : TurnPlayback.Frame
+                afterMovement =
+                    { beforeMovement | visibleTiles = unrelated.destination :: beforeMovement.visibleTiles }
+                        |> TurnPlayback.setFrameUnits (fixture.before.units ++ [ movedTruck ])
+                        |> setFrameDurationMs 240
+
+                movingPlayback : Maybe TurnPlayback.Playback
+                movingPlayback =
+                    TurnPlayback.start
+                        [ beforeMovement
+                        , beforeMovement
+                            |> setFrameDurationMs 450
+                            |> TurnPlayback.setFrameShots [ fixture.opening ]
+                        , beforeMovement |> setFrameDurationMs 600
+                        , afterMovement
+                        , afterMovement
+                            |> setFrameDurationMs 450
+                            |> TurnPlayback.setFrameShots [ fixture.returning ]
+                        , afterMovement |> setFrameDurationMs 600
+                        ]
+
+                duringMovement : Maybe TurnPlayback.Playback
+                duringMovement =
+                    movingPlayback |> Maybe.andThen (TurnPlayback.tick 1290 >> Tuple.first)
+
+                afterReturn : Maybe TurnPlayback.Playback
+                afterReturn =
+                    duringMovement |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
             in
             expect "stationary return fire shares one card when its volley also contains an unrelated shot"
                 (combinedHealth combined
@@ -2843,6 +2919,20 @@ crowdedReturnFireChecks fixture =
                     (combinedHealth (focus [ fixture.returning, conflicting ]) == Just 16)
                 ++ expect "indirect fire never becomes a direct return-fire exchange"
                     (combinedHealth (focus [ fixture.returning |> setShotKind CombatKind.IndirectFire ]) == Just 16)
+                ++ expect "unrelated movement and sight changes play before a single reciprocal exchange"
+                    (Maybe.andThen TurnPlayback.combat duringMovement
+                        == Nothing
+                        && Maybe.map (.current >> .units) duringMovement
+                        == Just afterMovement.units
+                        && Maybe.map (.current >> .visibleTiles) duringMovement
+                        == Just afterMovement.visibleTiles
+                        && combinedHealth afterReturn
+                        == Just 15
+                        && (afterReturn |> Maybe.andThen TurnPlayback.combat |> Maybe.map .targetFired)
+                        == Just True
+                        && Maybe.andThen TurnPlayback.combat (advance afterReturn)
+                        == Nothing
+                    )
 
         _ ->
             [ "could not construct unrelated return-volley unit IDs" ]

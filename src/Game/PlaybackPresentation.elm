@@ -101,7 +101,7 @@ cameraPanDurationMs =
     1200
 
 
-{-| Play once as the presentation clock crosses each muzzle flash or impact.
+{-| Play once as the presentation clock crosses each shot or impact.
 An unchanged clock (pause or camera hold) cannot replay a cue. A new encounter
 or rewind starts a fresh interval instead of catching up old shots.
 -}
@@ -144,6 +144,7 @@ audioBetween transition =
                 (cues
                     UnitKind.Tank
                     Audio.tankFire
+                    ++ cues UnitKind.Infantry Audio.tankFire
                     ++ cues UnitKind.FieldGun Audio.fieldGunFire
                     ++ impacts
                 )

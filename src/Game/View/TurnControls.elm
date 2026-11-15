@@ -16,7 +16,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 
 
 type Activity
@@ -109,7 +109,7 @@ panelView kind children =
         children
 
 
-submitButton : Activity -> String -> Button.Button Msg
+submitButton : Activity -> String -> Button Msg
 submitButton activity label =
     case activity of
         Planning ->
@@ -161,12 +161,12 @@ submit activity label =
 
 
 surrenderButton :
-    (String -> Msg -> Button.Button Msg)
+    (String -> Msg -> Button Msg)
     -> SurrenderState
-    -> Button.Button Msg
+    -> Button Msg
 surrenderButton availableButton state =
     let
-        button : Button.Button Msg
+        button : Button Msg
         button =
             case state of
                 SurrenderAvailable ->

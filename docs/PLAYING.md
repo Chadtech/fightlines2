@@ -43,16 +43,16 @@ opponent wins and both players see the game-over card.
 Choose **home** in the menu to return to the home screen. In an ongoing game,
 this surrenders first and navigates only after the request succeeds. Finished games
 return home immediately.
-Human-versus-human games end if a player stops interacting for two minutes and
-then lets a 60-second warning expire. Only the inactive player sees the warning;
-choose **i’m still here**, press Escape, or interact to reset it. Automatic polling
-and passive mouse movement do not count. Refreshing preserves the server's timer.
-Submitting protects you while waiting for your opponent. The opponent receives a
-normal victory marked as a win due to inactivity. If both players have exactly
-the same expired deadline, the result is a draw. AI games and the development
-preview have no inactivity timer. Automatic playback receives up to five minutes
-of activity allowance per turn, and the first-game briefing up to two minutes;
-these allowances cannot be restarted by refreshing.
+Games against human or AI opponents end if a human player stops interacting for
+two minutes and then lets a 60-second warning expire. Only the inactive player
+sees the warning. Choose **i’m still here**, press Escape, or interact to reset it.
+Automatic polling and passive mouse movement do not count. Refreshing preserves
+the server's timer. Submitting protects you while waiting for your opponent. The
+opponent receives a normal victory marked as a win due to inactivity. If both
+human players have exactly the same expired deadline, the result is a draw. The
+development preview has no inactivity timer. Automatic playback receives up to
+five minutes of activity allowance per turn, and the first-game briefing up to
+two minutes. Refreshing does not restart these allowances.
 
 Opponent updates use half-second status polling plus network time.
 The combat theater also remembers its **automatically close** checkbox. When
@@ -584,11 +584,13 @@ unloading into the area can also trigger immediate fire. A unit fires at most
 once per turn, choosing the nearest eligible observable enemy in its firing area.
 Shared vision or a firing reveal enables ambush fire through intervening forests,
 hills, and mountains.
-Terrain still blocks sight normally, and unrevealed enemies in forests remain concealed. An ambushed
-unit with a normal move stops its remaining movement. A surviving attack-moving
-unit continues its remaining route and can fire on a later attack-move contact;
-being ambushed alone does not trigger return fire. Opposing ready ambushers fire simultaneously when both
-have an eligible target, permitting mutual destruction.
+Terrain still blocks sight normally, and unrevealed enemies in forests remain
+concealed. An ambushed unit with a normal move stops its remaining movement.
+When an adjacent ambusher fires and the attack mover's next step leads onto the
+ambusher's square, a mover that can still fire stops and exchanges shots in the
+same volley. Both shots use each unit's health before the volley. Outside that
+direct exchange, a surviving attack mover continues its route and can fire at
+later contact. Opposing ready ambushers can exchange fire in one volley too.
 
 Every combat exchange involving your units opens the theater, even when the enemy
 is concealed on the battlefield. Before the exchange, playback freezes the battlefield and surrounding
@@ -623,7 +625,7 @@ opens. Reciprocal casualties share the existing pause. After all pairs, playback
 before movement resumes. Firing tanks and field guns use their illustrated firing sequences, synchronized
 with the weapon audio described in the [development guide](DEVELOPMENT.md#audio-manager). There are no connecting
 shot lines or floating damage numbers. Reduced-motion mode uses steady highlights and impact marks.
-Hidden participants never appear in the panels.
+Hidden participants' actual formations never appear in the panels.
 Destroyed units are removed before the next planning turn;
 destroyed trucks also lose their passengers. Hidden shooters and targets are
 withheld from combat effects, and enemy resource gauges outside the combat card remain concealed.
@@ -750,8 +752,9 @@ impact cannot fire.
 
 Indirect fire does not reveal the gun's location or renew a previous direct-fire
 reveal. Enemy guns remain visible only through normal sight or an existing reveal.
-When the firing gun is hidden, the opponent sees the observable landing without
-the gun's portrait or firing position, including when it hits their own unit.
+When no firing gun is visible, a faded field gun and question mark appear
+beside the observable landing. This placeholder gives away neither the firing
+position nor details about the gun.
 
 This uses the existing supply-based ammunition model: normal upkeep plus 8
 readiness supplies and 16 firing supplies, including misses. Damage uses normal
@@ -761,5 +764,5 @@ Saved targets remain marked and can be revoked. Target tiles support Tab and
 Enter/Space. Every fired shell shows a tile impact, including shots into fog;
 unseen enemy hits, casualties, and damage reports remain unconfirmed. Hidden
 hits and empty shots use the same playback timing. Landings without a confirmed
-target open a terrain-only combat theater labeled **indirect fire impact**, with
+target show the landing terrain under **indirect fire impact**, with
 the same continue, see-map, and automatic-close controls as confirmed combat.

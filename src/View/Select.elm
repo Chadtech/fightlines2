@@ -1,5 +1,6 @@
 module View.Select exposing
     ( Select
+    , accessibleLabel
     , disabled
     , new
     , toHtml
@@ -12,6 +13,7 @@ import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Json.Decode as Decode exposing (Decoder)
 import Style as S
+import View.Aria as Aria
 
 
 
@@ -23,6 +25,7 @@ import Style as S
 type Select msg
     = Select
         { htmlId : Maybe String
+        , accessibleLabel : Maybe String
         , disabled : Bool
         , options : List (Option msg)
         }
@@ -61,6 +64,7 @@ new config =
     in
     Select
         { htmlId = Nothing
+        , accessibleLabel = Nothing
         , disabled = False
         , options = List.indexedMap encodeOption config.options
         }
@@ -80,6 +84,11 @@ disabled value (Select config) =
         { config
             | disabled = value
         }
+
+
+accessibleLabel : String -> Select msg -> Select msg
+accessibleLabel label (Select config) =
+    Select { config | accessibleLabel = Just label }
 
 
 
@@ -123,6 +132,15 @@ toHtml (Select config) =
                 Just htmlId ->
                     [ A.id htmlId ]
 
+        labelAttributes : List (H.Attribute msg)
+        labelAttributes =
+            case config.accessibleLabel of
+                Nothing ->
+                    []
+
+                Just label ->
+                    [ Aria.label label ]
+
         valueAttributes : List (H.Attribute msg)
         valueAttributes =
             case List.head (List.filter .selected config.options) of
@@ -164,5 +182,5 @@ toHtml (Select config) =
             ]
     in
     H.select
-        (attributes ++ valueAttributes ++ idAttributes)
+        (attributes ++ valueAttributes ++ idAttributes ++ labelAttributes)
         (List.map optionToHtml config.options)

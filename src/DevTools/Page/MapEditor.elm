@@ -53,7 +53,7 @@ import Shared
 import Style as S
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Card as Card
 import View.CardHeader as CardHeader
 import View.Checkbox as Checkbox
@@ -2135,11 +2135,11 @@ dimensionField label value changed =
 brushButton : Model -> Brush -> Html Msg
 brushButton model brush =
     let
-        button : Button.Button Msg
+        button : Button Msg
         button =
             Button.choice (brushLabel brush) ((model.brush == brush) && (model.tool == PaintTool)) (BrushButtonClicked brush)
 
-        illustrated : Button.Button Msg
+        illustrated : Button Msg
         illustrated =
             case brush of
                 EraseUnit ->

@@ -22,7 +22,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Dialog as Dialog exposing (Dialog)
 
 
@@ -86,7 +86,7 @@ panel :
     -> Html Msg
 panel config =
     let
-        headerButton : String -> Msg -> Button.Button Msg
+        headerButton : String -> Msg -> Button Msg
         headerButton label onClick =
             if config.enabled then
                 Button.secondary label onClick
@@ -189,7 +189,7 @@ panel config =
 dialog : { resigning : Bool, mobile : Bool } -> Dialog Msg
 dialog config =
     let
-        homeButton : Button.Button Msg
+        homeButton : Button Msg
         homeButton =
             if config.resigning then
                 Button.disabled "home"

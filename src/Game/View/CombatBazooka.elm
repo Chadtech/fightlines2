@@ -1,5 +1,6 @@
 module Game.View.CombatBazooka exposing
     ( endsAt
+    , firingTimes
     , frameAt
     , imagePaths
     , toSvg
@@ -33,9 +34,25 @@ endsAt attack figures =
             0
 
 
+launchOffsetMs : Float
+launchOffsetMs =
+    140
+
+
+firingTimes : CombatAttack.Attack -> Int -> List Float
+firingTimes attack figures =
+    case attack of
+        CombatAttack.Attacking timing ->
+            List.range 0 (figures - 1)
+                |> List.map (\index -> timing.startsAt + launchOffsetMs + toFloat index * CombatAttack.staggerMs)
+
+        CombatAttack.NotAttacking ->
+            []
+
+
 frameAt : Float -> Int
 frameAt age =
-    [ 0, 140, 180, 260, 420, 610, 800 ]
+    [ 0, launchOffsetMs, 180, 260, 420, 610, 800 ]
         |> List.filter (\startsAt -> age >= startsAt)
         |> List.length
 

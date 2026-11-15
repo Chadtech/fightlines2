@@ -4,7 +4,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Card as Card
 import View.CardHeader as CardHeader
 
@@ -22,7 +22,7 @@ toHtml :
     -> Html msg
 toHtml failure =
     let
-        retry : Button.Button msg
+        retry : Button msg
         retry =
             if failure.retryEnabled then
                 Button.secondary "try again" failure.onRetry

@@ -432,48 +432,56 @@ fn resolve_arrivals(
                     }
                 }
             }
-            // A caught enemy must stop even if it had a departure at this boundary.
-            for id in &stop_after_arrival {
-                if !intents.contains_key(id) {
-                    stopped.insert(*id);
-                }
-            }
             if blocked.len() == before {
                 break;
             }
         }
         let mut contacts = Vec::new();
-        for (id, destination) in &intents {
-            if !orders
-                .iter()
-                .any(|order| order.unit_id == *id && order.kind == UnitOrderKind::AttackMove)
-            {
-                continue;
-            }
+        for order in orders.iter().filter(|order| {
+            order.kind == UnitOrderKind::AttackMove && !stopped.contains(&order.unit_id)
+        }) {
+            let id = order.unit_id;
+            let scheduled_step = intents.get(&id);
+            let destination = match scheduled_step {
+                Some(destination) => destination,
+                None if stop_after_arrival.contains(&id) => {
+                    // An oncoming enemy can stop this unit before its next step.
+                    let traveled = paths.get(&id).ok_or(ResolutionError::MissingPath)?;
+                    let Some(next_step) = order.path.get(traveled.len()) else {
+                        continue;
+                    };
+                    next_step
+                }
+                None => continue,
+            };
             let mover = board
                 .units
                 .iter()
-                .find(|unit| unit.unit_id() == *id)
+                .find(|unit| unit.unit_id() == id)
                 .ok_or(ResolutionError::MissingUnit)?;
             let target = board
                 .units
                 .iter()
                 .filter(|unit| unit.is_alive() && unit.player_number() != mover.player_number())
                 .filter(|unit| {
-                    (unit.board_position() == Some(*destination)
-                        && (blocked.contains(&unit.unit_id())
-                            || !intents.contains_key(&unit.unit_id())
-                            || intents
-                                .get(&unit.unit_id())
-                                .is_some_and(|target| Some(*target) == mover.board_position())))
-                        || intents.get(&unit.unit_id()) == Some(destination)
+                    let enemy_step = intents.get(&unit.unit_id());
+                    let shares_destination =
+                        scheduled_step.is_some() && enemy_step == Some(destination);
+                    let holds_destination = scheduled_step.is_some()
+                        && (enemy_step.is_none() || blocked.contains(&unit.unit_id()));
+                    let head_on =
+                        enemy_step.is_some_and(|target| Some(*target) == mover.board_position());
+                    shares_destination
+                        || (unit.board_position() == Some(*destination)
+                            && (holds_destination || head_on))
                 })
                 .min_by_key(|unit| unit.unit_id());
             if let Some(target) = target {
-                contacts.push((*id, target.unit_id()));
-                stop_after_arrival.insert(*id);
-                stop_after_arrival.insert(target.unit_id());
+                contacts.push((id, target.unit_id()));
             }
+        }
+        for (attacker, target) in &contacts {
+            stop_after_arrival.extend([*attacker, *target]);
         }
         let completing_attack_moves: Vec<_> = orders
             .iter()
@@ -620,7 +628,20 @@ fn resolve_arrivals(
             &board,
             (tick - previous_tick) * MOVEMENT_DURATION_MS / ticks,
         ));
-        combat.engage_contacts(&mut board, &mut stopped, &mut frames, &contacts, &arrived);
+        let next_attack_step = |id| {
+            let order = orders
+                .iter()
+                .find(|order| order.unit_id == id && order.kind == UnitOrderKind::AttackMove)?;
+            order.path.get(paths.get(&id)?.len()).copied()
+        };
+        combat.engage_contacts(
+            &mut board,
+            &mut stopped,
+            &mut frames,
+            &contacts,
+            &arrived,
+            next_attack_step,
+        );
         previous_tick = tick;
     }
     Ok(MovementResolution {
@@ -1605,6 +1626,39 @@ mod tests {
                         .map(|unit| unit.hit_points().current())
                         .collect::<Vec<_>>()
                 );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn attack_move_fires_when_an_oncoming_truck_arrives_first() -> TestResult<()> {
+        let tank_origin = Coordinate::new(0, 0);
+        let truck_origin = Coordinate::new(1, 0);
+        for (tank_destination, head_on) in [((1, 0), true), ((0, 1), false)] {
+            let (scenario, mut orders) = setup(&[
+                ("11", &[(0, 0), tank_destination]),
+                ("9", &[(1, 0), (0, 0)]),
+            ])?;
+            attack_move(orders.first_mut().fixture()?, ArrivalFacing::AlongRoute)?;
+            let result = resolve(&scenario, &orders, 1)?;
+            assert_eq!(path(&result, "11")?, [tank_origin]);
+            assert_eq!(path(&result, "9")?, [truck_origin]);
+
+            let shots: Vec<_> = result
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .collect();
+            if head_on {
+                assert_eq!(shots.len(), 1);
+                let shot = shots.first().fixture()?;
+                assert_eq!(shot.kind, CombatKind::AttackMove);
+                assert_eq!(shot.origin, tank_origin);
+                assert_eq!(shot.destination, truck_origin);
+                assert_eq!(shot.target_health.after.current(), 0);
+            } else {
+                assert!(shots.is_empty());
             }
         }
         Ok(())

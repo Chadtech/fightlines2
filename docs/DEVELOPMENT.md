@@ -317,12 +317,12 @@ cargo choices, submitting, resigning, and continuing dialogs play `confirm`.
 Closing, backing out, and declining cargo choices play `cancel`.
 Keyboard actions use the same cue categories. Hover, focus, continuous pointer
 input, automatic playback controls, and other server responses remain silent.
-Combat playback emits `Audio.tankFire` or `Audio.fieldGunFire` whenever its clock crosses
-a matching muzzle-flash time (after the field gun’s 320ms preparation), using the same stagger as the sprites. Live games and logged replays
-share this timing; pauses and camera holds do not repeat shots. The manager
-preloads and cycles five distinct original procedural firing variants per weapon, with up to eight
-overlapping combat voices independent of UI feedback. Timing follows animation
-frames, with no separate per-tank timers.
+Combat playback emits `Audio.tankFire` at tank muzzle flashes and bazooka
+launches, and `Audio.fieldGunFire` at field-gun muzzle flashes. Cues follow
+the same clock and stagger as the sprites in live games and logged replays.
+Pauses and camera holds do not repeat shots. The manager preloads and cycles
+five procedural firing variants per cue, with up to eight overlapping combat
+voices independent of UI feedback.
 `Audio.combatImpact` uses five original procedural small-explosion variants at
 projectile contact, including nonlethal hits, unconfirmed indirect landings,
 building follow-ups and sabotage. It shares the combat voice limit and the same
@@ -332,7 +332,7 @@ with the full firing animation, including its overlap with target impacts.
 Each recorded firing formation has one voice and its own return-fire phase.
 Snapshots carry the elapsed clip position and remaining firing time, so pause,
 camera holds, map peeks, mute, leaving combat and hidden tabs stop it, and resume
-seeks to the current animation position. Bazookas and static trenches stay silent.
+seeks to the current animation position. Static trench artwork stays silent.
 The source manifest and credits are in `public/audio/README.md` and
 `public/audio/combat/infantry-fire-sources.json`.
 During battlefield playback, each visibly moving infantry, field gun, truck or

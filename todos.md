@@ -4,12 +4,9 @@
 
 ## Bugs
 
-
 ## Immediately
+
 - invite match makers to play against ai
-- refactor screen size handling, take it out of shared
-- Review button module and feedback thing
-- More clarity on what is going on when attacked by unknown field guns
 - Frontend AI engine
 - Tutorial missions
 - Key commands section in settings
@@ -17,7 +14,6 @@
 
 ## Soon
 - Shadows under units in combat theater
-- Revisit America Tank design. The turrent is too short
 - Manufacturing and cities
 - Air planes and boats
 - Day Night Cycle

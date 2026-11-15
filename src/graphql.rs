@@ -14,7 +14,7 @@ use crate::{
     map_definition::NamedMap,
     map_editor,
     map_id::MapId,
-    match_making,
+    match_making, matchmaking_sms,
     planning_error::{self, PlanningErrorBatchInput, PlanningErrorPage},
     player::Controller,
     player_number::PlayerNumber,
@@ -82,6 +82,7 @@ pub struct Context {
     pub feedback: Option<Arc<feedback::Directory>>,
     pub planning_errors: Option<Arc<planning_error::Directory>>,
     pub analytics: Option<Arc<analytics::Recorder>>,
+    pub matchmaking_sms: Option<Arc<matchmaking_sms::Alerts>>,
     pub editor: map_editor::Access,
     pub archives: game_archive::Access,
     identity: Mutex<Option<SessionToken>>,
@@ -279,6 +280,16 @@ impl Mutation {
     }
     fn admin_logout(context: &Context) -> FieldResult<bool> {
         context.admin.logout()
+    }
+
+    fn admin_send_test_sms(context: &Context) -> FieldResult<bool> {
+        context.require_admin()?;
+        let sms = context
+            .matchmaking_sms
+            .as_ref()
+            .ok_or("matchmaking sms is disabled.")?;
+        sms.send_test().map_err(juniper::FieldError::from)?;
+        Ok(true)
     }
 
     fn join_match_making(context: &Context, name: String) -> FieldResult<match_making::Snapshot> {
@@ -542,6 +553,10 @@ pub async fn handle(
             .app_data::<web::Data<analytics::Recorder>>()
             .cloned()
             .map(web::Data::into_inner),
+        matchmaking_sms: request
+            .app_data::<web::Data<matchmaking_sms::Alerts>>()
+            .cloned()
+            .map(web::Data::into_inner),
         editor: map_editor::Access::from_request(editor, &request),
         archives: match archives {
             Some(archives) => game_archive::Access::from_browser(Some(archives)),
@@ -628,6 +643,7 @@ pub fn export_schema() -> std::io::Result<()> {
         feedback: None,
         planning_errors: None,
         analytics: None,
+        matchmaking_sms: None,
         editor: map_editor::Access::Disabled,
         archives: game_archive::Access::Disabled,
         identity: Mutex::new(None),

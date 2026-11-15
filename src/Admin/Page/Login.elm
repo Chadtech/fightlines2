@@ -17,7 +17,7 @@ import Html.Styled.Events as Ev
 import Shared
 import Style as S
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Card as Card
 import View.CardHeader as CardHeader
 import View.TextField as TextField
@@ -137,7 +137,7 @@ view model =
         pending =
             model.request == Submitting
 
-        button : Button.Button Msg
+        button : Button Msg
         button =
             if pending then
                 Button.disabled "checking password…"

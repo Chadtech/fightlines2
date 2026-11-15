@@ -166,7 +166,7 @@ import Util.Html.Event as HtmlEvent
 import Util.List as ListUtil
 import Util.Maybe as MaybeUtil
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Checkbox as Checkbox
 import View.Dialog as Dialog exposing (Dialog)
 import View.Layout as Layout exposing (Layout)
@@ -5590,7 +5590,7 @@ desktopView model =
 mobileView : Model -> List (Html Msg)
 mobileView model =
     let
-        close : Button.Button Msg
+        close : Button Msg
         close =
             if not (canOpenDialog model) then
                 Button.disabled "close"

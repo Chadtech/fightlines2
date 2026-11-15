@@ -146,24 +146,21 @@ smooth. Some complete head-on exchanges on open ground:
 - Two half-health tanks ambushing one another each deal 8 damage; both are destroyed.
 - Two 5 HP tanks ambushing one another each deal 8 damage; both are destroyed.
 - A full-health infantry unit and tank ambushing one another deal 1 and 16 damage respectively; the infantry is destroyed and the tank finishes at 15 HP.
-- Full-health infantry attack-moving into a ready tank's firing line deal 1 damage. The tank fires back for 16, destroying the infantry and finishing at 15 HP, even if the infantry are on a hill.
-- A half-health ready field gun intercepting a full-health attack-moving tank deals 5 first. The tank survives at 11 HP and returns a 16-damage hit against the 8 HP gun, destroying it.
+- At direct contact, full-health attack-moving infantry deal 1 damage to an ambushing tank. The tank fires for 16 in the same volley, destroying the infantry and finishing at 15 HP, even if the infantry are on a hill.
+- A half-health ready field gun and a full-health tank that charges it at direct contact exchange 5 and 16 damage in the same volley. The tank finishes at 11 HP and the gun is destroyed.
 
-Reciprocal shots use pre-volley strength; the field-gun interception is a separate
-volley, so the tank's return shot compares its reduced health with the gun's
-current health.
+Reciprocal shots in the same volley use pre-volley strength.
 
 ## Tank and field-gun exchanges
 
-An ambushing field gun gets a separate first volley when a tank engages it by
-attack-move contact or an opposing ambush. The tank must be inside the gun's
-coverage and observable to its side. This includes contacts deferred at the
-start of the turn.
-On open ground, a full-health gun destroys a full-health tank before it can shoot. From outside that area, against an unready
-gun, or after the gun has spent its shot, the tank fires normally; a full-health
-tank can destroy the gun. Wounded guns may fail to kill the tank; survivors return
-fire with their reduced health. Existing range, cross coverage, visibility,
-supply costs, and once-per-turn shot limits still apply.
+A field gun can fire before an attack-moving tank reaches contact. A tank that
+survives an earlier shot uses its reduced health at contact. At direct contact,
+the tank and an eligible ambushing gun share a volley. On open ground, a
+full-health tank and a full-health gun can destroy each other this way.
+
+An ambushing field gun also fires first against an opposing tank ambush when the
+tank is observable inside the gun's coverage. Range, cross coverage, visibility,
+supply costs, and the once-per-turn shot limit apply.
 
 Every shot in one volley uses health and facing from before that volley. Later
 volleys use the surviving units' updated health. Encounter health presentation

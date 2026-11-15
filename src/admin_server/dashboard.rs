@@ -108,6 +108,7 @@ pub struct Dashboard {
     concurrent_games: i32,
     waiting_lobbies: i32,
     retained_finished_games: i32,
+    matchmaking_sms_enabled: bool,
     entries: Vec<AdminEntry>,
 }
 
@@ -127,6 +128,7 @@ pub fn get(context: &Context) -> FieldResult<Dashboard> {
         concurrent_games: counts.concurrent_games,
         waiting_lobbies: counts.waiting_lobbies,
         retained_finished_games: counts.retained_finished_games,
+        matchmaking_sms_enabled: context.matchmaking_sms.is_some(),
         entries,
     })
 }

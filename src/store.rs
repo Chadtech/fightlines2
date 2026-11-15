@@ -514,6 +514,7 @@ mod tests {
         .await;
         let mut ids = Vec::new();
         let mut finished_host = None;
+        let mut active_host = None;
         for name in ["Finished", "Active", "Waiting"] {
             let (created, host) = execute!(
                 &app,
@@ -543,6 +544,8 @@ mod tests {
             }
             if name == "Finished" {
                 finished_host = Some(host);
+            } else if name == "Active" {
+                active_host = Some(host);
             }
             ids.push(LobbyId::from_token(id));
         }
@@ -566,6 +569,16 @@ mod tests {
             &app,
             format!("{{ game(id: \"{finished}\") {{ id }} }}"),
             Some(host)
+        );
+        let active = ids.get(1).fixture()?;
+        let (timed_out, _) = execute!(
+            &app,
+            format!("{{ game(id: \"{active}\") {{ outcome {{ inactive winner }} }} }}"),
+            active_host
+        );
+        assert_eq!(
+            timed_out["data"]["game"]["outcome"],
+            json!({ "inactive": true, "winner": "PLAYER2" })
         );
         let entry = store.entry(finished).fixture()?.fixture()?;
         let weak = Arc::downgrade(&entry);

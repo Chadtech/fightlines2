@@ -861,10 +861,9 @@ revealDirectShooters before volley =
     List.foldl reveal before volley.shots
 
 
-{-| A stationary head-on exchange can span two authoritative volleys. Present
-both hits together while retaining the server's damage and final board state.
-A return volley may include unrelated pairs. Never cross movement, visibility
-changes, an intervening encounter, or a casualty.
+{-| Reciprocal fire can span two volleys at the same positions. If the rest of
+the battlefield changes between shots, play those frames before showing both
+hits at the return volley. An intervening encounter or casualty splits the pair.
 -}
 combineReturnFire : Frame -> List Frame -> ( Frame, List Frame )
 combineReturnFire opening pending =
@@ -875,30 +874,52 @@ combineReturnFire opening pending =
             , location = unit.location
             }
 
-        stationary : Frame -> Bool
-        stationary frame =
+        sameBattlefield : Frame -> Bool
+        sameBattlefield frame =
             (List.map unitLocation frame.units == List.map unitLocation opening.units)
-                && List.isEmpty frame.indirectImpacts
-                && List.isEmpty opening.indirectImpacts
                 && (frame.visibleTiles == opening.visibleTiles)
                 && (frame.depots == opening.depots)
                 && (frame.supplyCrates == opening.supplyCrates)
+                && (frame.departures == opening.departures)
 
-        findReturn : Shot -> List Frame -> ( Frame, List Frame )
-        findReturn shot remaining =
+        combatantsStay : Shot -> Frame -> Bool
+        combatantsStay shot frame =
+            let
+                staysAt : UnitId -> Coordinate -> Bool
+                staysAt id position =
+                    let
+                        seenAt : Frame -> Bool
+                        seenAt snapshot =
+                            List.any
+                                (\unit -> (unit.id == id) && (Unit.mapPosition unit == Just position))
+                                snapshot.units
+                    in
+                    seenAt opening
+                        && seenAt frame
+                        && (List.member position opening.visibleTiles == List.member position frame.visibleTiles)
+            in
+            staysAt shot.attacker.id shot.origin
+                && staysAt shot.target.id shot.destination
+
+        findReturn : Shot -> List Frame -> List Frame -> ( Frame, List Frame )
+        findReturn shot between remaining =
             case remaining of
                 frame :: rest ->
-                    if not (stationary frame) then
+                    if
+                        not (sameBattlefield frame || combatantsStay shot frame)
+                            || not (List.isEmpty frame.indirectImpacts)
+                            || not (List.isEmpty frame.sabotages)
+                    then
                         ( opening, pending )
 
                     else
                         case frame.shots of
                             [] ->
-                                if List.any Unit.isDying frame.units then
+                                if not (List.isEmpty frame.losses) || List.any Unit.isDying frame.units then
                                     ( opening, pending )
 
                                 else
-                                    findReturn shot rest
+                                    findReturn shot (frame :: between) rest
 
                             returnShots ->
                                 let
@@ -926,7 +947,7 @@ combineReturnFire opening pending =
                                 case returns of
                                     [ returnShot ] ->
                                         if List.all unrelated otherShots then
-                                            combine shot returnShot otherShots frame rest
+                                            combine shot returnShot otherShots frame between rest
 
                                         else
                                             ( opening, pending )
@@ -937,8 +958,15 @@ combineReturnFire opening pending =
                 [] ->
                     ( opening, pending )
 
-        combine : Shot -> Shot -> List Shot -> Frame -> List Frame -> ( Frame, List Frame )
-        combine shot returnShot otherShots frame rest =
+        combine :
+            Shot
+            -> Shot
+            -> List Shot
+            -> Frame
+            -> List Frame
+            -> List Frame
+            -> ( Frame, List Frame )
+        combine shot returnShot otherShots frame between rest =
             let
                 attackerHealth : CombatHealth
                 attackerHealth =
@@ -968,20 +996,32 @@ combineReturnFire opening pending =
                             targetHealth
                     ]
                         ++ otherShots
+
+                combined : Frame
+                combined =
+                    frame |> setFrameShots shots
             in
-            ( frame
-                |> setFrameShots shots
-                |> setFrameLosses (opening.losses ++ frame.losses)
-            , rest
-            )
+            if List.all sameBattlefield (frame :: between) then
+                ( combined, rest )
+
+            else
+                ( opening |> setFrameShots []
+                , List.reverse between ++ (combined :: rest)
+                )
     in
     case opening.shots of
         [ shot ] ->
-            if (shot.kind == CombatKind.IndirectFire) || List.any Unit.isDying opening.units then
+            if
+                (shot.kind == CombatKind.IndirectFire)
+                    || not (List.isEmpty opening.indirectImpacts)
+                    || not (List.isEmpty opening.sabotages)
+                    || not (List.isEmpty opening.losses)
+                    || List.any Unit.isDying opening.units
+            then
                 ( opening, pending )
 
             else
-                findReturn shot pending
+                findReturn shot [] pending
 
         _ ->
             ( opening, pending )

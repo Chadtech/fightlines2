@@ -322,8 +322,8 @@ infantryLoadout panel unit =
         }
 
 
-{-| Sound cues use the same formation clocks and before-health as the flash.
-Only recorded firing participants of the requested kind contribute timestamps.
+{-| Discrete firing cues use the same formation clocks and before-health as the
+sprites. Bazookas cue at launch, while small arms use a continuous firing sound.
 -}
 firingTimes : UnitKind -> Panel -> List Float
 firingTimes kind panel =
@@ -331,7 +331,25 @@ firingTimes kind panel =
         starts : Unit -> Int -> List Float
         starts unit health =
             if unit.kind == kind then
-                CombatAttack.firingTimes (attackFor panel unit) unit.kind (CombatFormation.figureCount (infantryLoadout panel unit) unit.kind health)
+                let
+                    loadout : CombatInfantry.Loadout
+                    loadout =
+                        infantryLoadout panel unit
+
+                    attack : CombatAttack.Attack
+                    attack =
+                        attackFor panel unit
+
+                    figures : Int
+                    figures =
+                        CombatFormation.figureCount loadout kind health
+                in
+                case loadout of
+                    CombatInfantry.Bazookas ->
+                        CombatBazooka.firingTimes attack figures
+
+                    CombatInfantry.SmallArms ->
+                        CombatAttack.firingTimes attack kind figures
 
             else
                 []
@@ -847,14 +865,27 @@ theaterView calibrations options armyStyle players frame map panel =
                 Exhaustion unit ->
                     [ exhaustionScene scenery panel unit ]
 
-        portraits : List (Html Msg)
-        portraits =
+        activePortraits : List (Html Msg)
+        activePortraits =
             case buildingDamageAt panel of
                 Just damage ->
                     [ buildingScene scenery panel damage ]
 
                 Nothing ->
                     participantPortraits
+
+        portraits : List (Html Msg)
+        portraits =
+            case panel.encounter of
+                Impact { attackers } ->
+                    if List.isEmpty attackers then
+                        unknownAttackerScene :: activePortraits
+
+                    else
+                        activePortraits
+
+                _ ->
+                    activePortraits
 
         title : String
         title =
@@ -1355,6 +1386,20 @@ impactAttacker scenery panel attacker facing =
         )
 
 
+unknownAttackerScene : Html Msg
+unknownAttackerScene =
+    scene Nothing
+        "none"
+        "unknown attacker: field gun"
+        [ Svg.g
+            [ SA.transform "translate(18 25) scale(1.5)"
+            , SA.opacity "0.45"
+            ]
+            [ UnitSprite.neutralFieldGunPortrait ]
+        , questionMark
+        ]
+
+
 {-| Render each observed gun and a single landing in horizontal map order.
 All formations share one panel clock and the combined target health transition.
 -}
@@ -1673,18 +1718,23 @@ unconfirmedFog =
             , SA.opacity "0.8"
             ]
             []
-        , Svg.text_
-            [ SA.x "48"
-            , SA.y "32"
-            , SA.dy "0.35em"
-            , SA.textAnchor "middle"
-            , SA.fontSize "28"
-            , SA.fill S.gray5Str
-            , SA.stroke S.gray0Str
-            , SA.strokeWidth "0.5"
-            ]
-            [ Svg.text "?" ]
+        , questionMark
         ]
+
+
+questionMark : Svg.Svg msg
+questionMark =
+    Svg.text_
+        [ SA.x "48"
+        , SA.y "32"
+        , SA.dy "0.35em"
+        , SA.textAnchor "middle"
+        , SA.fontSize "28"
+        , SA.fill S.gray5Str
+        , SA.stroke S.gray0Str
+        , SA.strokeWidth "0.5"
+        ]
+        [ Svg.text "?" ]
 
 
 portrait : Scenery -> Panel -> CombatHealth -> Unit -> Html Msg

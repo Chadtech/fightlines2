@@ -27,6 +27,7 @@ mod map_editor;
 mod map_id;
 mod map_thumbnail;
 mod match_making;
+mod matchmaking_sms;
 mod movement;
 mod movement_resolution;
 mod planning_error;
@@ -111,6 +112,7 @@ fn main() -> io::Result<()> {
 async fn run(frontend: PathBuf, log_directory: PathBuf) -> io::Result<()> {
     let environment = Environment::load()?;
     let admin_auth = admin::Auth::load()?;
+    let sms = matchmaking_sms::Alerts::load()?.map(web::Data::new);
     environment.validate_arguments(env::args().skip(1))?;
     let address = env::var("FIGHTLINES_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());
 
@@ -203,6 +205,9 @@ async fn run(frontend: PathBuf, log_directory: PathBuf) -> io::Result<()> {
         }
         if editor_enabled {
             app = app.app_data(editor.clone());
+        }
+        if let Some(sms) = &sms {
+            app = app.app_data(sms.clone());
         }
         app.service(player_frontend(&frontend))
     })

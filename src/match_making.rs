@@ -61,6 +61,11 @@ pub enum Snapshot {
     Matched(MatchedSnapshot),
 }
 
+struct Join {
+    snapshot: Snapshot,
+    started_waiting: bool,
+}
+
 #[derive(Clone, Copy)]
 struct RecentActivity {
     last_game_started: Option<Instant>,
@@ -240,11 +245,14 @@ impl Queue {
         name: PlayerName,
         maps: Vec<NamedMap>,
         now: Instant,
-    ) -> FieldResult<Snapshot> {
+    ) -> FieldResult<Join> {
         self.remove_absent_players(now);
         self.retire_finished_match(store, &session)?;
         if self.matches.contains_key(&session) {
-            return Ok(self.snapshot(Some(&session), None, now));
+            return Ok(Join {
+                snapshot: self.snapshot(Some(&session), None, now),
+                started_waiting: false,
+            });
         }
         if let Some(waiting) = self
             .waiting
@@ -252,11 +260,15 @@ impl Queue {
             .find(|player| player.session == session)
         {
             waiting.last_seen = now;
-            return Ok(self.snapshot(Some(&session), None, now));
+            return Ok(Join {
+                snapshot: self.snapshot(Some(&session), None, now),
+                started_waiting: false,
+            });
         }
         let length =
             NonZeroUsize::new(maps.len()).ok_or("no maps are available for match making.")?;
         let ticket = Ticket(store.next_token()?);
+        let started_waiting = self.waiting.is_none();
         if let Some(opponent) = self.waiting.as_ref() {
             if name.matches(&opponent.name) {
                 return Err(
@@ -333,7 +345,10 @@ impl Queue {
                 last_seen: now,
             });
         }
-        Ok(self.snapshot(Some(&session), None, Instant::now()))
+        Ok(Join {
+            snapshot: self.snapshot(Some(&session), None, Instant::now()),
+            started_waiting,
+        })
     }
 
     fn poll(&mut self, session: &SessionToken, ticket: &Ticket, now: Instant) -> Snapshot {
@@ -385,7 +400,7 @@ pub fn get(context: &Context) -> FieldResult<Snapshot> {
 }
 
 pub fn join(context: &Context, input: &str) -> FieldResult<Snapshot> {
-    let _admission = match context.store.admit_session() {
+    let admission = match context.store.admit_session() {
         Ok(admission) => admission,
         Err(error) => {
             // A retry after a committed pairing must recover its original game,
@@ -409,7 +424,13 @@ pub fn join(context: &Context, input: &str) -> FieldResult<Snapshot> {
     let result =
         queue(context)?.join(&context.store, session.clone(), name, maps, Instant::now())?;
     context.set_identity(session);
-    Ok(result)
+    drop(admission);
+    if result.started_waiting
+        && let Some(sms) = &context.matchmaking_sms
+    {
+        sms.player_waiting();
+    }
+    Ok(result.snapshot)
 }
 
 pub fn poll(context: &Context, ticket: String) -> FieldResult<Snapshot> {
@@ -499,7 +520,8 @@ mod tests {
         let first_ticket = ticket(
             queue
                 .join(&store, first.clone(), name("first")?, pool()?, now)
-                .fixture()?,
+                .fixture()?
+                .snapshot,
         )?;
         queue
             .join(&store, second.clone(), name("second")?, pool()?, now)
@@ -586,16 +608,16 @@ mod tests {
         let session = SessionToken::from_token("first".into());
         let stranger = SessionToken::from_token("stranger".into());
         let now = Instant::now();
-        let first = ticket(
-            queue
-                .join(&store, session.clone(), name("first")?, pool()?, now)
-                .fixture()?,
-        )?;
-        let duplicate = ticket(
-            queue
-                .join(&store, session.clone(), name("first")?, pool()?, now)
-                .fixture()?,
-        )?;
+        let joined = queue
+            .join(&store, session.clone(), name("first")?, pool()?, now)
+            .fixture()?;
+        assert!(joined.started_waiting);
+        let first = ticket(joined.snapshot)?;
+        let retried = queue
+            .join(&store, session.clone(), name("first")?, pool()?, now)
+            .fixture()?;
+        assert!(!retried.started_waiting);
+        let duplicate = ticket(retried.snapshot)?;
         assert!(first == duplicate);
         assert!(queue.waiting.is_some());
         assert_idle(queue.leave(&stranger, &first, now))?;
@@ -614,7 +636,8 @@ mod tests {
         let second = ticket(
             queue
                 .join(&store, session.clone(), name("first")?, pool()?, now)
-                .fixture()?,
+                .fixture()?
+                .snapshot,
         )?;
         assert!(first != second);
         queue.leave(&session, &first, now);
@@ -648,12 +671,14 @@ mod tests {
             let first_ticket = ticket(
                 queue
                     .join(&store, first.clone(), name("first")?, pool()?, now)
-                    .fixture()?,
+                    .fixture()?
+                    .snapshot,
             )?;
-            let second_snapshot = queue
+            let paired = queue
                 .join(&store, second.clone(), name("second")?, pool()?, now)
                 .fixture()?;
-            let id = game_id(second_snapshot)?;
+            assert!(!paired.started_waiting);
+            let id = game_id(paired.snapshot)?;
             assert_eq!(game_id(queue.poll(&first, &first_ticket, now))?, id);
             assert_eq!(
                 game_id(queue.leave(&first, &first_ticket, now))?,
@@ -665,6 +690,7 @@ mod tests {
                     queue
                         .join(&store, second.clone(), name("second")?, pool()?, now)
                         .fixture()?
+                        .snapshot
                 )?,
                 id
             );
@@ -733,7 +759,8 @@ mod tests {
         let original = ticket(
             queue
                 .join(&store, first.clone(), name("first")?, pool()?, now)
-                .fixture()?,
+                .fixture()?
+                .snapshot,
         )?;
         assert!(
             queue

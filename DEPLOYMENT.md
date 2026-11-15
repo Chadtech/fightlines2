@@ -104,6 +104,21 @@ Corrupt entries are indicated alongside readable ones. Browser assets include
 Their source entry files live in `tools/admin/`, which is included by the local
 deployment snapshot workflow. Production builds still remove all DevTools outputs.
 
+## Matchmaking SMS alerts
+
+Set `FIGHTLINES_MATCHMAKING_SMS_PHONE` with the leading `+` and country code
+in the server's private environment. The Droplet's shared service configuration
+is `/etc/fightlines/fightlines.env`. The next managed release loads the change
+on startup. Leave the phone setting unset to disable SMS alerts.
+
+The first player to join an empty matchmaking queue triggers a background SMS
+via Textbelt. Use **send test sms** in Admin to check delivery to the configured
+number. The test uses the same quota as real alerts. Textbelt's public key
+allows one SMS per day. Set `FIGHTLINES_TEXTBELT_KEY` in the same private
+configuration to use prepaid credits. Attempts share a ten-second cooldown
+per process. Automatic delivery failures appear as `matchmaking_sms_failed`
+in the server diagnostics.
+
 ## HTTP requests and limits
 
 App entry documents and GraphQL responses use `Cache-Control: no-store`.
@@ -649,10 +664,10 @@ Replay archives remain on disk. The same sweep removes unstarted lobbies after
 30 minutes without a successful join, setup change, or chat send. Lobby and chat
 polling do not extend this timer. Hosts can close unstarted lobbies immediately;
 closing or expiring a lobby preserves its on-disk chat journal. The timeout is
-`INACTIVITY_TIMEOUT` in `src/lobby.rs`. Human-versus-human games also end after
-two minutes without player interaction followed by a 60-second warning, with
+`INACTIVITY_TIMEOUT` in `src/lobby.rs`. Human players in live games against
+humans or AI have two minutes to interact before a 60-second warning, with
 bounded allowances for playback and the first-game briefing. Polling does not
-renew activity. AI games and the development preview are exempt; see
+renew activity. AI players and the development preview have no clock; see
 [playing](docs/PLAYING.md) for the inactivity rules.
 
 Archives survive server restarts, but active games and lobbies still do not resume

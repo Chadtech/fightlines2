@@ -11,7 +11,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Dialog as Dialog exposing (Dialog)
 import View.Textarea as Textarea
 
@@ -56,7 +56,7 @@ dialog layout draft =
                 _ ->
                     Textarea.simple draft.text TextChanged
 
-        submit : Button.Button Msg
+        submit : Button Msg
         submit =
             if Feedback.isSending draft then
                 Button.disabled "submitting…"

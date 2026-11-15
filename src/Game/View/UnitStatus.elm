@@ -21,7 +21,7 @@ import Style as S
 import Svg.Styled as Svg
 import Svg.Styled.Attributes as SA
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Layout as Layout exposing (Layout)
 
 
@@ -87,7 +87,7 @@ actionableStatusView :
     -> Html msg
 actionableStatusView layout events playerName unit action =
     let
-        button : Button.Button msg
+        button : Button msg
         button =
             case action of
                 RevokeOrder onRevoke ->

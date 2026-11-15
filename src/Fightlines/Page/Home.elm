@@ -30,7 +30,7 @@ import ScreenSize exposing (ScreenSize)
 import Shared
 import Style as S
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Card as Card
 import View.Dialog as Dialog exposing (Dialog)
 
@@ -349,6 +349,17 @@ dialog model =
 
 view : Model -> List (Html Msg)
 view model =
+    let
+        navigationButtons : List (Button Msg)
+        navigationButtons =
+            [ Button.primary "match making" MatchMakingButtonClicked
+            , Button.secondary "create a lobby" CreateALobbyClicked
+            , Button.secondary "feedback" FeedbackButtonClicked
+                |> Button.withHtmlId feedbackButtonHtmlId
+            , Button.secondary "about" AboutButtonClicked
+                |> Button.withHtmlId aboutButtonHtmlId
+            ]
+    in
     [ H.div
         [ A.css
             [ S.flex1
@@ -440,37 +451,13 @@ view model =
                             ]
                         ]
                     ]
-                    [ matchMakingControl
-                    , createLobbyButton
-                        |> Button.fullWidth
-                        |> Button.toHtml
-                    , Button.secondary "feedback" FeedbackButtonClicked
-                        |> Button.fullWidth
-                        |> Button.withHtmlId feedbackButtonHtmlId
-                        |> Button.toHtml
-                    , Button.secondary "about" AboutButtonClicked
-                        |> Button.fullWidth
-                        |> Button.withHtmlId aboutButtonHtmlId
-                        |> Button.toHtml
-                    ]
+                    (List.map (Button.fullWidth >> Button.toHtml) navigationButtons)
               ]
                 |> Card.toHtml Card.simple
             ]
         , quotation
         ]
     ]
-
-
-matchMakingControl : Html Msg
-matchMakingControl =
-    Button.primary "match making" MatchMakingButtonClicked
-        |> Button.fullWidth
-        |> Button.toHtml
-
-
-createLobbyButton : Button.Button Msg
-createLobbyButton =
-    Button.secondary "create a lobby" CreateALobbyClicked
 
 
 feedbackButtonHtmlId : String

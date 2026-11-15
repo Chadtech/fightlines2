@@ -42,7 +42,8 @@ pub(crate) struct Game {
     log: Option<GameLog>,
     turns: Turns,
     finished_at: Option<Instant>,
-    activity: Option<[ActivityClock; 2]>,
+    // Only human players in live games have clocks, indexed by map side.
+    activity: [Option<ActivityClock>; 2],
     observations: [visibility::PlayerObservation; 2],
     access: GameAccess,
     scenario: Scenario,
@@ -102,18 +103,16 @@ impl Game {
         players: Vec<Player>,
         scenario: Scenario,
     ) -> Self {
-        let activity = if players.len() == 2
-            && players
-                .iter()
-                .all(|player| player.controller.session().is_some())
-        {
-            Some([ActivityClock::new(Instant::now()); 2])
-        } else {
-            None
-        };
+        let now = Instant::now();
+        let mut activity = [None; 2];
+        for player in &players {
+            if player.controller.session().is_some() {
+                activity[player.player_number.index()] = Some(ActivityClock::new(now));
+            }
+        }
         Self {
-            started_at: Instant::now(),
-            last_activity: Instant::now(),
+            started_at: now,
+            last_activity: now,
             activity,
             chat: Transcript::default(),
             log: None,
@@ -132,17 +131,14 @@ impl Game {
     }
 
     pub fn admin_snapshot(&self, now: Instant) -> EntrySnapshot {
-        let warning_deadline = self.activity.as_ref().and_then(|clocks| {
-            PlayerNumber::ALL
-                .into_iter()
-                .filter(|player| self.turns.orders[player.index()].is_none())
-                .filter_map(|player| {
-                    clocks[player.index()]
-                        .countdown_seconds(now)
-                        .map(|_| clocks[player.index()].deadline())
-                })
-                .min()
-        });
+        let warning_deadline = PlayerNumber::ALL
+            .into_iter()
+            .filter(|player| self.turns.orders[player.index()].is_none())
+            .filter_map(|player| {
+                let clock = self.activity[player.index()]?;
+                clock.countdown_seconds(now).map(|_| clock.deadline())
+            })
+            .min();
         let status = if self.turns.outcome.is_some() {
             EntryStatus::Finished
         } else if warning_deadline.is_some() {
@@ -177,7 +173,7 @@ impl Game {
 
     pub fn into_development_preview(mut self) -> Self {
         self.access = GameAccess::DevelopmentPreview;
-        self.activity = None;
+        self.activity = [None; 2];
         self
     }
 
@@ -325,11 +321,11 @@ impl Game {
             player_number,
         );
         Ok(GameSnapshot {
-            inactivity: self.activity.as_ref().map(|activity| EnabledInactivity {
+            inactivity: self.activity[index].map(|clock| EnabledInactivity {
                 warning_seconds_remaining: if self.turns.outcome.is_none()
                     && self.turns.orders[index].is_none()
                 {
-                    activity[index].countdown_seconds(Instant::now())
+                    clock.countdown_seconds(Instant::now())
                 } else {
                     None
                 },
@@ -370,12 +366,9 @@ impl Game {
         if self.turns.outcome.is_some() {
             return Ok(false);
         }
-        let Some(activity) = &self.activity else {
-            return Ok(false);
-        };
         let deadlines = PlayerNumber::ALL.map(|player| {
             let index = player.index();
-            let deadline = activity[index].deadline();
+            let deadline = self.activity[index]?.deadline();
             (self.turns.orders[index].is_none() && now >= deadline).then_some(deadline)
         });
         let winner = match deadlines {
@@ -434,9 +427,9 @@ impl Game {
         if renewal_allowed
             && self.turns.outcome.is_none()
             && self.turns.orders[player.index()].is_none()
-            && let Some(clocks) = &mut self.activity
+            && let Some(clock) = &mut self.activity[player.index()]
         {
-            clocks[player.index()].observe(reason, now);
+            clock.observe(reason, now);
             if let InactivityRenewalReason::UserInteraction = reason {
                 self.last_activity = now;
             }
@@ -584,22 +577,21 @@ impl Game {
             .map_err(|error| log_error(&self.source_lobby, error))?;
         }
         // Commit only after both validation/resolution and the durable write succeed.
-        self.last_activity = Instant::now();
+        let now = Instant::now();
+        self.last_activity = now;
         self.turns = next_turns;
         self.scenario = next_scenario;
         if self.turns.outcome.is_some() {
-            self.finished_at = Some(Instant::now());
+            self.finished_at = Some(now);
         }
-        if self.turns.number != turn_number
-            && let Some(activity) = &mut self.activity
-        {
-            *activity = [ActivityClock::new(Instant::now()); 2];
-        }
-        if self.turns.number != turn_number
-            && let Some(resolution) = &self.turns.last_resolution
-        {
-            for (observation, player) in self.observations.iter_mut().zip(PlayerNumber::ALL) {
-                observation.resolve(&self.scenario, player, resolution);
+        if self.turns.number != turn_number {
+            for clock in self.activity.iter_mut().flatten() {
+                *clock = ActivityClock::new(now);
+            }
+            if let Some(resolution) = &self.turns.last_resolution {
+                for (observation, player) in self.observations.iter_mut().zip(PlayerNumber::ALL) {
+                    observation.resolve(&self.scenario, player, resolution);
+                }
             }
         }
         self.player_view(identity)
@@ -931,7 +923,7 @@ mod tests {
             players,
             scenario,
         );
-        game.activity = Some([ActivityClock::new(now); 2]);
+        game.activity = [Some(ActivityClock::new(now)); 2];
         Ok(game)
     }
 
@@ -959,7 +951,7 @@ mod tests {
             ),
             (None, serde_json::Value::Null),
         ] {
-            game.activity = clock.map(|clock| [clock; 2]);
+            game.activity = [clock; 2];
             let schema = RootNode::new(
                 Query {
                     snapshot: game.view(Some(&host)).fixture()?,
@@ -990,8 +982,8 @@ mod tests {
         let guest = SessionToken::from_token("Player2".to_owned());
         let outsider = SessionToken::from_token("outsider".into());
         let stale = now - Duration::from_secs(121);
-        game.activity.as_mut().fixture()?[0] = ActivityClock::new(stale);
-        let deadline = game.activity.as_ref().fixture()?[0].deadline();
+        game.activity[0] = Some(ActivityClock::new(stale));
+        let deadline = game.activity[0].fixture()?.deadline();
         let own = game.view(Some(&host)).fixture()?;
         assert!(
             own.inactivity
@@ -1036,7 +1028,7 @@ mod tests {
             now,
         )
         .fixture()?;
-        assert_eq!(game.activity.as_ref().fixture()?[0].deadline(), deadline);
+        assert_eq!(game.activity[0].fixture()?.deadline(), deadline);
         // Reads and the other player's activity never renew this player's clock.
         game.view(Some(&host)).fixture()?;
         game.renew_inactivity_timer(
@@ -1046,7 +1038,7 @@ mod tests {
             now,
         )
         .fixture()?;
-        assert_eq!(game.activity.as_ref().fixture()?[0].deadline(), deadline);
+        assert_eq!(game.activity[0].fixture()?.deadline(), deadline);
         let renewed = game
             .renew_inactivity_timer(
                 Some(&host),
@@ -1061,7 +1053,7 @@ mod tests {
                 warning_seconds_remaining: None
             })
         );
-        assert!(game.activity.as_ref().fixture()?[0].deadline() > deadline);
+        assert!(game.activity[0].fixture()?.deadline() > deadline);
         Ok(())
     }
 
@@ -1074,7 +1066,7 @@ mod tests {
         // A submitted player is safe even if their own activity is older.
         game.turns.orders[0] = Some(Vec::new());
         let board = serde_json::to_value(&game.scenario)?;
-        let deadline = game.activity.as_ref().fixture()?[1].deadline();
+        let deadline = game.activity[1].fixture()?.deadline();
         assert!(
             !game
                 .expire_inactive(deadline - Duration::from_nanos(1))
@@ -1127,15 +1119,14 @@ mod tests {
         let now = Instant::now();
         for (delay, winner) in [(0, None), (1, Some(PlayerNumber::Player2))] {
             let mut game = inactivity_fixture(now)?;
-            game.activity.as_mut().fixture()?[1] =
-                ActivityClock::new(now + Duration::from_secs(delay));
+            game.activity[1] = Some(ActivityClock::new(now + Duration::from_secs(delay)));
             game.expire_inactive(now + Duration::from_secs(200))
                 .fixture()?;
             assert_eq!(game.turns.outcome, Some(GameOutcome::Inactivity(winner)));
         }
         let mut late_submission = inactivity_fixture(now - Duration::from_secs(181))?;
         let host = SessionToken::from_token("Player1".to_owned());
-        late_submission.activity.as_mut().fixture()?[1] = ActivityClock::new(now);
+        late_submission.activity[1] = Some(ActivityClock::new(now));
         let snapshot = late_submission
             .submit_turn(Some(&host), 1, Vec::new(), &Limits::default())
             .fixture()?;
@@ -1147,7 +1138,7 @@ mod tests {
     }
 
     #[test]
-    fn inactivity_exempts_ai_and_preview_and_resets_after_resolution() -> TestResult<()> {
+    fn inactivity_exempts_preview_and_resets_after_resolution() -> TestResult<()> {
         let now = Instant::now();
         let mut game = inactivity_fixture(now)?;
         let host = SessionToken::from_token("Player1".to_owned());
@@ -1173,7 +1164,7 @@ mod tests {
                 .fixture()?;
         }
         assert_eq!(game.turns.number, 2);
-        let deadline = game.activity.as_ref().fixture()?[0].deadline();
+        let deadline = game.activity[0].fixture()?.deadline();
         game.renew_inactivity_timer(
             Some(&host),
             2,
@@ -1181,7 +1172,7 @@ mod tests {
             now + Duration::from_secs(10),
         )
         .fixture()?;
-        assert_eq!(game.activity.as_ref().fixture()?[0].deadline(), deadline);
+        assert_eq!(game.activity[0].fixture()?.deadline(), deadline);
         game.renew_inactivity_timer(
             Some(&host),
             2,
@@ -1189,29 +1180,64 @@ mod tests {
             now + Duration::from_secs(10),
         )
         .fixture()?;
-        assert!(game.activity.as_ref().fixture()?[0].deadline() > deadline);
+        assert!(game.activity[0].fixture()?.deadline() > deadline);
         let mut preview = game.into_development_preview();
         assert!(
             !preview
                 .expire_inactive(now + Duration::from_secs(10000))
                 .fixture()?
         );
-        let mut ai = inactivity_fixture(now)?;
-        ai.players.get_mut(1).fixture()?.controller = PlayerController::Ai;
-        let mut ai = Game::new(
-            ai.source_lobby,
-            ai.name,
-            ai.map_type,
-            ai.host,
-            ai.players,
-            ai.scenario,
-        );
-        assert!(ai.activity.is_none());
-        assert_eq!(ai.view(Some(&host)).fixture()?.inactivity, None);
-        assert!(
-            !ai.expire_inactive(now + Duration::from_secs(10000))
-                .fixture()?
-        );
+        Ok(())
+    }
+
+    #[test]
+    fn ai_games_time_out_the_human_on_either_side() -> TestResult<()> {
+        for human in PlayerNumber::ALL {
+            let ai = human.opponent();
+            let mut fixture = inactivity_fixture(Instant::now())?;
+            let host = SessionToken::from_token(format!("{human:?}"));
+            fixture.players.get_mut(ai.index()).fixture()?.controller = PlayerController::Ai;
+            let mut game = Game::new(
+                fixture.source_lobby,
+                fixture.name,
+                fixture.map_type,
+                host.clone(),
+                fixture.players,
+                fixture.scenario,
+            );
+            assert!(game.activity[ai.index()].is_none());
+            assert_eq!(
+                game.view(Some(&host)).fixture()?.inactivity,
+                Some(EnabledInactivity {
+                    warning_seconds_remaining: None
+                })
+            );
+            let deadline = game.activity[human.index()].fixture()?.deadline();
+            let warning = deadline - Duration::from_secs(30);
+            assert_eq!(
+                game.admin_snapshot(warning).warning_deadline,
+                Some(deadline)
+            );
+            game.renew_inactivity_timer(
+                Some(&host),
+                1,
+                InactivityRenewalReason::UserInteraction,
+                warning,
+            )
+            .fixture()?;
+            assert!(!game.expire_inactive(deadline).fixture()?);
+            let new_deadline = game.activity[human.index()].fixture()?.deadline();
+            assert!(
+                !game
+                    .expire_inactive(new_deadline - Duration::from_nanos(1))
+                    .fixture()?
+            );
+            assert!(game.expire_inactive(new_deadline).fixture()?);
+            assert_eq!(
+                game.view(Some(&host)).fixture()?.outcome,
+                Some(GameOutcome::Inactivity(Some(ai)))
+            );
+        }
         Ok(())
     }
 
@@ -1233,7 +1259,7 @@ mod tests {
         let mut game = inactivity_fixture(now)?;
         game.turns.orders[0] = Some(Vec::new());
         game.record_start(&logs).fixture()?;
-        let deadline = game.activity.as_ref().fixture()?[1].deadline();
+        let deadline = game.activity[1].fixture()?.deadline();
         let offline = directory.with_extension("offline");
         fs::rename(&directory, &offline)?;
         assert!(game.expire_inactive(deadline).is_err());

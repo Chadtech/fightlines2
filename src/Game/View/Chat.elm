@@ -21,7 +21,7 @@ import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import Style as S
 import View.Aria as Aria
-import View.Button as Button
+import View.Button as Button exposing (Button)
 import View.Card as Card
 import View.CardHeader as CardHeader
 import View.Dialog as Dialog exposing (Dialog)
@@ -199,7 +199,7 @@ editor placement composer =
                 _ ->
                     False
 
-        send : Button.Button Msg
+        send : Button Msg
         send =
             if pending then
                 Button.disabled "sending…"

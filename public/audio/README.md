@@ -255,9 +255,9 @@ These mono, 48kHz Vorbis recordings last about 1.6 seconds each. The archive's
 manifest and WAV masters retain the generation provenance; no gamelan recording
 is used in these effects. Normal builds need only the committed runtime Oggs.
 
-The audio manager preloads all five, cycles them per tank shot, and allows up to
-eight overlapping combat voices. Playback requests follow the same theater
-clock and shot stagger as the muzzle-flash sprites.
+The audio manager preloads all five, cycles them per tank shot or bazooka
+launch, and allows up to eight overlapping combat voices. Playback requests
+follow the same theater clock and shot stagger as the firing sprites.
 
 ## Field gun firing
 
