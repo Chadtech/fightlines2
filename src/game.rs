@@ -638,7 +638,7 @@ fn observed_board(
         let visible = visibility::visible_tiles(source, player_number);
         let mut scenario = visibility::observed_scenario(source, player_number, &visible);
         scenario.supply_crates = observation.supply_crates.clone();
-        observation.apply_depot_memory(&mut scenario.depots);
+        observation.apply_building_memory(&mut scenario.buildings);
         (scenario, visible.into_iter().collect())
     };
     let mut last_resolution = observation.last_resolution.clone();
@@ -651,7 +651,7 @@ fn observed_board(
             sabotages: Vec::new(),
             departures: Vec::new(),
             indirect_impacts: Vec::new(),
-            depots: scenario.depots.clone(),
+            buildings: scenario.buildings.clone(),
             supply_crates: scenario.supply_crates.clone(),
             shots: Vec::new(),
             units: scenario.units.clone(),
@@ -1520,7 +1520,7 @@ mod tests {
                 }
                 let revealed = frames.last().fixture()?;
                 assert_eq!(revealed.units, game.scenario.units);
-                assert_eq!(revealed.depots, game.scenario.depots);
+                assert_eq!(revealed.buildings, game.scenario.buildings);
                 assert_eq!(revealed.supply_crates, game.scenario.supply_crates);
                 assert_eq!(revealed.visible_tiles, snapshot.visible_tiles);
                 assert!(revealed.shots.is_empty());

@@ -11,10 +11,10 @@ import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as Kind
 import Audio
+import Game.Building exposing (Building)
 import Game.Camera as Camera
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.Depot exposing (Depot)
 import Game.Direction as Direction
 import Game.IndirectImpact as IndirectImpact exposing (IndirectImpact)
 import Game.Map as Map
@@ -195,7 +195,7 @@ impactEncounter impact =
         { destination = impact.destination
         , attackers = impact.attacker |> Maybe.map List.singleton |> Maybe.withDefault []
         , target = impact.target
-        , depot = impact.depot
+        , building = impact.building
         }
 
 
@@ -533,7 +533,7 @@ playbackChecks first second =
                     |> setPlaybackCurrent
                         (firstFrame
                             |> setFrameIndirectImpacts
-                                [ { destination = { x = 8, y = 9 }, attacker = Nothing, target = Nothing, depot = Nothing } ]
+                                [ { destination = { x = 8, y = 9 }, attacker = Nothing, target = Nothing, building = Nothing } ]
                         )
                     |> setPlaybackRemaining []
                 )
@@ -1565,7 +1565,7 @@ combatPlaybackChecks first second =
                                 { destination = shot.destination
                                 , attackers = []
                                 , target = Nothing
-                                , depot = Nothing
+                                , building = Nothing
                                 }
                     }
 
@@ -1577,7 +1577,7 @@ combatPlaybackChecks first second =
                                 { destination = shot.destination
                                 , attackers = [ { unit = attacker, health = { current = 16, maximum = 16 } } ]
                                 , target = Nothing
-                                , depot = Just { kind = BuildingKind.Fortress, before = { current = 8, maximum = 8 }, after = { current = 7, maximum = 8 } }
+                                , building = Just { kind = BuildingKind.Fortress, before = { current = 8, maximum = 8 }, after = { current = 7, maximum = 8 } }
                                 }
                     }
 
@@ -1663,7 +1663,7 @@ combatPlaybackChecks first second =
                             [ attacker ]
                         |> setFrameSabotages []
                         |> setFrameIndirectImpacts
-                            [ { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing }, { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing } ]
+                            [ { destination = shot.destination, attacker = Nothing, target = Nothing, building = Nothing }, { destination = shot.destination, attacker = Nothing, target = Nothing, building = Nothing } ]
 
                 focus : Maybe TurnPlayback.Playback
                 focus =
@@ -1700,7 +1700,7 @@ combatPlaybackChecks first second =
                     { destination = shot.destination
                     , attacker = Just { unit = attacker, health = shot.attackerHealth.before }
                     , target = Nothing
-                    , depot = Nothing
+                    , building = Nothing
                     }
 
                 knownLanding : TurnPlayback.Frame
@@ -1734,7 +1734,7 @@ combatPlaybackChecks first second =
 
                 observedTarget : IndirectImpact
                 observedTarget =
-                    { depot = Nothing
+                    { building = Nothing
                     , destination = shot.destination
                     , attacker = Nothing
                     , target =
@@ -1788,7 +1788,7 @@ combatPlaybackChecks first second =
                 depotHit : IndirectImpact
                 depotHit =
                     { observedTarget
-                        | depot =
+                        | building =
                             Just
                                 { kind = BuildingKind.Supply
                                 , before =
@@ -1827,7 +1827,7 @@ combatPlaybackChecks first second =
                         | target =
                             laterImpact.target
                                 |> Maybe.map (\observed -> { observed | health = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } })
-                        , depot =
+                        , building =
                             Just
                                 { kind = BuildingKind.Fuel
                                 , before =
@@ -1853,7 +1853,7 @@ combatPlaybackChecks first second =
                 showsDepotAndUnit panel =
                     case panel.encounter of
                         TurnPlayback.Impact impact ->
-                            impact.depot == depotHit.depot && impact.target == observedTarget.target
+                            impact.building == depotHit.building && impact.target == observedTarget.target
 
                         _ ->
                             False
@@ -1870,7 +1870,7 @@ combatPlaybackChecks first second =
                 ready : Float -> Bool
                 ready elapsed =
                     CombatTheater.readyToAutomaticallyClose
-                        { encounter = impactEncounter { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing }
+                        { encounter = impactEncounter { destination = shot.destination, attacker = Nothing, target = Nothing, building = Nothing }
                         , elapsed = elapsed
                         , mapView = TurnPlayback.CardVisible
                         }
@@ -1925,7 +1925,7 @@ combatPlaybackChecks first second =
                     )
                 ++ expect "unconfirmed indirect impacts open a theater without invented combatants"
                     (Maybe.andThen TurnPlayback.activeEncounter shown
-                        == Just (impactEncounter { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing })
+                        == Just (impactEncounter { destination = shot.destination, attacker = Nothing, target = Nothing, building = Nothing })
                         && Maybe.andThen TurnPlayback.combat shown
                         == Nothing
                         && Maybe.andThen TurnPlayback.panels shown
@@ -2866,7 +2866,7 @@ mergedImpactChecks fixture =
 
                 hidden : IndirectImpact
                 hidden =
-                    { destination = { x = 3, y = 2 }, attacker = Nothing, target = Nothing, depot = Nothing }
+                    { destination = { x = 3, y = 2 }, attacker = Nothing, target = Nothing, building = Nothing }
 
                 visible : IndirectImpact
                 visible =
@@ -2948,14 +2948,14 @@ mergedImpactChecks fixture =
                 firstHit =
                     { smaller
                         | target = Just { unit = fixture.target, health = firstHealth }
-                        , depot = Just { kind = BuildingKind.Supply, before = { current = 3, maximum = 3 }, after = { current = 2, maximum = 3 } }
+                        , building = Just { kind = BuildingKind.Supply, before = { current = 3, maximum = 3 }, after = { current = 2, maximum = 3 } }
                     }
 
                 lastHit : IndirectImpact
                 lastHit =
                     { visible
                         | target = Just { unit = fixture.target, health = lastHealth }
-                        , depot = Just { kind = BuildingKind.Supply, before = { current = 2, maximum = 3 }, after = { current = 1, maximum = 3 } }
+                        , building = Just { kind = BuildingKind.Supply, before = { current = 2, maximum = 3 }, after = { current = 1, maximum = 3 } }
                     }
 
                 confirmed : Shot
@@ -2980,7 +2980,7 @@ mergedImpactChecks fixture =
                     case panel.encounter of
                         TurnPlayback.Impact impact ->
                             (Maybe.map .health impact.target == Just { before = firstHealth.before, after = lastHealth.after })
-                                && (impact.depot == Just { kind = BuildingKind.Supply, before = { current = 3, maximum = 3 }, after = { current = 1, maximum = 3 } })
+                                && (impact.building == Just { kind = BuildingKind.Supply, before = { current = 3, maximum = 3 }, after = { current = 1, maximum = 3 } })
                                 && (participants panel == [ firstGun.id, secondGun.id ])
 
                         _ ->
@@ -3260,7 +3260,7 @@ combatDeathChecks first second =
                         |> TurnPlayback.setFrameLosses [ { unit = target, cause = TurnPlayback.ConcealedIndirectFire } ]
                         |> setFrameSabotages []
                         |> setFrameIndirectImpacts
-                            [ { destination = { x = 3, y = 2 }, attacker = Nothing, depot = Nothing, target = Just { unit = target, health = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } } } ]
+                            [ { destination = { x = 3, y = 2 }, attacker = Nothing, building = Nothing, target = Just { unit = target, health = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } } } ]
 
                 shellDeath : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
                 shellDeath =
@@ -3288,7 +3288,7 @@ combatDeathChecks first second =
                                 }
                             }
                     , target = Nothing
-                    , depot = Nothing
+                    , building = Nothing
                     }
 
                 gunKill : Shot
@@ -3351,7 +3351,7 @@ combatDeathChecks first second =
                             { unit = firingGun
                             , health = gunKill.targetHealth
                             }
-                    , depot = Nothing
+                    , building = Nothing
                     }
 
                 shellCarrierDeath : Maybe TurnPlayback.LossEvent
@@ -3560,7 +3560,7 @@ combatDeathChecks first second =
                                         , { unit = firingGun, health = { current = 16, maximum = 16 } }
                                         ]
                                     , target = Nothing
-                                    , depot = Nothing
+                                    , building = Nothing
                                     }
                                 )
                             )
@@ -3821,7 +3821,7 @@ deathPlaybackChecks id =
         sabotageChecks : BuildingKind.BuildingKind -> List String
         sabotageChecks kind =
             let
-                building : Depot
+                building : Building
                 building =
                     { kind = kind
                     , position = { x = 2, y = 2 }

@@ -10,8 +10,8 @@ module Game.View.InspectionHelp exposing
 import Api.Enum.ResourceKind exposing (ResourceKind)
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Css
+import Game.Building as Building exposing (Building)
 import Game.Coordinate exposing (Coordinate)
-import Game.Depot as Depot
 import Game.Map as Map exposing (Map)
 import Game.Supply as Supply
 import Game.Terrain as Terrain exposing (Terrain)
@@ -38,6 +38,7 @@ type Help
     | SupplyHelp
     | FuelHelp
     | CargoHelp
+    | BuildingHelp Building
     | BuildingHpHelp
     | DepotStockHelp ResourceKind
     | TerrainHelp TerrainLocation
@@ -103,6 +104,9 @@ buttonHtmlId help =
         CargoHelp ->
             "unit-cargo-info-button"
 
+        BuildingHelp _ ->
+            "building-info-button"
+
         BuildingHpHelp ->
             "building-hp-info-button"
 
@@ -139,6 +143,9 @@ dialog config help =
                 CargoHelp ->
                     "cargo"
 
+                BuildingHelp building ->
+                    "about " ++ Building.label building
+
                 BuildingHpHelp ->
                     "building hp"
 
@@ -169,6 +176,11 @@ dialog config help =
                         []
                         [ H.text "supplies refill provisions; fuel drums refill vehicles before upkeep, while stock lasts" ]
 
+                BuildingHelp building ->
+                    H.p
+                        []
+                        [ H.text (Building.description building) ]
+
                 BuildingHpHelp ->
                     H.p
                         []
@@ -177,7 +189,7 @@ dialog config help =
                 DepotStockHelp kind ->
                     H.p
                         []
-                        [ H.text (Depot.stockDescription kind) ]
+                        [ H.text (Building.stockDescription kind) ]
 
                 TerrainHelp location ->
                     terrainReference location

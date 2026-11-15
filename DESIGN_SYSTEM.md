@@ -120,8 +120,10 @@ reloads and synchronize across tabs.
   trace the route. Taps and keyboard activation use the same destinations.
   Keep scrollable controls outside the map's gesture area.
 - Keep **submit turn** gold during planning, with a quiet pulse and shine.
-  Waiting uses clear text plus the shared activity bar. Confirmation for
-  surrender or leaving an active game focuses **keep fighting** first.
+  While waiting, keep **turn submitted** fixed over a full-height activity
+  sweep that exits to the right and restarts from the left. Use a stationary
+  highlight with reduced motion. Confirmation for surrender or leaving an
+  active game focuses **keep fighting** first.
 
 ### Inspection and orders
 

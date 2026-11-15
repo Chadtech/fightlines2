@@ -333,7 +333,7 @@ lossError players casualty =
 lossDialog :
     { skipDialogs : Bool
     , players : List Player
-    , ownPlayers : List PlayerNumber
+    , ownPlayer : PlayerNumber
     }
     -> Maybe TurnPlayback.Playback
     -> Maybe (Dialog UnitDeath.Msg)
@@ -343,9 +343,13 @@ lossDialog config playback =
         notice casualty =
             UnitDeath.dialog
                 { skipDialogs = config.skipDialogs
-                , isOwn = List.member casualty.unit.playerNumber config.ownPlayers
+                , isOwn = casualty.unit.playerNumber == config.ownPlayer
                 , details = UnitLoss.resolve (ownerName config.players) casualty
-                , passengers = playback |> Maybe.andThen TurnPlayback.lossEvent |> Maybe.map .passengers |> Maybe.withDefault []
+                , passengers =
+                    playback
+                        |> Maybe.andThen TurnPlayback.lossEvent
+                        |> Maybe.map .passengers
+                        |> Maybe.withDefault []
                 }
                 casualty
     in
@@ -355,8 +359,9 @@ lossDialog config playback =
 combatOverlay :
     { calibrations : List BackdropCalibration.Entry
     , automaticallyClose : Bool
-    , armyStyle : Maybe { style : ArmyStyle, players : List PlayerNumber }
+    , armyStyle : Maybe { style : ArmyStyle, player : PlayerNumber }
     , mobile : Bool
+    , players : List Player
     }
     -> Map
     -> Maybe TurnPlayback.Playback
@@ -372,9 +377,9 @@ combatOverlay config map playback =
                         , automaticallyClose = config.automaticallyClose
                         , armyStyle = config.armyStyle
                         , mobile = config.mobile
-                        , visibleTiles = animation.current.visibleTiles
+                        , players = config.players
                         }
-                        animation.current.depots
+                        animation.current
                         map
                     )
     in

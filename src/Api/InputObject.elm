@@ -98,6 +98,35 @@ encodeBackdropCalibrationInput input____ =
         [ ( "frontFooting", Encode.float input____.frontFooting |> Just ), ( "rowSpacing", Encode.float input____.rowSpacing |> Just ), ( "unitSize", Encode.float input____.unitSize |> Just ), ( "rearScale", Encode.float input____.rearScale |> Just ), ( "trenchFooting", Encode.float input____.trenchFooting |> Just ), ( "trenchSize", Encode.float input____.trenchSize |> Just ), ( "secondTrenchFooting", Encode.float input____.secondTrenchFooting |> Just ), ( "secondTrenchSize", Encode.float input____.secondTrenchSize |> Just ) ]
 
 
+buildBuildingPlacementInput :
+    BuildingPlacementInputRequiredFields
+    -> BuildingPlacementInput
+buildBuildingPlacementInput required____ =
+    { position = required____.position, kind = required____.kind }
+
+
+type alias BuildingPlacementInputRequiredFields =
+    { position : PositionInput
+    , kind : Api.Enum.BuildingKind.BuildingKind
+    }
+
+
+{-| Type for the BuildingPlacementInput input object.
+-}
+type alias BuildingPlacementInput =
+    { position : PositionInput
+    , kind : Api.Enum.BuildingKind.BuildingKind
+    }
+
+
+{-| Encode a BuildingPlacementInput into a value that can be used as an argument.
+-}
+encodeBuildingPlacementInput : BuildingPlacementInput -> Value
+encodeBuildingPlacementInput input____ =
+    Encode.maybeObject
+        [ ( "position", encodePositionInput input____.position |> Just ), ( "kind", Encode.enum Api.Enum.BuildingKind.toString input____.kind |> Just ) ]
+
+
 buildCombatChartInput :
     CombatChartInputRequiredFields
     -> CombatChartInput
@@ -195,35 +224,6 @@ encodeCrateUnloadInput input____ =
         [ ( "cargoIndex", Encode.int input____.cargoIndex |> Just ), ( "destination", encodeCoordinateInput input____.destination |> Just ) ]
 
 
-buildDepotPlacementInput :
-    DepotPlacementInputRequiredFields
-    -> DepotPlacementInput
-buildDepotPlacementInput required____ =
-    { position = required____.position, kind = required____.kind }
-
-
-type alias DepotPlacementInputRequiredFields =
-    { position : PositionInput
-    , kind : Api.Enum.BuildingKind.BuildingKind
-    }
-
-
-{-| Type for the DepotPlacementInput input object.
--}
-type alias DepotPlacementInput =
-    { position : PositionInput
-    , kind : Api.Enum.BuildingKind.BuildingKind
-    }
-
-
-{-| Encode a DepotPlacementInput into a value that can be used as an argument.
--}
-encodeDepotPlacementInput : DepotPlacementInput -> Value
-encodeDepotPlacementInput input____ =
-    Encode.maybeObject
-        [ ( "position", encodePositionInput input____.position |> Just ), ( "kind", Encode.enum Api.Enum.BuildingKind.toString input____.kind |> Just ) ]
-
-
 buildMapDefinitionInput :
     MapDefinitionInputRequiredFields
     -> (MapDefinitionInputOptionalFields -> MapDefinitionInputOptionalFields)
@@ -234,7 +234,7 @@ buildMapDefinitionInput required____ fillOptionals____ =
             fillOptionals____
                 { matchMaking = Absent }
     in
-    { description = required____.description, releaseStatus = required____.releaseStatus, matchMaking = optionals____.matchMaking, width = required____.width, height = required____.height, theme = required____.theme, features = required____.features, depots = required____.depots, units = required____.units }
+    { description = required____.description, releaseStatus = required____.releaseStatus, matchMaking = optionals____.matchMaking, width = required____.width, height = required____.height, theme = required____.theme, features = required____.features, buildings = required____.buildings, units = required____.units }
 
 
 type alias MapDefinitionInputRequiredFields =
@@ -244,7 +244,7 @@ type alias MapDefinitionInputRequiredFields =
     , height : Int
     , theme : Api.Enum.MapTheme.MapTheme
     , features : List TerrainPlacementInput
-    , depots : List DepotPlacementInput
+    , buildings : List BuildingPlacementInput
     , units : List UnitPlacementInput
     }
 
@@ -263,7 +263,7 @@ type alias MapDefinitionInput =
     , height : Int
     , theme : Api.Enum.MapTheme.MapTheme
     , features : List TerrainPlacementInput
-    , depots : List DepotPlacementInput
+    , buildings : List BuildingPlacementInput
     , units : List UnitPlacementInput
     }
 
@@ -273,7 +273,7 @@ type alias MapDefinitionInput =
 encodeMapDefinitionInput : MapDefinitionInput -> Value
 encodeMapDefinitionInput input____ =
     Encode.maybeObject
-        [ ( "description", Encode.string input____.description |> Just ), ( "releaseStatus", Encode.enum Api.Enum.MapReleaseStatus.toString input____.releaseStatus |> Just ), ( "matchMaking", Encode.bool |> Encode.optional input____.matchMaking ), ( "width", Encode.int input____.width |> Just ), ( "height", Encode.int input____.height |> Just ), ( "theme", Encode.enum Api.Enum.MapTheme.toString input____.theme |> Just ), ( "features", (encodeTerrainPlacementInput |> Encode.list) input____.features |> Just ), ( "depots", (encodeDepotPlacementInput |> Encode.list) input____.depots |> Just ), ( "units", (encodeUnitPlacementInput |> Encode.list) input____.units |> Just ) ]
+        [ ( "description", Encode.string input____.description |> Just ), ( "releaseStatus", Encode.enum Api.Enum.MapReleaseStatus.toString input____.releaseStatus |> Just ), ( "matchMaking", Encode.bool |> Encode.optional input____.matchMaking ), ( "width", Encode.int input____.width |> Just ), ( "height", Encode.int input____.height |> Just ), ( "theme", Encode.enum Api.Enum.MapTheme.toString input____.theme |> Just ), ( "features", (encodeTerrainPlacementInput |> Encode.list) input____.features |> Just ), ( "buildings", (encodeBuildingPlacementInput |> Encode.list) input____.buildings |> Just ), ( "units", (encodeUnitPlacementInput |> Encode.list) input____.units |> Just ) ]
 
 
 buildPlanningErrorBatchInput :

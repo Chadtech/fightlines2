@@ -6,7 +6,7 @@ module Fightlines.Page.GamePage exposing
     , init
     , keyCommands
     , load
-    , setDepots
+    , setBuildings
     , setShared
     , setUnits
     , stopPlaybackAudio
@@ -45,6 +45,10 @@ import Effect as E
 import Error exposing (Error)
 import Features
 import Fightlines.Feedback as Feedback
+import Fightlines.GameOrigin as GameOrigin
+    exposing
+        ( GameOrigin
+        )
 import Fightlines.Route as Route
 import Fightlines.View.About as About
 import Fightlines.View.Feedback as FeedbackView
@@ -60,18 +64,18 @@ import Game.AnimationFrame as AnimationFrame
 import Game.ArmyStyle exposing (ArmyStyle)
 import Game.Assets as Assets
 import Game.BattlefieldNavigation as BattlefieldNavigation
-import Game.BattlefieldSnapshot as BattlefieldSnapshot exposing (Player)
+import Game.BattlefieldSnapshot as BattlefieldSnapshot
+import Game.Building as Building
+    exposing
+        ( Building
+        , LoadingSource
+        )
 import Game.Camera as Camera
 import Game.Chat as Chat
 import Game.CombatRules as CombatRules
 import Game.CombatTheaterCalibrations as CombatTheaterCalibrations
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.CurrentTurn as CurrentTurn
-import Game.Depot as Depot
-    exposing
-        ( Depot
-        , LoadingSource
-        )
 import Game.DestinationFeedback exposing (DestinationFeedback(..))
 import Game.Direction as Direction
 import Game.DirectionPlanning as DirectionPlanning
@@ -79,6 +83,10 @@ import Game.Inactivity as Inactivity exposing (Inactivity)
 import Game.IndirectFirePlanning as IndirectFirePlanning
 import Game.Inspection as Inspection exposing (Inspection(..))
 import Game.Map as Map exposing (Map)
+import Game.Matchup as Matchup
+    exposing
+        ( Matchup
+        )
 import Game.MovePlanning as MovePlanning
 import Game.Movement as Movement
 import Game.OrderPlanning as OrderPlanning
@@ -191,6 +199,7 @@ type alias Model =
     , feedback : Feedback.Draft
     , chat : Chat.Model
     , shared : Shared.Model
+    , origin : GameOrigin
     , welcomeBriefingPending : Bool
     , skipTurnIntroduction : Bool
     , skipUnplannedUnitsWarning : Bool
@@ -198,10 +207,10 @@ type alias Model =
     , automaticallyCloseCombatTheater : Bool
     , name : String
     , mapType : MapId
-    , players : List Player
+    , matchup : Matchup
     , map : Map
     , units : List Unit
-    , depots : List Depot
+    , buildings : List Building
     , supplyCrates : List Supply.GroundCrate
     , supplyRules : Supply.Rules
     , visibleTiles : List Coordinate
@@ -378,6 +387,7 @@ type Msg
 type alias Flags =
     { snapshot : Snapshot
     , messages : List Chat.Message
+    , matchup : Matchup
     }
 
 
@@ -387,8 +397,8 @@ type alias Flags =
 ----------------------------------------------------------------
 
 
-init : Shared.Model -> Flags -> ( Model, Eff Msg )
-init shared flags =
+init : Shared.Model -> GameOrigin -> Flags -> ( Model, Eff Msg )
+init shared origin flags =
     let
         ( automaticallyCloseCombatTheater, maybeError ) =
             PlaybackPresentation.loadPreference
@@ -437,6 +447,7 @@ init shared flags =
                     |> Shared.addError welcomePreferenceError
                     |> Shared.addError introductionPreferenceError
                     |> Shared.addError submissionPreferenceError
+            , origin = origin
             , welcomeBriefingPending = not welcomeBriefingDismissed && (flags.snapshot.turn.outcome == Nothing)
             , skipTurnIntroduction = skipTurnIntroduction
             , skipUnplannedUnitsWarning = skipUnplannedUnitsWarning
@@ -444,10 +455,10 @@ init shared flags =
             , automaticallyCloseCombatTheater = automaticallyCloseCombatTheater
             , name = flags.snapshot.battlefield.name
             , mapType = flags.snapshot.battlefield.mapType
-            , players = flags.snapshot.battlefield.players
+            , matchup = flags.matchup
             , map = flags.snapshot.battlefield.map
             , units = flags.snapshot.battlefield.units
-            , depots = flags.snapshot.battlefield.depots
+            , buildings = flags.snapshot.battlefield.depots
             , supplyCrates = flags.snapshot.battlefield.supplyCrates
             , supplyRules = flags.snapshot.supplyRules
             , visibleTiles = flags.snapshot.battlefield.visibleTiles
@@ -491,9 +502,16 @@ init shared flags =
 
 load : LobbyId -> Graphql.Http.Request Flags
 load id =
-    SS.succeed Flags
+    let
+        toFlags : Snapshot -> List Chat.Message -> Result String Flags
+        toFlags snapshot messages =
+            Matchup.fromPlayers snapshot.battlefield.players
+                |> Result.map (Flags snapshot messages)
+    in
+    SS.succeed toFlags
         |> SS.with (Api.Query.game { id = LobbyId.toString id } snapshotSelection)
         |> SS.with (Chat.query id 0)
+        |> SS.mapOrFail identity
         |> ApiRequest.queryRequest
 
 
@@ -615,9 +633,9 @@ setMap map model =
     { model | map = map }
 
 
-setDepots : List Depot -> Model -> Model
-setDepots depots model =
-    { model | depots = depots }
+setBuildings : List Building -> Model -> Model
+setBuildings buildings model =
+    { model | buildings = buildings }
 
 
 setSupplyCrates : List Supply.GroundCrate -> Model -> Model
@@ -751,10 +769,10 @@ saveCrateLoading id count state =
 depotLoadingRoom : Model -> Unit -> Int
 depotLoadingRoom model unit =
     let
-        depot : Maybe Depot.LoadingSource
+        depot : Maybe Building.LoadingSource
         depot =
             plannedDepot model unit.id
-                |> Maybe.andThen Depot.loadingSource
+                |> Maybe.andThen Building.loadingSource
 
         stockLimit : Int
         stockLimit =
@@ -777,23 +795,23 @@ depotLoadingRoom model unit =
         (PlannedTransport.cargoRoom model.units unit (plannedOrders model))
 
 
-plannedDepot : Model -> UnitId -> Maybe Depot
+plannedDepot : Model -> UnitId -> Maybe Building
 plannedDepot model id =
     let
-        atDestination : PlannedOrder -> Maybe Depot
+        atDestination : PlannedOrder -> Maybe Building
         atDestination order =
             ListUtil.find
                 (\depot -> depot.position == PlannedOrder.destination order)
-                model.depots
+                model.buildings
     in
     plannedOrders model
         |> ListUtil.find (\order -> order.unitId == id)
         |> Maybe.andThen atDestination
 
 
-ownPlayerNumbers : Model -> List PlayerNumber
-ownPlayerNumbers model =
-    List.filter .isYou model.players |> List.map .playerNumber
+ownPlayerNumber : Model -> PlayerNumber
+ownPlayerNumber model =
+    model.matchup.you.playerNumber
 
 
 visibleSupplyCrates : List Coordinate -> List Supply.GroundCrate -> List Supply.GroundCrate
@@ -1031,7 +1049,9 @@ deathInFocus model =
 
 planningLocked : Model -> Bool
 planningLocked model =
-    model.currentTurn.outcome /= Nothing || TurnLifecycle.planningLocked model.currentTurn.phase
+    model.currentTurn.outcome
+        /= Nothing
+        || TurnLifecycle.planningLocked model.currentTurn.phase
 
 
 unitsWithoutOrders : Model -> List Unit
@@ -1039,7 +1059,7 @@ unitsWithoutOrders model =
     OrderPlanning.missingOrders
         model.map
         model.units
-        (ownPlayerNumbers model)
+        (ownPlayerNumber model)
         (plannedOrders model)
 
 
@@ -1078,7 +1098,7 @@ submitTurn lobbyId model =
             OrderPlanning.submissionOrders
                 model.map
                 model.units
-                (ownPlayerNumbers model)
+                (ownPlayerNumber model)
                 (plannedOrders model)
                 |> IC.resolve sendOrders
 
@@ -1208,7 +1228,7 @@ inspectionPosition model =
 
 isOwnUnit : Model -> Unit -> Bool
 isOwnUnit model unit =
-    OrderPlanning.isOwnUnit (ownPlayerNumbers model) unit
+    OrderPlanning.isOwnUnit (ownPlayerNumber model) unit
 
 
 applyOrder : UnitOrder.Order -> Model -> Model
@@ -1218,10 +1238,10 @@ applyOrder order model =
             (OrderPlanning.applyOrder
                 model.map
                 model.units
-                (ownPlayerNumbers model)
+                (ownPlayerNumber model)
                 model.movementRules
                 (visibleSupplyCrates model.visibleTiles model.supplyCrates)
-                model.depots
+                model.buildings
                 order
             )
         |> resetMobileTab (selectedUnitId model)
@@ -1265,6 +1285,22 @@ orderMenuUnit model =
     TurnLifecycle.planning model.currentTurn.phase
         |> Maybe.andThen
             (OrderPlanning.orderMenuUnit model.map model.units)
+
+
+isStaleOrderPick : Msg -> Model -> Bool
+isStaleOrderPick msg model =
+    case msg of
+        OrderMenuMsg (OrderMenu.OrderPicked id _) ->
+            let
+                activeMenu : Maybe UnitId
+                activeMenu =
+                    TurnLifecycle.planning model.currentTurn.phase
+                        |> Maybe.andThen OrderPlanning.orderMenuUnitId
+            in
+            (activeMenu /= Just id) || planningLocked model || hasDialog model
+
+        _ ->
+            False
 
 
 dismountOrderProgress : Model -> Maybe OrderPlanning.DismountOrderProgress
@@ -1403,7 +1439,7 @@ reconcileTurnSnapshot snapshot previousTurn model =
         }
             |> mapChat Chat.close
             |> setMap snapshot.battlefield.map
-            |> setDepots snapshot.battlefield.depots
+            |> setBuildings snapshot.battlefield.depots
             |> setSupplyCrates snapshot.battlefield.supplyCrates
             |> setUnits snapshot.battlefield.units
             |> setVisibleTiles snapshot.battlefield.visibleTiles
@@ -1416,7 +1452,7 @@ reconcileTurnSnapshot snapshot previousTurn model =
             applyFrame violation frame =
                 { model | supplyRules = snapshot.supplyRules }
                     |> setMap snapshot.battlefield.map
-                    |> setDepots frame.depots
+                    |> setBuildings frame.depots
                     |> setSupplyCrates frame.supplyCrates
                     |> setUnits frame.units
                     |> setVisibleTiles frame.visibleTiles
@@ -1469,7 +1505,7 @@ revokeSelectedOrder : Model -> Model
 revokeSelectedOrder model =
     model
         |> mapCheckedPlanning
-            (OrderPlanning.revokeSelectedOrder model.map model.units (ownPlayerNumbers model))
+            (OrderPlanning.revokeSelectedOrder model.map model.units (ownPlayerNumber model))
 
 
 choosingDirection : Model -> Bool
@@ -1483,7 +1519,12 @@ saveDirection : Direction -> Model -> Model
 saveDirection direction model =
     model
         |> mapCheckedPlanning
-            (OrderPlanning.saveDirection model.map model.units (ownPlayerNumbers model) direction)
+            (OrderPlanning.saveDirection
+                model.map
+                model.units
+                (ownPlayerNumber model)
+                direction
+            )
         |> resetMobileTab (selectedUnitId model)
         |> centerDismountOrder (selectedUnitId model)
 
@@ -1617,10 +1658,10 @@ selectUnit id model =
                 (OrderPlanning.selectUnit
                     model.map
                     model.units
-                    (ownPlayerNumbers model)
+                    (ownPlayerNumber model)
                     model.movementRules
                     (visibleSupplyCrates model.visibleTiles model.supplyCrates)
-                    model.depots
+                    model.buildings
                     id
                 )
             |> resetMobileTab (selectedUnitId model)
@@ -1638,10 +1679,10 @@ selectTile position model =
                 (OrderPlanning.selectTile
                     model.map
                     model.units
-                    (ownPlayerNumbers model)
+                    (ownPlayerNumber model)
                     model.movementRules
                     (visibleSupplyCrates model.visibleTiles model.supplyCrates)
-                    model.depots
+                    model.buildings
                     position
                 )
             |> resetMobileTab (selectedUnitId model)
@@ -1681,7 +1722,7 @@ previewTile position model =
                 (OrderPlanning.previewTile
                     model.map
                     model.units
-                    (ownPlayerNumbers model)
+                    (ownPlayerNumber model)
                     model.movementRules
                     position
                 )
@@ -1698,7 +1739,7 @@ extendPath direction model =
                 (OrderPlanning.extendPath
                     model.map
                     model.units
-                    (ownPlayerNumbers model)
+                    (ownPlayerNumber model)
                     model.movementRules
                     direction
                 )
@@ -1711,10 +1752,10 @@ confirmPath model =
             (OrderPlanning.confirmPath
                 model.map
                 model.units
-                (ownPlayerNumbers model)
+                (ownPlayerNumber model)
                 model.movementRules
                 (visibleSupplyCrates model.visibleTiles model.supplyCrates)
-                model.depots
+                model.buildings
             )
         |> resetMobileTab (selectedUnitId model)
         |> centerDismountOrder (selectedUnitId model)
@@ -1745,7 +1786,7 @@ focusAdjacentOrder arrangeOptions current model =
             let
                 orders : List UnitOrder.MenuOption
                 orders =
-                    UnitOrder.enabledOptions model.map model.depots unit
+                    UnitOrder.enabledOptions model.map model.buildings unit
                         |> arrangeOptions
 
                 adjacent : Maybe UnitOrder.MenuOption
@@ -1806,7 +1847,13 @@ choosingIndirectFire model =
 canRevokeOrder : Model -> Unit -> Bool
 canRevokeOrder model unit =
     TurnLifecycle.planning model.currentTurn.phase
-        |> Maybe.map (OrderPlanning.canRevokeOrder model.map model.units (ownPlayerNumbers model) unit.id)
+        |> Maybe.map
+            (OrderPlanning.canRevokeOrder
+                model.map
+                model.units
+                (ownPlayerNumber model)
+                unit.id
+            )
         |> Maybe.withDefault False
 
 
@@ -2208,7 +2255,7 @@ applyPlaybackFrame :
 applyPlaybackFrame next model =
     model
         |> mapCurrentTurn (CurrentTurn.setPhase next.phase)
-        |> setDepots next.frame.depots
+        |> setBuildings next.frame.depots
         |> setSupplyCrates next.frame.supplyCrates
         |> setUnits next.frame.units
         |> setVisibleTiles next.frame.visibleTiles
@@ -2469,12 +2516,16 @@ remeasure the workspace when the rendered layout changes.
 -}
 superUpdate : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 superUpdate lobbyId msg model =
-    model
-        |> update lobbyId msg
-        |> E.andThen (recordUserInteraction lobbyId msg)
-        |> E.andThen (withLayoutMeasurement (workspaceLayout model))
-        |> E.and (E.audio (playAudio msg model))
-        |> E.andThen (withPlaybackAudio (playbackAudio model))
+    if isStaleOrderPick msg model then
+        E.withOut model
+
+    else
+        model
+            |> update lobbyId msg
+            |> E.andThen (recordUserInteraction lobbyId msg)
+            |> E.andThen (withLayoutMeasurement (workspaceLayout model))
+            |> E.and (E.audio (playAudio msg model))
+            |> E.andThen (withPlaybackAudio (playbackAudio model))
 
 
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
@@ -2540,10 +2591,7 @@ update lobbyId msg model =
                                 Chat.hasNewIncoming
                                     { known = model.chat.messages
                                     , received = messages
-                                    , ownNames =
-                                        model.players
-                                            |> List.filter .isYou
-                                            |> List.map .name
+                                    , ownNames = [ model.matchup.you.name ]
                                     }
                             then
                                 E.audio Audio.chatReceived
@@ -2944,7 +2992,7 @@ update lobbyId msg model =
                     (OrderPlanning.toggleAvailableUnloadCargo
                         model.map
                         model.units
-                        (ownPlayerNumbers model)
+                        (ownPlayerNumber model)
                         model.movementRules
                         (visibleSupplyCrates model.visibleTiles model.supplyCrates)
                         (UnloadCargo.Passenger id)
@@ -2958,10 +3006,10 @@ update lobbyId msg model =
                     (OrderPlanning.confirmPassengers
                         model.map
                         model.units
-                        (ownPlayerNumbers model)
+                        (ownPlayerNumber model)
                         model.movementRules
                         (visibleSupplyCrates model.visibleTiles model.supplyCrates)
-                        model.depots
+                        model.buildings
                     )
                 |> resetMobileTab (selectedUnitId model)
                 |> E.withOut
@@ -2973,7 +3021,7 @@ update lobbyId msg model =
                         model.map
                         model.units
                         (visibleSupplyCrates model.visibleTiles model.supplyCrates)
-                        model.depots
+                        model.buildings
                     )
                 |> resetMobileTab (selectedUnitId model)
                 |> E.withOut
@@ -3036,7 +3084,7 @@ update lobbyId msg model =
                     (OrderPlanning.toggleAvailableUnloadCargo
                         model.map
                         model.units
-                        (ownPlayerNumbers model)
+                        (ownPlayerNumber model)
                         model.movementRules
                         (visibleSupplyCrates model.visibleTiles model.supplyCrates)
                         (UnloadCargo.Crate index)
@@ -3053,7 +3101,11 @@ update lobbyId msg model =
         NextUnorderedUnitKeyPressed ->
             model
                 |> mapPlanning
-                    (OrderPlanning.selectNextUnorderedUnit model.map model.units (ownPlayerNumbers model))
+                    (OrderPlanning.selectNextUnorderedUnit
+                        model.map
+                        model.units
+                        (ownPlayerNumber model)
+                    )
                 |> resetMobileTab (selectedUnitId model)
                 |> centerDismountOrder (selectedUnitId model)
                 |> E.withOut
@@ -3331,7 +3383,7 @@ update lobbyId msg model =
                         model
                             |> mapShared
                                 (Shared.addError
-                                    (PlaybackPresentation.lossError model.players (Just loss))
+                                    (PlaybackPresentation.lossError (Matchup.players model.matchup) (Just loss))
                                 )
                             |> E.withOut
 
@@ -3635,6 +3687,21 @@ handleTurnIntroductionMsg introMsg model =
 
         TurnIntroduction.BattlefieldViewClicked ->
             acknowledgeTurnIntroduction model
+
+        TurnIntroduction.MatchMakingClicked ->
+            let
+                canReturnToMatchMaking : Bool
+                canReturnToMatchMaking =
+                    (model.origin == GameOrigin.MatchMaking)
+                        && (model.currentTurn.outcome /= Nothing)
+            in
+            if canReturnToMatchMaking then
+                ( model
+                , Route.navigate model.shared.deployment Route.MatchMaking
+                )
+
+            else
+                E.withOut model
 
         TurnIntroduction.FeedbackClicked ->
             let
@@ -4033,7 +4100,7 @@ handleOrderMsg orderMsg model =
                         (OrderPlanning.openOrderGuide
                             model.map
                             model.units
-                            (ownPlayerNumbers model)
+                            (ownPlayerNumber model)
                         )
                     |> E.withOut
 
@@ -4053,7 +4120,7 @@ handleOrderMsg orderMsg model =
                 |> focusOrder order
                 |> E.withOut
 
-        OrderMenu.OrderPicked order ->
+        OrderMenu.OrderPicked _ order ->
             model
                 |> applyOrder order
                 |> E.withOut
@@ -4129,7 +4196,7 @@ isUserInteraction msg =
         OrderMenuMsg OrderMenu.CancelClicked ->
             True
 
-        OrderMenuMsg (OrderMenu.OrderPicked _) ->
+        OrderMenuMsg (OrderMenu.OrderPicked _ _) ->
             True
 
         OrderMenuMsg (OrderMenu.ArrowedUpOrderMenu _) ->
@@ -4602,7 +4669,7 @@ playAudio msg model =
                 OrderMenu.OrderFocused _ ->
                     Audio.none
 
-                OrderMenu.OrderPicked order ->
+                OrderMenu.OrderPicked _ order ->
                     case order of
                         UnitOrder.StandGround ->
                             Audio.affirm
@@ -4745,6 +4812,9 @@ playAudio msg model =
                     Audio.affirm
 
                 TurnIntroduction.BattlefieldViewClicked ->
+                    Audio.confirm
+
+                TurnIntroduction.MatchMakingClicked ->
                     Audio.confirm
 
                 TurnIntroduction.FeedbackClicked ->
@@ -5144,6 +5214,9 @@ track msg =
                 TurnIntroduction.BattlefieldViewClicked ->
                     Analytics.noData "game over dismissed"
 
+                TurnIntroduction.MatchMakingClicked ->
+                    Analytics.noData "game over match making clicked"
+
                 TurnIntroduction.FeedbackClicked ->
                     Analytics.noData "game over feedback clicked"
 
@@ -5296,13 +5369,13 @@ view model =
     ChatView.overlay model.chat.recent :: workspace
 
 
-armyStyle : Model -> Maybe { style : ArmyStyle, players : List PlayerNumber }
+armyStyle : Model -> Maybe { style : ArmyStyle, player : PlayerNumber }
 armyStyle model =
     Features.armyStyle model.shared.features
         |> Maybe.map
             (\style ->
                 { style = style
-                , players = ownPlayerNumbers model
+                , player = ownPlayerNumber model
                 }
             )
 
@@ -5318,7 +5391,7 @@ battlefieldView model =
         args =
             { map = model.map
             , units = model.units
-            , depots = model.depots
+            , buildings = model.buildings
             , supplyCrates = model.supplyCrates
             , visibleTiles = model.visibleTiles
             , frame = model.frame
@@ -5490,6 +5563,7 @@ desktopView model =
             GameMenu.panel
                 { enabled = canOpenDialog model
                 , turnNumber = displayedTurnNumber model
+                , matchup = model.matchup
                 , mobile = False
                 }
                 |> H.map GameMenuMsg
@@ -5504,6 +5578,7 @@ desktopView model =
                 { calibrations = CombatTheaterCalibrations.catalog
                 , automaticallyClose = model.automaticallyCloseCombatTheater
                 , armyStyle = armyStyle model
+                , players = Matchup.players model.matchup
                 , mobile = False
                 }
                 model.map
@@ -5544,6 +5619,7 @@ mobileView model =
                     GameMenu.panel
                         { enabled = canOpenDialog model
                         , turnNumber = displayedTurnNumber model
+                        , matchup = model.matchup
                         , mobile = True
                         }
                         |> H.map GameMenuMsg
@@ -5571,6 +5647,7 @@ mobileView model =
                 { calibrations = CombatTheaterCalibrations.catalog
                 , automaticallyClose = model.automaticallyCloseCombatTheater
                 , armyStyle = armyStyle model
+                , players = Matchup.players model.matchup
                 , mobile = True
                 }
                 model.map
@@ -5681,7 +5758,7 @@ mobileOrdersPanel model =
             H.div
                 [ A.css [ S.col, S.g2 ] ]
                 [ title
-                , OrderMenu.embedded model.depots model.map unit
+                , OrderMenu.embedded model.buildings model.map unit
                     |> H.map OrderMenuMsg
                 ]
 
@@ -5911,7 +5988,7 @@ orderMenu model =
             case Unit.physicalPosition model.units unit of
                 Just position ->
                     OrderMenu.toHtml
-                        model.depots
+                        model.buildings
                         model.map
                         (BattlefieldNavigation.camera model.navigation)
                         position
@@ -6033,7 +6110,7 @@ battlefieldSelectionView layout model =
                         portraitAction
                     , BattlefieldInspection.cargo
                         { units = model.units
-                        , ownPlayers = ownPlayerNumbers model
+                        , ownPlayer = ownPlayerNumber model
                         , onSelectPassenger = CargoUnitClicked
                         , onHelp = InspectionHelpClicked
                         }
@@ -6056,7 +6133,7 @@ battlefieldSelectionView layout model =
         layout
         { onHelp = InspectionHelpClicked
         , map = model.map
-        , depots = model.depots
+        , buildings = model.buildings
         , supplyCrates = model.supplyCrates
         , visibleTiles = model.visibleTiles
         , position = position
@@ -6066,7 +6143,7 @@ battlefieldSelectionView layout model =
 
 ownerName : Model -> Unit -> Maybe String
 ownerName model =
-    PlaybackPresentation.ownerName model.players
+    PlaybackPresentation.ownerName (Matchup.players model.matchup)
 
 
 movementView : Model -> Html Msg
@@ -6519,7 +6596,7 @@ unloadChecklist model choice =
             [ Lazy.lazy7 unloadCargoChecklist
                 model.map
                 model.units
-                model.players
+                (ownPlayerNumber model)
                 model.movementRules
                 model.supplyCrates
                 model.visibleTiles
@@ -6602,18 +6679,14 @@ dismountedInfantryDialog passengers =
 unloadCargoChecklist :
     Map
     -> List Unit
-    -> List Player
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
     -> List Coordinate
     -> UnloadChoice
     -> Html Msg
-unloadCargoChecklist map units players movementRules crates visibleTiles choice =
+unloadCargoChecklist map units ownPlayer movementRules crates visibleTiles choice =
     let
-        playerNumbers : List PlayerNumber
-        playerNumbers =
-            List.filter .isYou players |> List.map .playerNumber
-
         supplyCrates : List Supply.GroundCrate
         supplyCrates =
             visibleSupplyCrates visibleTiles crates
@@ -6623,7 +6696,7 @@ unloadCargoChecklist map units players movementRules crates visibleTiles choice 
             OrderPlanning.canSelectUnloadCargo
                 map
                 units
-                playerNumbers
+                ownPlayer
                 movementRules
                 supplyCrates
                 cargo
@@ -7263,12 +7336,16 @@ introductionDialog model _ =
 turnAnnouncement : Model -> Dialog TurnIntroduction.Msg
 turnAnnouncement model =
     let
+        showMatchMaking : Bool
+        showMatchMaking =
+            model.origin == GameOrigin.MatchMaking
+
         victory : String -> PlayerNumber -> Dialog TurnIntroduction.Msg
         victory caption winner =
             let
                 winnerName : String
                 winnerName =
-                    model.players
+                    Matchup.players model.matchup
                         |> ListUtil.find (\player -> player.playerNumber == winner)
                         |> Maybe.map .name
                         |> Maybe.withDefault (PlayerNumber.label winner)
@@ -7277,6 +7354,7 @@ turnAnnouncement model =
                 { headline = winnerName ++ " wins"
                 , caption = caption
                 , previousTurn = model.currentTurn.resolution
+                , showMatchMaking = showMatchMaking
                 }
     in
     case model.currentTurn.outcome of
@@ -7290,7 +7368,7 @@ turnAnnouncement model =
             let
                 caption : String
                 caption =
-                    if List.member winner (ownPlayerNumbers model) then
+                    if winner == ownPlayerNumber model then
                         "victory due to opponent inactivity"
 
                     else
@@ -7303,6 +7381,7 @@ turnAnnouncement model =
                 { headline = "draw"
                 , caption = "both players were inactive"
                 , previousTurn = model.currentTurn.resolution
+                , showMatchMaking = showMatchMaking
                 }
 
         Just GameOutcome.Draw ->
@@ -7310,6 +7389,7 @@ turnAnnouncement model =
                 { headline = "draw"
                 , caption = "neither army has surviving combat units"
                 , previousTurn = model.currentTurn.resolution
+                , showMatchMaking = showMatchMaking
                 }
 
         Nothing ->
@@ -7318,6 +7398,7 @@ turnAnnouncement model =
                 , skipDialogs = model.skipTurnIntroduction
                 , previousTurn = model.currentTurn.resolution
                 , canReplay = CurrentTurn.canReplay model.currentTurn
+                , matchup = model.matchup
                 }
 
 
@@ -7325,8 +7406,8 @@ lossDialog : Model -> () -> Maybe (Dialog Msg)
 lossDialog model _ =
     PlaybackPresentation.lossDialog
         { skipDialogs = model.skipUnitLossDialogs
-        , players = model.players
-        , ownPlayers = ownPlayerNumbers model
+        , players = Matchup.players model.matchup
+        , ownPlayer = ownPlayerNumber model
         }
         (playback model)
         |> Maybe.map
@@ -7596,7 +7677,7 @@ keyCommands model =
         orderShortcuts =
             case orderMenuUnit model of
                 Just unit ->
-                    OrderMenu.keyCommands model.map model.depots unit
+                    OrderMenu.keyCommands model.map model.buildings unit
                         |> KeyCmd.map OrderMenuMsg
 
                 Nothing ->

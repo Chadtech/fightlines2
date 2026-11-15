@@ -124,7 +124,8 @@ All servers read saved map files when starting new games; no rebuild is required
 Test fixtures also support ASCII
 sketches: `#` is forest, `%` hills, `^` mountains, `~` water, `:` beach,
 and spaces or `.` plain.
-Depots and units are placed separately.
+Buildings and units are placed separately. Map files store building placements
+under the `depots` key. The map editor’s GraphQL API uses `buildings`.
 
 ## Scenario catalog
 

@@ -13,9 +13,9 @@ import Api.Object.BuildingImpact as BuildingImpactApi
 import Api.Object.IndirectFireAttacker as AttackerApi
 import Api.Object.IndirectFireTarget as TargetApi
 import Api.Object.IndirectImpact as ImpactApi
+import Game.Building as Building
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.Depot as Depot
 import Game.Unit as Unit exposing (Unit)
 import Game.Unit.HitPoints as HitPoints exposing (HitPoints)
 import Game.UnitId as UnitId exposing (UnitId)
@@ -26,14 +26,14 @@ type alias IndirectImpact =
     { destination : Coordinate
     , attacker : Maybe Attacker
     , target : Maybe Target
-    , depot : Maybe BuildingImpact
+    , building : Maybe BuildingImpact
     }
 
 
 type alias BuildingImpact =
     { kind : BuildingKind
-    , before : Depot.Hp
-    , after : Depot.Hp
+    , before : Building.Hp
+    , after : Building.Hp
     }
 
 
@@ -67,15 +67,15 @@ selection =
                     |> SS.with (TargetApi.health CombatHealth.selection)
                 )
             )
-        |> SS.with (ImpactApi.depot buildingSelection)
+        |> SS.with (ImpactApi.building buildingSelection)
 
 
 buildingSelection : SelectionSet BuildingImpact Api.Object.BuildingImpact
 buildingSelection =
     SS.succeed BuildingImpact
         |> SS.with BuildingImpactApi.kind
-        |> SS.with (BuildingImpactApi.before Depot.hpSelection)
-        |> SS.with (BuildingImpactApi.after Depot.hpSelection)
+        |> SS.with (BuildingImpactApi.before Building.hpSelection)
+        |> SS.with (BuildingImpactApi.after Building.hpSelection)
 
 
 {-| Read the target transition from either a projected shell or a merged landing.

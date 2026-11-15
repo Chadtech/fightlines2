@@ -46,6 +46,7 @@ import Effect as E
         ( Eff
         )
 import Error exposing (Error(..))
+import Fightlines.GameOrigin as GameOrigin
 import Fightlines.Route as Route
 import Fightlines.View.MapChoice as MapChoice
 import Game.Assets as Assets
@@ -619,7 +620,9 @@ gameNavigation :
     -> Eff msg
 gameNavigation deployment args lobbyId =
     if args.isMember && args.gameUrl /= Nothing then
-        Route.navigate deployment (Route.Game lobbyId)
+        Route.navigate
+            deployment
+            (Route.Game lobbyId GameOrigin.DirectEntry)
 
     else
         E.none

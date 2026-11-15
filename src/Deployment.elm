@@ -110,9 +110,16 @@ draining entry document loads the server-selected frontend and API connection.
 requiresDocumentLoad : Model -> String -> Bool
 requiresDocumentLoad deployment destination =
     let
+        path : String
+        path =
+            destination
+                |> String.split "?"
+                |> List.head
+                |> Maybe.withDefault destination
+
         newSession : Bool
         newSession =
-            List.member destination [ "/", "/new", "/match-making" ]
+            List.member path [ "/", "/new", "/match-making" ]
 
         draining : Bool
         draining =
@@ -125,7 +132,7 @@ requiresDocumentLoad deployment destination =
 
         destinationSession : Maybe LobbyId
         destinationSession =
-            session destination
+            session path
 
         crossingSession : Bool
         crossingSession =

@@ -193,7 +193,7 @@ pub fn resolve_orders(scenario: &mut Scenario, orders: &[(UnitId, SupplyOrder)],
             | SupplyOrder::UnloadCrates(_) => 0,
         };
         for _ in 0..depot_loads.min(room) {
-            let Some(depot) = scenario.depots.iter_mut().find(|depot| {
+            let Some(depot) = scenario.buildings.iter_mut().find(|depot| {
                 origin == depot.position && !depot.is_destroyed() && depot.stock.current > 0
             }) else {
                 break;
@@ -239,17 +239,17 @@ pub fn resolve_orders(scenario: &mut Scenario, orders: &[(UnitId, SupplyOrder)],
 /// Stock moves only to recipients, never between supply sources. Every recipient
 /// is filled to its own capacity, even when several sources overlap.
 pub fn replenish(scenario: &mut Scenario, turn_number: i32) {
-    for index in 0..scenario.depots.len() {
-        if scenario.depots[index].is_destroyed() {
+    for index in 0..scenario.buildings.len() {
+        if scenario.buildings[index].is_destroyed() {
             continue;
         }
-        let Some(kind) = scenario.depots[index].kind.resource_kind() else {
+        let Some(kind) = scenario.buildings[index].kind.resource_kind() else {
             continue;
         };
-        let origin = scenario.depots[index].position;
-        let mut stock = scenario.depots[index].stock.clone();
+        let origin = scenario.buildings[index].position;
+        let mut stock = scenario.buildings[index].stock.clone();
         distribute(scenario, origin, &mut stock.current, turn_number, kind);
-        scenario.depots[index].stock = stock;
+        scenario.buildings[index].stock = stock;
     }
     for index in 0..scenario.supply_crates.len() {
         let origin = scenario.supply_crates[index].position;
@@ -364,7 +364,7 @@ mod tests {
     use crate::{
         map::Map,
         map_definition::MapDefinition,
-        scenario::{BuildingKind, Depot, ResourceKind},
+        scenario::{Building, BuildingKind, ResourceKind},
         test_support::{FixtureValue, TestResult},
     };
 
@@ -384,7 +384,8 @@ mod tests {
             unit.set_fuel_for_test(32);
         }
         // Resource identity prevents distribution even for malformed old stock.
-        scenario.depots.first_mut().fixture()?.stock = ResourceStock::depot(ResourceKind::Supply);
+        scenario.buildings.first_mut().fixture()?.stock =
+            ResourceStock::depot(ResourceKind::Supply);
         let before = scenario.units.clone();
         replenish(&mut scenario, 1);
         assert_eq!(scenario.units, before);
@@ -394,7 +395,7 @@ mod tests {
     fn board() -> TestResult<Scenario> {
         let mut board = Scenario::supply_point().fixture()?;
         board.map = Map::from_ascii(".......\n.......\n.......").fixture()?;
-        board.depots.clear();
+        board.buildings.clear();
         board
             .units
             .retain(|unit| ["1", "2", "4", "9"].contains(&unit.id().as_str()));
@@ -424,7 +425,7 @@ mod tests {
         let mut board = board()?;
         board.units.retain(|unit| unit.id() == "4");
         let truck_id = UnitId::parse("4").fixture()?;
-        board.depots.push(Depot {
+        board.buildings.push(Building {
             kind: BuildingKind::Fuel,
             position: Coordinate::new(2, 1),
             stock: ResourceStock {
@@ -435,7 +436,7 @@ mod tests {
             damage: 0,
         });
         resolve_orders(&mut board, &[(truck_id, SupplyOrder::LoadCrates(2))], 1);
-        assert_eq!(board.depots.first().fixture()?.stock.current, 0);
+        assert_eq!(board.buildings.first().fixture()?.stock.current, 0);
         assert_eq!(
             board.units.first().fixture()?.supply_cargo,
             vec![
@@ -574,7 +575,7 @@ mod tests {
     #[test]
     fn fuel_depots_share_finite_stock_without_provisions() -> TestResult<()> {
         let mut board = board()?;
-        board.depots.push(Depot {
+        board.buildings.push(Building {
             kind: BuildingKind::Fuel,
             position: Coordinate::new(2, 1),
             stock: ResourceStock {
@@ -588,7 +589,7 @@ mod tests {
             unit.set_fuel_for_test(0);
         }
         replenish(&mut board, 1);
-        assert_eq!(board.depots.first().fixture()?.stock.current, 0);
+        assert_eq!(board.buildings.first().fixture()?.stock.current, 0);
         assert_eq!(
             board
                 .units
@@ -617,7 +618,7 @@ mod tests {
                 .iter()
                 .all(|unit| unit.supplies().current() == 10 && unit.supply_cargo.is_empty())
         );
-        board.depots.first_mut().fixture()?.stock.current = 3;
+        board.buildings.first_mut().fixture()?.stock.current = 3;
         replenish(&mut board, 2);
         assert_eq!(
             board
@@ -647,7 +648,7 @@ mod tests {
     #[test]
     fn fuel_refills_to_capacity_only_in_cardinal_range_and_skips_dead_vehicles() -> TestResult<()> {
         let mut board = Scenario::supply_point().fixture()?;
-        board.depots = vec![Depot {
+        board.buildings = vec![Building {
             kind: BuildingKind::Fuel,
             position: Coordinate::new(8, 8),
             stock: ResourceStock::depot(ResourceKind::Fuel),
@@ -676,9 +677,9 @@ mod tests {
             );
         }
         assert!(!board.units.iter().any(|unit| unit.id() == "10"));
-        assert_eq!(board.depots.first().fixture()?.stock.current, 2560);
+        assert_eq!(board.buildings.first().fixture()?.stock.current, 2560);
         board.finish_turn_resources(2);
-        assert_eq!(board.depots.first().fixture()?.stock.current, 2560);
+        assert_eq!(board.buildings.first().fixture()?.stock.current, 2560);
         Ok(())
     }
 
@@ -827,7 +828,7 @@ mod tests {
     fn depot_rescues_exhaustion_but_never_resurrects_combat_deaths_or_loads_cargo() -> TestResult<()>
     {
         let mut board = board()?;
-        board.depots.push(Depot {
+        board.buildings.push(Building {
             kind: BuildingKind::Supply,
             position: Coordinate::new(1, 1),
             stock: ResourceStock::depot(ResourceKind::Supply),
@@ -863,7 +864,7 @@ mod tests {
                 .supply_cargo
                 .is_empty()
         );
-        assert_eq!(board.depots.get_mut(0).fixture()?.stock.current, 747);
+        assert_eq!(board.buildings.get_mut(0).fixture()?.stock.current, 747);
         Ok(())
     }
 
@@ -878,7 +879,7 @@ mod tests {
             .find(|unit| unit.id() == "1")
             .fixture()?
             .board(truck_id);
-        board.depots.push(Depot {
+        board.buildings.push(Building {
             kind: BuildingKind::Supply,
             position: Coordinate::new(2, 1),
             stock: ResourceStock {
@@ -889,7 +890,7 @@ mod tests {
             damage: 0,
         });
         resolve_orders(&mut board, &[(truck_id, SupplyOrder::LoadCrates(2))], 1);
-        assert_eq!(board.depots.get_mut(0).fixture()?.stock.current, 0);
+        assert_eq!(board.buildings.get_mut(0).fixture()?.stock.current, 0);
         let truck = board.units.iter().find(|unit| unit.id() == "4").fixture()?;
         assert_eq!(occupied_berths(&board, truck), 2);
         assert_eq!(truck.supply_cargo.first().fixture()?.current, 20);
@@ -1027,7 +1028,7 @@ mod tests {
             .supply_cargo
             .clear();
         board.supply_crates.clear();
-        board.depots.push(Depot {
+        board.buildings.push(Building {
             kind: BuildingKind::Supply,
             position: Coordinate::new(2, 0),
             stock: ResourceStock::depot(ResourceKind::Supply),
@@ -1044,7 +1045,7 @@ mod tests {
                 .supply_cargo
                 .is_empty()
         );
-        assert_eq!(board.depots.first().fixture()?.stock.current, 1024);
+        assert_eq!(board.buildings.first().fixture()?.stock.current, 1024);
         Ok(())
     }
 
@@ -1119,7 +1120,7 @@ mod visibility_tests {
     use super::*;
     use crate::{
         map::Map,
-        scenario::{BuildingKind, Depot, ResourceKind},
+        scenario::{Building, BuildingKind, ResourceKind},
         test_support::{FixtureValue, TestResult},
         visibility,
     };
@@ -1134,15 +1135,15 @@ mod visibility_tests {
             .first_mut()
             .fixture()?
             .move_to(Coordinate::new(0, 0));
-        board.depots = vec![
-            Depot {
+        board.buildings = vec![
+            Building {
                 kind: BuildingKind::Fuel,
                 position: Coordinate::new(1, 0),
                 stock: ResourceStock::depot(ResourceKind::Fuel),
                 stock_visible: true,
                 damage: 0,
             },
-            Depot {
+            Building {
                 kind: BuildingKind::Fuel,
                 position: Coordinate::new(19, 0),
                 stock: ResourceStock::depot(ResourceKind::Fuel),
@@ -1162,11 +1163,11 @@ mod visibility_tests {
         ];
         let visible = visibility::visible_tiles(&board, PlayerNumber::Player1);
         let observed = visibility::observed_scenario(&board, PlayerNumber::Player1, &visible);
-        assert!(observed.depots.first().fixture()?.stock_visible);
-        assert!(!observed.depots.last().fixture()?.stock_visible);
+        assert!(observed.buildings.first().fixture()?.stock_visible);
+        assert!(!observed.buildings.last().fixture()?.stock_visible);
         assert_eq!(observed.supply_crates.len(), 1);
         assert_eq!(board.supply_crates.len(), 2);
-        assert!(board.depots.iter().all(|depot| depot.stock_visible));
+        assert!(board.buildings.iter().all(|depot| depot.stock_visible));
         Ok(())
     }
 }

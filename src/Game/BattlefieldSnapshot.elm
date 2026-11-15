@@ -6,8 +6,8 @@ import Api.Object.GamePlayerView as PlayerView
 import Api.Object.GameSnapshot as SnapshotApi
 import Api.Object.Scenario as Scenario
 import Api.Scalar exposing (MapId)
+import Game.Building as Building exposing (Building)
 import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.Depot as Depot exposing (Depot)
 import Game.Map as Map exposing (Map)
 import Game.Supply as Supply
 import Game.Unit as Unit exposing (Unit)
@@ -29,7 +29,7 @@ type alias Snapshot =
     , players : List Player
     , map : Map
     , units : List Unit
-    , depots : List Depot
+    , depots : List Building
     , supplyCrates : List Supply.GroundCrate
     , visibleTiles : List Coordinate
     , unitStats : List UnitStats
@@ -65,7 +65,7 @@ selection =
         |> SS.with (SnapshotApi.players playerSelection)
         |> SS.with (SnapshotApi.scenario (Scenario.map Map.selection))
         |> SS.with (SnapshotApi.scenario (Scenario.units Unit.selection))
-        |> SS.with (SnapshotApi.scenario (Scenario.depots Depot.selection))
+        |> SS.with (SnapshotApi.scenario (Scenario.buildings Building.selection))
         |> SS.with (SnapshotApi.scenario (Scenario.supplyCrates Supply.crateSelection))
         |> SS.with (SnapshotApi.visibleTiles Coordinate.selection)
         |> SS.with (SnapshotApi.scenario (Scenario.unitStats UnitStats.selection))

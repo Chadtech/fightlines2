@@ -31,6 +31,7 @@ import Audio
 import Browser.Events
 import EditableMap exposing (NamedMap)
 import Effect as E exposing (Eff)
+import Fightlines.GameOrigin as GameOrigin
 import Fightlines.MatchMaking.VisitId as VisitId exposing (VisitId)
 import Fightlines.Route as Route
 import Fightlines.UserName as UserName
@@ -308,7 +309,7 @@ enterGame found model =
         |> setStage EnteringGame
         |> E.with
             (Route.navigateReplacing model.shared.deployment
-                (Route.Game found.gameId)
+                (Route.Game found.gameId GameOrigin.MatchMaking)
             )
 
 

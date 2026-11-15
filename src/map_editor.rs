@@ -3,7 +3,8 @@ use crate::{
     graphql::Context,
     map::{Coordinate, MapTheme, TerrainValue},
     map_definition::{
-        DepotPlacement, MapDefinition, MapReleaseStatus, NamedMap, TerrainPlacement, UnitPlacement,
+        BuildingPlacement, MapDefinition, MapReleaseStatus, NamedMap, TerrainPlacement,
+        UnitPlacement,
     },
     map_id::{self, CatalogAccess, MapId},
     map_thumbnail,
@@ -86,7 +87,7 @@ struct TerrainPlacementInput {
     terrain: TerrainValue,
 }
 #[derive(GraphQLInputObject)]
-struct DepotPlacementInput {
+struct BuildingPlacementInput {
     position: PositionInput,
     kind: BuildingKind,
 }
@@ -107,7 +108,7 @@ pub struct MapDefinitionInput {
     height: i32,
     theme: MapTheme,
     features: Vec<TerrainPlacementInput>,
-    depots: Vec<DepotPlacementInput>,
+    buildings: Vec<BuildingPlacementInput>,
     units: Vec<UnitPlacementInput>,
 }
 
@@ -142,13 +143,13 @@ impl MapDefinitionInput {
                     })
                 })
                 .collect::<FieldResult<_>>()?,
-            depots: self
-                .depots
+            buildings: self
+                .buildings
                 .into_iter()
-                .map(|depot| {
-                    Ok(DepotPlacement {
-                        position: depot.position.coordinate()?,
-                        kind: depot.kind,
+                .map(|building| {
+                    Ok(BuildingPlacement {
+                        position: building.position.coordinate()?,
+                        kind: building.kind,
                     })
                 })
                 .collect::<FieldResult<_>>()?,
@@ -291,7 +292,7 @@ mod tests {
     use serde_json::{Value, json};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-    const SAVE: &str = "mutation Save($definition: MapDefinitionInput!, $kind: MapId!) { saveMap(mapType: $kind, definition: $definition) { mapType definition { description releaseStatus theme width depots { kind } } } }";
+    const SAVE: &str = "mutation Save($definition: MapDefinitionInput!, $kind: MapId!) { saveMap(mapType: $kind, definition: $definition) { mapType definition { description releaseStatus theme width buildings { kind } } } }";
     const CREATE: &str = "mutation Create($definition: MapDefinitionInput!, $kind: MapId!) { createMap(mapType: $kind, definition: $definition) { mapType } }";
 
     fn store() -> web::Data<Store> {
@@ -328,12 +329,12 @@ mod tests {
                     terrain: feature.terrain.into(),
                 })
                 .collect(),
-            depots: definition
-                .depots
+            buildings: definition
+                .buildings
                 .into_iter()
-                .map(|depot| DepotPlacementInput {
-                    position: position(depot.position),
-                    kind: depot.kind,
+                .map(|building| BuildingPlacementInput {
+                    position: position(building.position),
+                    kind: building.kind,
                 })
                 .collect(),
             units: definition
@@ -537,7 +538,7 @@ mod tests {
             assert_eq!(fs::read_to_string(&destination)?, original);
         }
         let mut definition = valid;
-        definition["depots"] = json!([{"position": {"x": 0, "y": 0}, "kind": "FORTRESS"}]);
+        definition["buildings"] = json!([{"position": {"x": 0, "y": 0}, "kind": "FORTRESS"}]);
         definition["description"] = json!("a custom battlefield description");
         definition["theme"] = json!("SNOW");
         definition["releaseStatus"] = json!("DRAFT");
@@ -560,7 +561,7 @@ mod tests {
             "DRAFT"
         );
         assert_eq!(
-            body["data"]["saveMap"]["definition"]["depots"],
+            body["data"]["saveMap"]["definition"]["buildings"],
             json!([{ "kind": "FORTRESS" }])
         );
         assert_eq!(
@@ -602,7 +603,7 @@ mod tests {
         .await;
         let valid = json!({
             "description": "creation fixture", "releaseStatus": "DRAFT", "width": 2, "height": 2,
-            "theme": "GREEN_FOREST", "features": [], "depots": [],
+            "theme": "GREEN_FOREST", "features": [], "buildings": [],
             "units": [
                 {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "PLAYER1", "kind": "INFANTRY", "direction": "EAST"},
                 {"id": 2, "position": {"x": 1, "y": 1}, "playerNumber": "PLAYER2", "kind": "INFANTRY", "direction": "WEST"}
@@ -710,7 +711,7 @@ mod tests {
         .await;
         let mut definition = json!({
             "description": "thumbnail fixture", "releaseStatus": "DRAFT", "width": 2, "height": 2,
-            "theme": "GREEN_FOREST", "features": [], "depots": [],
+            "theme": "GREEN_FOREST", "features": [], "buildings": [],
             "units": [
                 {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "PLAYER1", "kind": "INFANTRY", "direction": "EAST"},
                 {"id": 2, "position": {"x": 1, "y": 1}, "playerNumber": "PLAYER2", "kind": "INFANTRY", "direction": "WEST"}

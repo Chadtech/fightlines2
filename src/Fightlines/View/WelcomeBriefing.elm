@@ -11,7 +11,7 @@ import Api.Enum.ResourceKind as ResourceKind
 import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Css
-import Game.Depot as Depot
+import Game.Building as Building
 import Game.Supply as Supply
 import Game.View.UnitSprite as UnitSprite
 import Html.Styled as H exposing (Html)
@@ -202,7 +202,7 @@ supplyLine =
         , Aria.role Aria.Image
         , Aria.label "supply line: load crates at a depot, carry them by truck, and unload near your units"
         ]
-        [ flowStop "supply depot" (image (Depot.kindImage BuildingKind.Supply))
+        [ flowStop "supply depot" (image (Building.kindImage BuildingKind.Supply))
         , arrow
         , flowStop "loaded truck" (unitArtwork UnitKind.Truck)
         , arrow

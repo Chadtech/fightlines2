@@ -58,11 +58,11 @@ features object____ =
     Object.selectionForCompositeField "features" [] object____ (Basics.identity >> Decode.list)
 
 
-depots :
-    SelectionSet decodesTo Api.Object.DepotPlacement
+buildings :
+    SelectionSet decodesTo Api.Object.BuildingPlacement
     -> SelectionSet (List decodesTo) Api.Object.MapDefinition
-depots object____ =
-    Object.selectionForCompositeField "depots" [] object____ (Basics.identity >> Decode.list)
+buildings object____ =
+    Object.selectionForCompositeField "buildings" [] object____ (Basics.identity >> Decode.list)
 
 
 units :

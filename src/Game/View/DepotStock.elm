@@ -5,7 +5,7 @@ module Game.View.DepotStock exposing
     )
 
 import Css
-import Game.Depot as Depot exposing (Depot)
+import Game.Building as Building exposing (Building)
 import Game.Supply as Supply
 import Html.Styled as H exposing (Html)
 import Html.Styled.Lazy as Lazy
@@ -29,7 +29,7 @@ styles =
         ]
 
 
-label : Depot -> Supply.Stock -> String
+label : Building -> Supply.Stock -> String
 label depot stock =
     let
         warning : String
@@ -43,7 +43,7 @@ label depot stock =
             else
                 ""
     in
-    Depot.label depot
+    Building.label depot
         ++ " · "
         ++ String.fromInt stock.current
         ++ " / "

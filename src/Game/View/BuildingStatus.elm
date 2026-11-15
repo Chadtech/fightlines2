@@ -1,8 +1,8 @@
-module Game.View.DepotStatus exposing (toHtml)
+module Game.View.BuildingStatus exposing (toHtml)
 
 import Api.Enum.BuildingKind as BuildingKind
 import Css
-import Game.Depot as Depot exposing (Depot)
+import Game.Building as Building exposing (Building)
 import Game.Supply as Supply
 import Game.View.InspectionHelp as InspectionHelp exposing (Help(..))
 import Game.View.StockGauge as StockGauge
@@ -15,31 +15,77 @@ import View.InfoMarker as InfoMarker
 import View.Layout as Layout exposing (Layout)
 
 
-toHtml : (Help -> msg) -> Layout -> Depot -> Html msg
-toHtml onHelp layout depot =
-    Lazy.lazy3 depotView onHelp layout depot
+toHtml : (Help -> msg) -> Layout -> Building -> Html msg
+toHtml onHelp layout building =
+    Lazy.lazy3 buildingView onHelp layout building
 
 
-depotView : (Help -> msg) -> Layout -> Depot -> Html msg
-depotView onHelp layout depot =
+buildingView : (Help -> msg) -> Layout -> Building -> Html msg
+buildingView onHelp layout building =
     let
         events : InspectionHelp.Events msg
         events =
             { onHelp = onHelp }
 
+        heading : Html msg
+        heading =
+            case building.kind of
+                BuildingKind.Fortress ->
+                    H.div
+                        [ A.css
+                            [ S.row
+                            , S.itemsCenter
+                            , S.g2
+                            ]
+                        ]
+                        [ H.h2
+                            []
+                            [ H.text (Building.label building) ]
+                        , InspectionHelp.button events
+                            ("about " ++ Building.label building)
+                            (BuildingHelp building)
+                        ]
+
+                _ ->
+                    H.details
+                        []
+                        [ H.summary
+                            [ Aria.label ("about " ++ Building.label building)
+                            , A.css summaryStyles
+                            ]
+                            [ H.h2
+                                []
+                                [ H.text (Building.label building)
+                                ]
+                            , InfoMarker.toHtml
+                            ]
+                        , H.p
+                            [ A.css
+                                [ S.bgYellow2
+                                , S.textGray5
+                                , S.p3
+                                , S.mt3
+                                , S.mlNeg3
+                                , S.mrNeg3
+                                ]
+                            ]
+                            [ H.text (Building.description building)
+                            ]
+                        ]
+
         illustration : Html msg
         illustration =
             case layout of
                 Layout.Desktop ->
-                    depotIllustration depot
+                    buildingIllustration building
 
                 Layout.Mobile ->
                     H.text ""
 
         status : Html msg
         status =
-            if depot.kind == BuildingKind.Fortress then
-                if Depot.isDestroyed depot then
+            if building.kind == BuildingKind.Fortress then
+                if Building.isDestroyed building then
                     H.p
                         []
                         [ H.text "destroyed · no defense bonus"
@@ -51,14 +97,14 @@ depotView onHelp layout depot =
                         [ H.text "occupying units take 75% less damage · minimum 1 hp per hit"
                         ]
 
-            else if Depot.isDestroyed depot then
+            else if Building.isDestroyed building then
                 H.p
                     []
                     [ H.text "destroyed · no replenishment or freight loading"
                     ]
 
             else
-                case ( Depot.resourceKind depot, depot.stock ) of
+                case ( Building.resourceKind building, building.stock ) of
                     ( Just kind, Just level ) ->
                         let
                             label : String
@@ -67,7 +113,7 @@ depotView onHelp layout depot =
 
                             accessibleLabel : String
                             accessibleLabel =
-                                Depot.label depot ++ " " ++ label
+                                Building.label building ++ " " ++ label
                         in
                         StockGauge.toHtml
                             { label = label
@@ -96,47 +142,23 @@ depotView onHelp layout depot =
             , S.textGray5
             ]
         ]
-        [ H.details
-            []
-            [ H.summary
-                [ Aria.label ("about " ++ Depot.label depot)
-                , A.css summaryStyles
-                ]
-                [ H.h2
-                    []
-                    [ H.text (Depot.label depot)
-                    ]
-                , InfoMarker.toHtml
-                ]
-            , H.p
-                [ A.css
-                    [ S.bgYellow2
-                    , S.textGray5
-                    , S.p3
-                    , S.mt3
-                    , S.mlNeg3
-                    , S.mrNeg3
-                    ]
-                ]
-                [ H.text (Depot.description depot)
-                ]
-            ]
+        [ heading
         , illustration
         , StockGauge.hp
-            { accessibleLabel = Depot.label depot ++ " hp"
+            { accessibleLabel = Building.label building ++ " hp"
             , help =
                 InspectionHelp.button events
-                    ("about " ++ Depot.label depot ++ " hp")
+                    ("about " ++ Building.label building ++ " hp")
                     BuildingHpHelp
                     |> StockGauge.DialogButton
             }
-            depot.hp
+            building.hp
         , status
         ]
 
 
-depotIllustration : Depot -> Html msg
-depotIllustration depot =
+buildingIllustration : Building -> Html msg
+buildingIllustration building =
     H.div
         [ A.css
             [ S.bgNightwood3
@@ -147,8 +169,8 @@ depotIllustration depot =
             ]
         ]
         [ H.img
-            [ A.src (Depot.image depot)
-            , A.alt (Depot.label depot)
+            [ A.src (Building.image building)
+            , A.alt (Building.label building)
             , A.css
                 [ S.block
                 , S.w128px

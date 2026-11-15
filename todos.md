@@ -7,6 +7,8 @@
 - UI not clear about doing infantry moves when unloading from truck, a dialog should appear?
 
 ## Immediately
+- if there was no previous game on match making, just dont show any text, rather than say no previous game
+- invite match makers to play against ai
 - refactor screen size handling, take it out of shared
 - Review button module and feedback thing
 - Frontend AI engine

@@ -52,9 +52,9 @@ import Api.Object.UnitDeparture as DepartureApi
 import Api.Union
 import Api.Union.DirectUnitLoss as DirectLossApi
 import Api.Union.UnitLoss as LossApi
+import Game.Building as Building exposing (Building)
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.Depot as Depot exposing (Depot)
 import Game.Direction as Direction
 import Game.IndirectImpact as IndirectImpact exposing (IndirectImpact)
 import Game.Shot as Shot exposing (Shot)
@@ -78,7 +78,7 @@ type alias Frame =
     , sabotages : List Coordinate
     , shots : List Shot
     , visibleTiles : List Coordinate
-    , depots : List Depot
+    , depots : List Building
     , supplyCrates : List Supply.GroundCrate
     }
 
@@ -96,18 +96,18 @@ type alias Departure =
 type Encounter
     = Exchange CombatExchange
     | Impact ImpactEncounter
-    | Sabotage Depot
+    | Sabotage Building
     | Exhaustion Unit
 
 
-{-| One landing scene combines target and depot damage while retaining every
+{-| One landing scene combines target and building damage while retaining every
 observed firing participant. Concealed origins have no entry in attackers.
 -}
 type alias ImpactEncounter =
     { destination : Coordinate
     , attackers : List IndirectImpact.Attacker
     , target : Maybe IndirectImpact.Target
-    , depot : Maybe IndirectImpact.BuildingImpact
+    , building : Maybe IndirectImpact.BuildingImpact
     }
 
 
@@ -555,20 +555,20 @@ encounters frames =
                     (shot.kind == CombatKind.IndirectFire)
                         && (shot.destination == impact.destination)
             in
-            (impact.depot /= Nothing) || not (List.any confirmsLanding frame.shots)
+            (impact.building /= Nothing) || not (List.any confirmsLanding frame.shots)
 
         needsExchange : CombatExchange -> Bool
         needsExchange exchange =
             let
-                sharesDepotImpact : IndirectImpact -> Bool
-                sharesDepotImpact impact =
-                    (impact.depot /= Nothing) && (Unit.mapPosition exchange.target == Just impact.destination)
+                sharesBuildingImpact : IndirectImpact -> Bool
+                sharesBuildingImpact impact =
+                    (impact.building /= Nothing) && (Unit.mapPosition exchange.target == Just impact.destination)
 
-                includesDepotDamage : Bool
-                includesDepotDamage =
-                    (exchange.kind == CombatKind.IndirectFire) && List.any sharesDepotImpact frame.indirectImpacts
+                includesBuildingDamage : Bool
+                includesBuildingDamage =
+                    (exchange.kind == CombatKind.IndirectFire) && List.any sharesBuildingImpact frame.indirectImpacts
             in
-            not includesDepotDamage
+            not includesBuildingDamage
 
         unique : IndirectImpact -> List ImpactEncounter -> List ImpactEncounter
         unique impact impacts =
@@ -583,8 +583,8 @@ encounters frames =
                         { existing
                             | attackers = existing.attackers ++ attackers
                             , target = combineImpactTargets existing.target impact.target
-                            , depot =
-                                case ( existing.depot, impact.depot ) of
+                            , building =
+                                case ( existing.building, impact.building ) of
                                     ( Just earlier, Just later ) ->
                                         Just { earlier | after = later.after }
 
@@ -606,7 +606,7 @@ encounters frames =
                     ++ [ { destination = impact.destination
                          , attackers = attackers
                          , target = impact.target
-                         , depot = impact.depot
+                         , building = impact.building
                          }
                        ]
 
@@ -1022,7 +1022,7 @@ selection unit coordinate =
                 |> SS.with (FrameApi.sabotages Coordinate.selection)
                 |> SS.with (FrameApi.shots Shot.selection)
                 |> SS.with (FrameApi.visibleTiles coordinate)
-                |> SS.with (FrameApi.depots Depot.selection)
+                |> SS.with (FrameApi.buildings Building.selection)
                 |> SS.with (FrameApi.supplyCrates Supply.crateSelection)
             )
         )
@@ -1305,7 +1305,7 @@ tickCombat delta focus playback =
 
                 ShowingPanels panel ->
                     let
-                        -- Allow staggered unit casualties followed by a depot strike and automatic-close pause.
+                        -- Allow staggered unit casualties followed by a building strike and automatic-close pause.
                         elapsed : Float
                         elapsed =
                             min 6000 (panel.elapsed + delta)

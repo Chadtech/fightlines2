@@ -65,6 +65,10 @@ checks =
                 gamePath =
                     "/game/0123456789abcdef0123456789abcdef"
 
+                matchedGamePath : String
+                matchedGamePath =
+                    gamePath ++ "?from=match-making"
+
                 lobbyPath : String
                 lobbyPath =
                     "/lobby/0123456789abcdef0123456789abcdef"
@@ -100,6 +104,8 @@ checks =
                 , check "draining matchmaking loads canonical entry" (Deployment.requiresDocumentLoad draining "/match-making")
                 , check "delayed responses cannot undo draining" (Deployment.observe Deployment.AcceptingNewGames draining == draining)
                 , check "entering a game loads its owner-selected document" (Deployment.requiresDocumentLoad accepting gamePath)
+                , check "matchmaking enters the game through its owner-selected document" (Deployment.requiresDocumentLoad accepting matchedGamePath)
+                , check "returning from a game opens the current matchmaking document" (Deployment.requiresDocumentLoad gameDocument "/match-making")
                 , check "lobby to game stays on the same connection" (not (Deployment.requiresDocumentLoad gameDocument gamePath))
                 , check "game documents identify their session" (Deployment.init { url | path = gamePath } == gameDocument)
                 , check "map documents identify their session" (Deployment.init { url | path = lobbyPath ++ "/maps" } == gameDocument)

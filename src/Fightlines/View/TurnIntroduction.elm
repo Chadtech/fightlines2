@@ -9,6 +9,11 @@ module Fightlines.View.TurnIntroduction exposing
 
 import Css
 import Css.Media
+import Fightlines.View.Matchup as Matchup
+import Game.Matchup
+    exposing
+        ( Matchup
+        )
 import Game.Turn as Turn
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -24,6 +29,7 @@ type Msg
     | ReplayClicked
     | BattlefieldViewClicked
     | FeedbackClicked
+    | MatchMakingClicked
     | SkipDialogsChanged Bool
 
 
@@ -42,6 +48,7 @@ type alias DialogConfig =
     , skipDialogs : Bool
     , previousTurn : Maybe Turn.Resolution
     , canReplay : Bool
+    , matchup : Matchup
     }
 
 
@@ -57,6 +64,20 @@ dialog config =
 
             else
                 H.text ""
+
+        heading : Html Msg
+        heading =
+            if config.turnNumber == 1 then
+                Matchup.opening config.matchup
+
+            else
+                H.div
+                    [ A.css
+                        [ S.letterSpacingEm 0.16
+                        , S.textAlignCenter
+                        ]
+                    ]
+                    [ H.text "a new turn begins" ]
     in
     Dialog.make dialogHtmlId
         ("turn " ++ String.fromInt config.turnNumber)
@@ -64,13 +85,7 @@ dialog config =
         [ H.div
             [ A.css (emblemStyles config.previousTurn)
             ]
-            [ H.div
-                [ A.css
-                    [ S.letterSpacingEm 0.16
-                    , S.textAlignCenter
-                    ]
-                ]
-                [ H.text "a new turn begins" ]
+            [ heading
             , H.div
                 [ A.css (numberStyles config.previousTurn)
                 , Aria.hidden True
@@ -102,6 +117,7 @@ conclusion :
     { headline : String
     , caption : String
     , previousTurn : Maybe Turn.Resolution
+    , showMatchMaking : Bool
     }
     -> Dialog Msg
 conclusion config =
@@ -117,7 +133,12 @@ conclusion config =
         result : Html Msg
         result =
             H.div
-                [ A.css (emblemStyles config.previousTurn) ]
+                [ A.css
+                    [ S.batch (emblemStyles config.previousTurn)
+                    , sideBySideConclusion
+                        [ S.justifyStart ]
+                    ]
+                ]
                 [ H.div
                     [ A.css
                         [ S.letterSpacingEm 0.16
@@ -150,6 +171,25 @@ conclusion config =
                 , finalReport
                 ]
 
+        matchMakingButton : Html Msg
+        matchMakingButton =
+            if config.showMatchMaking then
+                Button.primary "find another match" MatchMakingClicked
+                    |> Button.large
+                    |> Button.fullWidth
+                    |> Button.toHtml
+
+            else
+                H.text ""
+
+        returnButton : Button.Button Msg
+        returnButton =
+            if config.showMatchMaking then
+                Button.secondary "return to battlefield" BattlefieldViewClicked
+
+            else
+                Button.primary "return to battlefield" BattlefieldViewClicked
+
         followUp : Html Msg
         followUp =
             H.div
@@ -157,6 +197,8 @@ conclusion config =
                     [ S.col
                     , S.justifyCenter
                     , S.g3
+                    , sideBySideConclusion
+                        [ S.justifyStart ]
                     ]
                 ]
                 [ H.p
@@ -169,6 +211,7 @@ conclusion config =
                         ]
                     ]
                     [ H.text "thanks for playing! your feedback helps us improve fightlines." ]
+                , matchMakingButton
                 , H.div
                     [ A.css
                         [ S.grid
@@ -179,9 +222,7 @@ conclusion config =
                             [ S.gridCols1 ]
                         ]
                     ]
-                    [ Button.primary
-                        "return to battlefield"
-                        BattlefieldViewClicked
+                    [ returnButton
                         |> Button.large
                         |> Button.fullWidth
                         |> Button.toHtml
@@ -203,7 +244,8 @@ conclusion config =
                 , S.shrink0
                 , S.g3
                 , sideBySideConclusion
-                    [ S.gridColumns "minmax(0, 3fr) minmax(0, 2fr)"
+                    [ S.flex1
+                    , S.gridColumns "minmax(0, 3fr) minmax(0, 2fr)"
                     , Css.lineHeight (Css.num 1.2)
                     ]
                 ]

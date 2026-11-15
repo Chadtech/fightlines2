@@ -12,6 +12,12 @@ module Fightlines.View.GameMenu exposing
 
 import Browser.Dom
 import Css
+import Css.Media
+import Fightlines.View.Matchup as Matchup
+import Game.Matchup
+    exposing
+        ( Matchup
+        )
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
@@ -72,7 +78,11 @@ resignationCancelButtonHtmlId =
 
 
 panel :
-    { enabled : Bool, turnNumber : Int, mobile : Bool }
+    { enabled : Bool
+    , turnNumber : Int
+    , mobile : Bool
+    , matchup : Matchup
+    }
     -> Html Msg
 panel config =
     let
@@ -96,6 +106,16 @@ panel config =
                 , S.borderT0
                 , S.py1
                 ]
+
+        columns : Css.Style
+        columns =
+            if config.mobile then
+                Css.Media.withMediaQuery
+                    [ "(min-width: 660px)" ]
+                    [ S.gridColumns "minmax(0, 1fr) minmax(0, 4rem) minmax(0, 5rem) 4.5rem minmax(0, 4rem) minmax(0, 1fr)" ]
+
+            else
+                S.gridColumns "minmax(0, 8rem) minmax(0, 4.5rem) minmax(0, 6rem) 4.5rem minmax(0, 4.5rem) minmax(0, 8rem)"
     in
     H.section
         [ Aria.label "game header"
@@ -103,7 +123,9 @@ panel config =
             [ S.when (not config.mobile) [ desktopPanel ]
             , S.grid
             , S.gridColumns "minmax(0, 4.5rem) minmax(0, 6rem) minmax(0, 4.5rem) minmax(0, 4.5rem)"
+            , columns
             , S.itemsCenter
+            , S.justifyCenter
             , S.g2
             , S.px1p5
             , S.maxWFull
@@ -114,7 +136,11 @@ panel config =
                 ]
             ]
         ]
-        [ headerButton "menu" OpenClicked
+        [ Matchup.headerName
+            config.mobile
+            Matchup.Yours
+            config.matchup.you
+        , headerButton "menu" OpenClicked
             |> Button.small
             |> Button.fullWidth
             |> Button.withHtmlId buttonHtmlId
@@ -153,6 +179,10 @@ panel config =
             |> Button.fullWidth
             |> Button.withHtmlId chatButtonHtmlId
             |> Button.toHtml
+        , Matchup.headerName
+            config.mobile
+            Matchup.Opposing
+            config.matchup.opponent
         ]
 
 

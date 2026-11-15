@@ -3,6 +3,59 @@ const { checkUnloadedInfantry } = require('./unloaded-infantry.cjs');
 
 const interaction = { tag: '@mobile-interaction' };
 
+test('the header identifies each player’s opponent on desktop and mobile', interaction, async ({ page, browser, baseURL }) => {
+  const hostName = 's'.repeat(40);
+  const guestName = 'scout';
+  const { createLobby } = await graphql(page,
+    `mutation { createLobby(name: ${JSON.stringify(hostName)}, lobbyName: "opponent names") { id } }`);
+  const id = JSON.stringify(createLobby.id);
+  const guest = await browser.newContext({
+    baseURL,
+    viewport: { width: 667, height: 260 },
+    isMobile: true,
+    hasTouch: true,
+  });
+
+  try {
+    const guestPage = await guest.newPage();
+    await guestPage.addInitScript(() => {
+      localStorage.setItem('fightlines.localStorage', JSON.stringify({
+        audioMuted: true,
+        welcomeBriefingDismissed: true,
+        skipTurnIntroduction: true,
+      }));
+    });
+    await graphql(guestPage, `mutation { joinLobby(id: ${id}, name: ${JSON.stringify(guestName)}) { id } }`);
+    await graphql(page, `mutation { startGame(id: ${id}) { id } }`);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    for (const [viewer, ownName, opponent] of [[page, hostName, guestName], [guestPage, guestName, hostName]]) {
+      await viewer.goto(`/game/${createLobby.id}`);
+      const header = viewer.getByRole('region', { name: 'game header' });
+      const menu = header.getByRole('button', { name: 'menu', exact: true });
+      const yourName = header.getByText(ownName, { exact: true });
+      const opponentName = header.getByText(opponent, { exact: true });
+      await expect(yourName).toBeVisible();
+      await expect(opponentName).toBeVisible();
+      const menuBounds = await menu.boundingBox();
+      expect((await yourName.boundingBox()).x).toBeLessThan(menuBounds.x);
+      expect((await opponentName.boundingBox()).x).toBeGreaterThan(menuBounds.x);
+      if (viewer === guestPage) {
+        await viewer.setViewportSize({ width: 600, height: 260 });
+        await expect(opponentName).toBeHidden();
+      }
+      await menu.click();
+      const dialog = viewer.getByRole('dialog', { name: 'menu', exact: true });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText(`opponent · ${opponent}`, { exact: true })).toHaveCount(0);
+      await dialog.getByRole('button', { name: 'close', exact: true }).click();
+      await expect(menu).toBeFocused();
+    }
+  } finally {
+    await guest.close();
+  }
+});
+
 test('resize switches the battlefield between desktop and mobile layouts', interaction, async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openGame(page);
@@ -443,6 +496,7 @@ test('game over opens with the result, report, and actions visible in landscape'
   const feedback = dialog.getByRole('button', { name: 'give feedback', exact: true });
   const returnButton = dialog.getByRole('button', { name: 'return to battlefield', exact: true });
   await expect(result).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'find another match' })).toHaveCount(0);
   await expect.poll(() => dialog.locator(':scope > div').nth(1).evaluate(body =>
     body.scrollHeight - body.clientHeight
   )).toBeLessThanOrEqual(1);
@@ -458,6 +512,54 @@ test('game over opens with the result, report, and actions visible in landscape'
   await expect(feedback).toBeFocused();
   await returnButton.tap();
   await expect(dialog).toHaveCount(0);
+});
+
+test('game over offers another match after entering through matchmaking', interaction, async ({ page, browser, baseURL }) => {
+  const opponent = await browser.newContext({ baseURL });
+  try {
+    await page.goto('/match-making');
+    await page.getByLabel('user name', { exact: true }).fill('commander');
+    await page.getByRole('button', { name: 'find a game', exact: true }).tap();
+    await expect(page.getByRole('button', { name: 'cancel', exact: true })).toBeEnabled();
+
+    const { joinMatchMaking } = await graphql(opponent,
+      'mutation { joinMatchMaking(name: "scout") { ... on MatchMakingMatched { gameId } } }');
+    const { gameId } = joinMatchMaking;
+    expect(gameId).toBeTruthy();
+    await page.waitForURL(url => url.pathname === `/game/${gameId}`, { timeout: 25_000 });
+    await expect(page.getByRole('group', { name: 'battlefield', exact: true })).toBeVisible();
+
+    await graphql(opponent, `mutation { resignGame(id: ${JSON.stringify(gameId)}) { id } }`);
+    await page.setViewportSize({ width: 667, height: 260 });
+    await page.reload();
+
+    const dialog = page.getByRole('dialog', { name: 'game over', exact: true });
+    const findAnotherMatch = dialog.getByRole('button', { name: 'find another match', exact: true });
+    await expect(findAnotherMatch).toBeInViewport({ ratio: 1 });
+
+    await page.setViewportSize({ width: 852, height: 393 });
+    const feedback = dialog.getByRole('button', { name: 'give feedback', exact: true });
+    await expect(feedback).toBeInViewport({ ratio: 1 });
+    const dialogBox = await dialog.boundingBox();
+    const heading = dialog.getByRole('heading', { name: / wins$/ });
+    const resultPanel = heading.locator('..');
+    const resultBox = await resultPanel.boundingBox();
+    const headingBox = await heading.boundingBox();
+    const thanksBox = await dialog.getByText(/^thanks for playing!/).filter({ visible: true }).boundingBox();
+    expect(dialogBox.y).toBe(0);
+    expect(dialogBox.height).toBe(393);
+    expect(dialogBox.height - resultBox.y - resultBox.height).toBeLessThan(20);
+    expect(headingBox.y - resultBox.y).toBeLessThan(16);
+    expect(thanksBox.y - resultBox.y).toBeLessThan(16);
+
+    await findAnotherMatch.focus();
+    await findAnotherMatch.press('Enter');
+    await expect(page).toHaveURL('/match-making');
+    await expect(page.getByLabel('user name', { exact: true })).toHaveValue('commander');
+    await expect(page.getByRole('button', { name: 'find a game', exact: true })).toBeEnabled();
+  } finally {
+    await opponent.close();
+  }
 });
 
 async function openMobileDetails(page) {

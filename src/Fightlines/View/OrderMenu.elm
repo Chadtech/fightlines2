@@ -7,11 +7,15 @@ module Fightlines.View.OrderMenu exposing
     )
 
 import Css
+import Game.Building exposing (Building)
 import Game.Camera as Camera exposing (Camera)
 import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.Depot exposing (Depot)
 import Game.Map as Map exposing (Map)
 import Game.Unit as Unit exposing (Unit)
+import Game.UnitId
+    exposing
+        ( UnitId
+        )
 import Game.UnitOrder as Order exposing (MenuOption(..), Order)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -32,17 +36,17 @@ type Msg
     = InfoClicked
     | CancelClicked
     | OrderFocused MenuOption
-    | OrderPicked Order
+    | OrderPicked UnitId Order
     | ArrowedUpOrderMenu MenuOption
     | ArrowedDownOrderMenu MenuOption
 
 
-keyCommands : Map -> List Depot -> Unit -> KeyCmd Msg
+keyCommands : Map -> List Building -> Unit -> KeyCmd Msg
 keyCommands map depots unit =
     let
         orderKey : Order -> KeyCmd Msg
         orderKey order =
-            KeyCmd.fromKeys [ Order.shortcut order ] (OrderPicked order)
+            KeyCmd.fromKeys [ Order.shortcut order ] (OrderPicked unit.id order)
     in
     Order.available depots unit
         |> List.filter (Order.canUse map depots unit)
@@ -50,14 +54,14 @@ keyCommands map depots unit =
         |> KeyCmd.batch
 
 
-toHtml : List Depot -> Map -> Camera -> Coordinate -> Unit -> Html Msg
+toHtml : List Building -> Map -> Camera -> Coordinate -> Unit -> Html Msg
 toHtml depots map camera position unit =
     Lazy.lazy6 ordersView depots map camera.offset camera.zoom position unit
 
 
 {-| Order choices inside the mobile task rail, without a map anchor.
 -}
-embedded : List Depot -> Map -> Unit -> Html Msg
+embedded : List Building -> Map -> Unit -> Html Msg
 embedded depots map unit =
     H.section
         [ Aria.label "unit orders"
@@ -73,7 +77,7 @@ embedded depots map unit =
 
 
 ordersView :
-    List Depot
+    List Building
     -> Map
     -> Point
     -> Float
@@ -284,7 +288,7 @@ cancelRow =
 orderButton :
     Layout
     -> Map
-    -> List Depot
+    -> List Building
     -> Unit
     -> Order
     -> Html Msg
@@ -362,7 +366,7 @@ orderButton layout map depots unit order =
             , A.type_ "button"
             , A.disabled (not implemented)
             , A.title title
-            , Ev.onClick (OrderPicked order)
+            , Ev.onClick (OrderPicked unit.id order)
             , Ev.onFocus (OrderFocused (OrderOption order))
             , Ev.custom "keydown" (navigationDecoder (OrderOption order))
             , A.css styles

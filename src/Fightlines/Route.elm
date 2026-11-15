@@ -9,6 +9,10 @@ module Fightlines.Route exposing
 
 import Deployment
 import Effect as E exposing (Eff)
+import Fightlines.GameOrigin as GameOrigin
+    exposing
+        ( GameOrigin
+        )
 import LobbyId
     exposing
         ( LobbyId
@@ -21,6 +25,7 @@ import Url.Builder
 import Url.Parser as P
     exposing
         ( (</>)
+        , (<?>)
         , Parser
         )
 
@@ -31,7 +36,7 @@ type Route
     | MatchMaking
     | Lobby LobbyId
     | LobbyMaps LobbyId
-    | Game LobbyId
+    | Game LobbyId GameOrigin
 
 
 fromUrl : Url -> Maybe Route
@@ -47,7 +52,11 @@ parser =
         , P.map MatchMaking (P.s "match-making")
         , P.map LobbyMaps (P.s "lobby" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe) </> P.s "maps")
         , P.map Lobby (P.s "lobby" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
-        , P.map Game (P.s "game" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
+        , P.map Game
+            (P.s "game"
+                </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe)
+                <?> GameOrigin.queryParser
+            )
         ]
 
 
@@ -110,7 +119,16 @@ toString route =
                 LobbyMaps id ->
                     [ "lobby", LobbyId.toString id, "maps" ]
 
-                Game id ->
+                Game id _ ->
                     [ "game", LobbyId.toString id ]
+
+        query : List Url.Builder.QueryParameter
+        query =
+            case route of
+                Game _ GameOrigin.MatchMaking ->
+                    [ Url.Builder.string "from" "match-making" ]
+
+                _ ->
+                    []
     in
-    Url.Builder.absolute parts []
+    Url.Builder.absolute parts query

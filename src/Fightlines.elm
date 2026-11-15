@@ -16,6 +16,10 @@ import Effect as E
         )
 import Error
 import Fightlines.Flags as Flags
+import Fightlines.GameOrigin
+    exposing
+        ( GameOrigin
+        )
 import Fightlines.MatchMaking.VisitId exposing (VisitId)
 import Fightlines.Page.GameLoadFailed as GameLoadFailed
 import Fightlines.Page.GamePage as GamePage
@@ -82,7 +86,7 @@ type Page
     | LobbyLoadFailed LobbyId LobbyLoadFailed.Model
     | JoinLobby LobbyId JoinLobby.Model
     | Lobby LobbyId LobbyPage.Model
-    | LoadingGame Shared.Model LobbyId
+    | LoadingGame Shared.Model LobbyId GameOrigin
     | GameLoadFailed LobbyId GameLoadFailed.Model
     | Game LobbyId GamePage.Model
     | NotFound Shared.Model
@@ -208,7 +212,7 @@ getKey page =
         Lobby _ model ->
             model.shared.key
 
-        LoadingGame shared _ ->
+        LoadingGame shared _ _ ->
             shared.key
 
         GameLoadFailed _ model ->
@@ -254,7 +258,7 @@ getShared page =
         Lobby _ model ->
             Just model.shared
 
-        LoadingGame shared _ ->
+        LoadingGame shared _ _ ->
             Just shared
 
         GameLoadFailed _ model ->
@@ -300,8 +304,8 @@ setShared shared page =
         Lobby id model ->
             Lobby id (LobbyPage.setShared shared model)
 
-        LoadingGame _ id ->
-            LoadingGame shared id
+        LoadingGame _ id origin ->
+            LoadingGame shared id origin
 
         GameLoadFailed id model ->
             GameLoadFailed id (GameLoadFailed.setShared shared model)
@@ -330,9 +334,13 @@ loadLobby location shared id =
     )
 
 
-loadGame : Shared.Model -> LobbyId -> ( Page, Eff Msg )
-loadGame shared id =
-    ( LoadingGame shared id
+loadGame :
+    Shared.Model
+    -> LobbyId
+    -> GameOrigin
+    -> ( Page, Eff Msg )
+loadGame shared id origin =
+    ( LoadingGame shared id origin
     , E.request (GameResponseReceived id) (GamePage.load id)
     )
 
@@ -368,8 +376,8 @@ handleRoute shared route =
         Just (Route.LobbyMaps id) ->
             loadLobby LobbyPage.MapLibrary shared id
 
-        Just (Route.Game id) ->
-            loadGame shared id
+        Just (Route.Game id origin) ->
+            loadGame shared id origin
 
         Nothing ->
             ( NotFound shared, E.none )
@@ -409,7 +417,7 @@ recordAnalytics event page =
 withGameLobbyId : Page -> Analytics.Event -> Analytics.Event
 withGameLobbyId page event =
     case page of
-        LoadingGame _ id ->
+        LoadingGame _ id _ ->
             withLobbyId id event
 
         GameLoadFailed id _ ->
@@ -523,7 +531,7 @@ analyticsPage page =
         Lobby _ model ->
             lobbyAnalyticsPage (LobbyPage.currentLocation model)
 
-        LoadingGame _ _ ->
+        LoadingGame _ _ _ ->
             "game"
 
         GameLoadFailed _ _ ->
@@ -804,20 +812,23 @@ update msg page =
 
         GameResponseReceived id result ->
             case page of
-                LoadingGame shared currentId ->
+                LoadingGame shared currentId origin ->
                     if id == currentId then
                         case result of
                             Ok flags ->
                                 let
                                     ( model, eff ) =
-                                        GamePage.init shared flags
+                                        GamePage.init shared origin flags
                                 in
                                 ( Game id model
                                 , E.map (GameMsg id) eff
                                 )
 
                             Err error ->
-                                ( GameLoadFailed id (GameLoadFailed.init shared id error), E.none )
+                                ( GameLoadFailed id
+                                    (GameLoadFailed.init shared id origin error)
+                                , E.none
+                                )
 
                     else
                         ( page, E.none )
@@ -996,7 +1007,7 @@ shell page =
                 Lobby id model ->
                     List.map (H.map (LobbyMsg id (LobbyPage.currentLocation model))) (LobbyPage.view model)
 
-                LoadingGame _ _ ->
+                LoadingGame _ _ _ ->
                     [ [ H.p
                             [ Aria.role Aria.Status
                             ]

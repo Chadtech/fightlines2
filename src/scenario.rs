@@ -449,11 +449,11 @@ impl BuildingKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Depot {
+pub struct Building {
     pub(crate) kind: BuildingKind,
     pub(crate) position: Coordinate,
     pub(crate) stock: ResourceStock,
-    /// Fog projection gate: known depot positions remain visible, but unseen stock is withheld.
+    /// Fog projection gate: known building positions remain visible, but unseen stock is withheld.
     pub(crate) stock_visible: bool,
     /// Structural shell hits, independent of unit combat damage. Old archives start intact.
     #[serde(default)]
@@ -461,12 +461,12 @@ pub struct Depot {
 }
 
 #[derive(Clone, Copy, Debug, GraphQLObject, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DepotHp {
+pub struct BuildingHp {
     pub current: i32,
     pub maximum: i32,
 }
 
-impl Depot {
+impl Building {
     pub fn new(kind: BuildingKind, position: Coordinate) -> Self {
         let stock = match kind.resource_kind() {
             Some(resource) => ResourceStock::depot(resource),
@@ -484,13 +484,13 @@ impl Depot {
         }
     }
 
-    pub fn hit_points(&self) -> DepotHp {
+    pub fn hit_points(&self) -> BuildingHp {
         let maximum = match self.kind {
             BuildingKind::Fuel => 1,
             BuildingKind::Supply => 3,
             BuildingKind::Fortress => 8,
         };
-        DepotHp {
+        BuildingHp {
             current: (maximum - self.damage).max(0),
             maximum,
         }
@@ -530,7 +530,9 @@ pub struct ResourceSettlement {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Scenario {
     pub(crate) map: Map,
-    pub(crate) depots: Vec<Depot>,
+    // Preserve the archived board format.
+    #[serde(rename = "depots")]
+    pub(crate) buildings: Vec<Building>,
     pub(crate) supply_crates: Vec<GroundSupplyCrate>,
     pub(crate) units: Vec<Unit>,
 }
@@ -784,15 +786,15 @@ impl Scenario {
                 direction: starting.direction,
             })
             .collect();
-        let depots = definition
-            .depots
+        let buildings = definition
+            .buildings
             .iter()
-            .map(|starting| Depot::new(starting.kind, starting.position))
+            .map(|starting| Building::new(starting.kind, starting.position))
             .collect();
         Ok(Self {
             map,
             units,
-            depots,
+            buildings,
             supply_crates: Vec::new(),
         })
     }
@@ -1117,7 +1119,7 @@ mod tests {
     fn exhausted_units_get_two_full_turns_and_dead_carriers_leave_no_orphaned_cargo()
     -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
-        scenario.depots.clear();
+        scenario.buildings.clear();
         let truck_id = UnitId::parse("4").fixture()?;
         for unit in &mut scenario.units {
             match unit.id().as_str() {
@@ -1171,7 +1173,7 @@ mod tests {
     #[test]
     fn exhausted_passengers_die_without_destroying_their_carrier() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
-        scenario.depots.clear();
+        scenario.buildings.clear();
         let passenger = &mut scenario.units[0];
         passenger.board(UnitId::parse("4").fixture()?);
         passenger.supplies.current = 1;
@@ -1538,8 +1540,8 @@ impl Scenario {
     fn map(&self) -> &Map {
         &self.map
     }
-    fn depots(&self) -> &[Depot] {
-        &self.depots
+    fn buildings(&self) -> &[Building] {
+        &self.buildings
     }
     fn units(&self) -> &[Unit] {
         &self.units
@@ -1557,8 +1559,8 @@ impl Scenario {
 }
 
 #[graphql_object]
-impl Depot {
-    fn hp(&self) -> DepotHp {
+impl Building {
+    fn hp(&self) -> BuildingHp {
         self.hit_points()
     }
     fn kind(&self) -> BuildingKind {

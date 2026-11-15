@@ -28,9 +28,9 @@ import EditableMap exposing (Definition, NamedMap)
 import Effect as E exposing (Eff)
 import Error
 import Game.Assets as Assets
+import Game.Building as Building
 import Game.Camera as Camera exposing (Camera)
 import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.Depot as Depot
 import Game.Map as Map exposing (Map)
 import Game.MapId as MapId
 import Game.Road as Road
@@ -121,15 +121,15 @@ type Brush
     = PaintRoad
     | PaintTerrain Terrain
     | PlaceUnit UnitKind
-    | PlaceDepot BuildingKind
+    | PlaceBuilding BuildingKind
     | EraseUnit
-    | EraseDepot
+    | EraseBuilding
 
 
 type BrushGroup
     = TerrainBrushes
     | UnitBrushes
-    | DepotBrushes
+    | BuildingBrushes
 
 
 type CanvasView
@@ -860,20 +860,20 @@ paintTile settings position draft =
                         :: List.filter elsewhere draft.units
                     )
 
-        PlaceDepot kind ->
+        PlaceBuilding kind ->
             draft
-                |> EditableMap.setDepots
+                |> EditableMap.setBuildings
                     ({ position = position, kind = kind }
-                        :: List.filter elsewhere draft.depots
+                        :: List.filter elsewhere draft.buildings
                     )
 
         EraseUnit ->
             draft
                 |> EditableMap.setUnits (List.filter elsewhere draft.units)
 
-        EraseDepot ->
+        EraseBuilding ->
             draft
-                |> EditableMap.setDepots (List.filter elsewhere draft.depots)
+                |> EditableMap.setBuildings (List.filter elsewhere draft.buildings)
 
 
 preloadThemeChange : { before : MapTheme, after : MapTheme } -> Eff msg
@@ -1083,7 +1083,7 @@ update msg model =
                                     , height = 17
                                     , theme = MapTheme.GreenForest
                                     , features = []
-                                    , depots = []
+                                    , buildings = []
                                     , units = []
                                     }
 
@@ -1499,7 +1499,7 @@ update msg model =
                             (({ draft | width = width, height = height }
                                 |> EditableMap.setFeatures (List.filter inside draft.features)
                                 |> EditableMap.setUnits (List.filter inside draft.units)
-                                |> EditableMap.setDepots (List.filter inside draft.depots)
+                                |> EditableMap.setBuildings (List.filter inside draft.buildings)
                              )
                                 |> EditableMap.reconnectRoads croppedPositions
                             )
@@ -1926,11 +1926,11 @@ brushGroup brush =
         EraseUnit ->
             UnitBrushes
 
-        PlaceDepot _ ->
-            DepotBrushes
+        PlaceBuilding _ ->
+            BuildingBrushes
 
-        EraseDepot ->
-            DepotBrushes
+        EraseBuilding ->
+            BuildingBrushes
 
 
 brushLabel : Brush -> String
@@ -1945,13 +1945,13 @@ brushLabel brush =
         PlaceUnit kind ->
             Game.UnitKind.label kind
 
-        PlaceDepot kind ->
-            Depot.kindLabel kind
+        PlaceBuilding kind ->
+            Building.kindLabel kind
 
         EraseUnit ->
             "erase unit"
 
-        EraseDepot ->
+        EraseBuilding ->
             "erase building"
 
 
@@ -1987,11 +1987,11 @@ paintingTools model =
                         ++ [ EraseUnit
                            ]
 
-                DepotBrushes ->
-                    [ PlaceDepot BuildingKind.Supply
-                    , PlaceDepot BuildingKind.Fuel
-                    , PlaceDepot BuildingKind.Fortress
-                    , EraseDepot
+                BuildingBrushes ->
+                    [ PlaceBuilding BuildingKind.Supply
+                    , PlaceBuilding BuildingKind.Fuel
+                    , PlaceBuilding BuildingKind.Fortress
+                    , EraseBuilding
                     ]
 
         unitSettings : List (Html Msg)
@@ -2027,7 +2027,7 @@ paintingTools model =
                     |> Button.toHtml
                 , groupButton "terrain" TerrainBrushes (PaintTerrain Terrain.Forest)
                 , groupButton "starting units" UnitBrushes (PlaceUnit UnitKind.Infantry)
-                , groupButton "buildings" DepotBrushes (PlaceDepot BuildingKind.Supply)
+                , groupButton "buildings" BuildingBrushes (PlaceBuilding BuildingKind.Supply)
                 ]
             , H.div
                 [ A.css
@@ -2145,7 +2145,7 @@ brushButton model brush =
                 EraseUnit ->
                     button
 
-                EraseDepot ->
+                EraseBuilding ->
                     button
 
                 _ ->
@@ -2180,8 +2180,8 @@ brushPreview model brush =
                         }
                     ]
 
-                PlaceDepot kind ->
-                    [ MapPreview.depotToSvg
+                PlaceBuilding kind ->
+                    [ MapPreview.buildingToSvg
                         { position =
                             { x = 0
                             , y = 0
@@ -2193,7 +2193,7 @@ brushPreview model brush =
                 EraseUnit ->
                     []
 
-                EraseDepot ->
+                EraseBuilding ->
                     []
     in
     Svg.svg
@@ -2251,7 +2251,7 @@ tile draft map position =
 
         objects : List (Svg Msg)
         objects =
-            List.filter (\depot -> depot.position == position) draft.depots |> List.map MapPreview.depotToSvg
+            List.filter (\building -> building.position == position) draft.buildings |> List.map MapPreview.buildingToSvg
 
         units : List (Svg Msg)
         units =
@@ -2302,9 +2302,9 @@ tile draft map position =
 
         buildingLabels : List String
         buildingLabels =
-            draft.depots
-                |> List.filter (\depot -> depot.position == position)
-                |> List.map (.kind >> Depot.kindLabel)
+            draft.buildings
+                |> List.filter (\building -> building.position == position)
+                |> List.map (.kind >> Building.kindLabel)
 
         objectLabels : List String
         objectLabels =

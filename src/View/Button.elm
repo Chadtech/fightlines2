@@ -7,7 +7,6 @@ module View.Button exposing
     , disabled
     , disclosure
     , fullWidth
-    , highlighted
     , iconOnly
     , large
     , onClick
@@ -18,6 +17,7 @@ module View.Button exposing
     , styles
     , submit
     , toHtml
+    , waiting
     , withFeedback
     , withHtmlId
     , withIcon
@@ -33,6 +33,7 @@ import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Style as S
 import View.Aria as Aria
+import View.LoadingBar as LoadingBar
 
 
 
@@ -90,7 +91,7 @@ type Shape
 
 type Emphasis
     = Normal
-    | Highlighted
+    | Waiting
     | Attention
 
 
@@ -228,10 +229,10 @@ iconOnly label button =
     }
 
 
-highlighted : Button msg -> Button msg
-highlighted button =
-    button
-        |> setEmphasis Highlighted
+waiting : String -> Button msg
+waiting label =
+    disabled label
+        |> setEmphasis Waiting
 
 
 attention : Button msg -> Button msg
@@ -320,6 +321,7 @@ toHtml button =
                     (H.span
                         [ A.css
                             [ Css.property "display" "inline-grid"
+                            , S.when (button.emphasis == Waiting) [ S.relative ]
                             ]
                         ]
                         [ H.span
@@ -486,8 +488,21 @@ toHtml button =
                         Normal ->
                             S.batch []
 
-                        Highlighted ->
-                            S.textYellow5
+                        Waiting ->
+                            S.batch
+                                [ S.relative
+                                , S.overflowHidden
+                                , S.bgNightwood3
+                                , S.textYellow5
+                                , S.px1
+                                , Css.before
+                                    [ S.contentEmpty
+                                    , S.bgGray4
+                                    , S.opacity 0.22
+                                    , S.pointerEventsNone
+                                    , LoadingBar.sweep
+                                    ]
+                                ]
 
                         Attention ->
                             attentionStyles

@@ -500,7 +500,7 @@ mod tests {
                 unit.position =
                     Coordinate::new(39 - unit.position.x() as u16, unit.position.y() as u16);
             }
-            for depot in &mut definition.depots {
+            for depot in &mut definition.buildings {
                 depot.position =
                     Coordinate::new(39 - depot.position.x() as u16, depot.position.y() as u16);
             }
@@ -801,7 +801,7 @@ mod tests {
     #[test]
     fn resupplying_a_carrier_preserves_its_infantry_dismount_order() -> TestResult {
         let mut scenario = fixture(UnitKind::Infantry, PlayerNumber::Player1)?;
-        scenario.depots.clear();
+        scenario.buildings.clear();
         let carrier = scenario
             .units
             .iter_mut()

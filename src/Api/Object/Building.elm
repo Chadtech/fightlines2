@@ -2,7 +2,7 @@
 -- https://github.com/dillonkearns/elm-graphql
 
 
-module Api.Object.Depot exposing (..)
+module Api.Object.Building exposing (..)
 
 import Api.Enum.BuildingKind
 import Api.InputObject
@@ -21,26 +21,26 @@ import Json.Decode as Decode
 
 
 hp :
-    SelectionSet decodesTo Api.Object.DepotHp
-    -> SelectionSet decodesTo Api.Object.Depot
+    SelectionSet decodesTo Api.Object.BuildingHp
+    -> SelectionSet decodesTo Api.Object.Building
 hp object____ =
     Object.selectionForCompositeField "hp" [] object____ Basics.identity
 
 
-kind : SelectionSet Api.Enum.BuildingKind.BuildingKind Api.Object.Depot
+kind : SelectionSet Api.Enum.BuildingKind.BuildingKind Api.Object.Building
 kind =
     Object.selectionForField "Enum.BuildingKind.BuildingKind" "kind" [] Api.Enum.BuildingKind.decoder
 
 
 position :
     SelectionSet decodesTo Api.Object.Coordinate
-    -> SelectionSet decodesTo Api.Object.Depot
+    -> SelectionSet decodesTo Api.Object.Building
 position object____ =
     Object.selectionForCompositeField "position" [] object____ Basics.identity
 
 
 stock :
     SelectionSet decodesTo Api.Object.ResourceStock
-    -> SelectionSet (Maybe decodesTo) Api.Object.Depot
+    -> SelectionSet (Maybe decodesTo) Api.Object.Building
 stock object____ =
     Object.selectionForCompositeField "stock" [] object____ (Basics.identity >> Decode.nullable)

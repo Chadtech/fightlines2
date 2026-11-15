@@ -6,14 +6,14 @@ module Game.View.BattlefieldInspection exposing
 
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Css
+import Game.Building as Building exposing (Building)
 import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.Depot as Depot exposing (Depot)
 import Game.Map as Map exposing (Map)
 import Game.Supply as Supply
 import Game.Unit as Unit exposing (Unit)
 import Game.UnitId as UnitId exposing (UnitId)
+import Game.View.BuildingStatus as BuildingStatus
 import Game.View.Cargo as CargoView
-import Game.View.DepotStatus as DepotStatus
 import Game.View.InspectionHelp as InspectionHelp
 import Game.View.SupplyCrate as SupplyCrate
 import Game.View.TerrainInfo as TerrainInfo
@@ -34,7 +34,7 @@ import View.Layout as Layout exposing (Layout)
 type alias Contents msg =
     { onHelp : InspectionHelp.Help -> msg
     , map : Map
-    , depots : List Depot
+    , buildings : List Building
     , supplyCrates : List Supply.GroundCrate
     , visibleTiles : List Coordinate
     , position : Maybe Coordinate
@@ -44,7 +44,7 @@ type alias Contents msg =
 
 type alias CargoArgs msg =
     { units : List Unit
-    , ownPlayers : List PlayerNumber
+    , ownPlayer : PlayerNumber
     , onSelectPassenger : UnitId -> msg
     , onHelp : InspectionHelp.Help -> msg
     }
@@ -80,20 +80,20 @@ toHtml layout model =
                         coordinateKey =
                             String.fromInt coordinate.x ++ "," ++ String.fromInt coordinate.y
 
-                        depotRows : List ( String, Html msg )
-                        depotRows =
-                            model.depots
-                                |> List.filter (\depot -> depot.position == coordinate)
-                                |> List.map depotRow
+                        buildingRows : List ( String, Html msg )
+                        buildingRows =
+                            model.buildings
+                                |> List.filter (\building -> building.position == coordinate)
+                                |> List.map buildingRow
 
-                        depotRow : Depot -> ( String, Html msg )
-                        depotRow depot =
-                            ( "depot:" ++ coordinateKey
-                            , inspectionRow (Depot.label depot)
-                                [ DepotStatus.toHtml
+                        buildingRow : Building -> ( String, Html msg )
+                        buildingRow building =
+                            ( "building:" ++ coordinateKey
+                            , inspectionRow (Building.label building)
+                                [ BuildingStatus.toHtml
                                     model.onHelp
                                     layout
-                                    depot
+                                    building
                                 ]
                             )
 
@@ -118,7 +118,7 @@ toHtml layout model =
                               )
                             ]
                     in
-                    depotRows ++ crateRows ++ terrainRows
+                    buildingRows ++ crateRows ++ terrainRows
 
                 Nothing ->
                     []
@@ -212,7 +212,7 @@ cargo args unit =
 
         canInspectCargo : Bool
         canInspectCargo =
-            List.member unit.playerNumber args.ownPlayers && unit.cargoCapacity > 0
+            (unit.playerNumber == args.ownPlayer) && unit.cargoCapacity > 0
     in
     if canInspectCargo then
         CargoView.toHtml

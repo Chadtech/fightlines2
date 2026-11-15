@@ -580,7 +580,7 @@ mod tests {
             (1, "PLAYER1", ", fogOfWar: true", 1),
         ] {
             let query = format!(
-                r#"{{ loggedGames {{ __typename ... on LoggedGame {{ id name mapType startedAt players {{ name playerNumber controller }} turnCount status {{ kind winner }} }} ... on ArchiveReadError {{ id message }} }} loggedTurn(id: "{id}", turnNumber: {turn}, playerNumber: {player}{fog_argument}) {{ isMember submitted players {{ name playerNumber isAi controller }} visibleTiles {{ x y }} replayOrders {{ unitId kind path {{ x y }} }} scenario {{ units {{ id combatState {{ order defense weapon }} resources {{ supplies {{ current }} }} }} depots {{ stock {{ current }} }} }} lastResolution {{ turnNumber reports {{ playerNumber }} frames {{ visibleTiles {{ x y }} units {{ id combatState {{ order defense weapon }} }} depots {{ stock {{ current }} }} }} }} }} }}"#
+                r#"{{ loggedGames {{ __typename ... on LoggedGame {{ id name mapType startedAt players {{ name playerNumber controller }} turnCount status {{ kind winner }} }} ... on ArchiveReadError {{ id message }} }} loggedTurn(id: "{id}", turnNumber: {turn}, playerNumber: {player}{fog_argument}) {{ isMember submitted players {{ name playerNumber isAi controller }} visibleTiles {{ x y }} replayOrders {{ unitId kind path {{ x y }} }} scenario {{ units {{ id combatState {{ order defense weapon }} resources {{ supplies {{ current }} }} }} buildings {{ stock {{ current }} }} }} lastResolution {{ turnNumber reports {{ playerNumber }} frames {{ indirectImpacts {{ building {{ kind before {{ current }} after {{ current }} }} }} visibleTiles {{ x y }} units {{ id combatState {{ order defense weapon }} }} buildings {{ stock {{ current }} }} }} }} }} }}"#
             );
             let request = test::TestRequest::post()
                 .uri("/graphql")
@@ -676,7 +676,7 @@ mod tests {
                 .as_array()
                 .fixture()?;
             assert!(units.iter().all(|unit| !unit["resources"].is_null()));
-            let stock = &result["data"]["loggedTurn"]["scenario"]["depots"][0]["stock"];
+            let stock = &result["data"]["loggedTurn"]["scenario"]["buildings"][0]["stock"];
             assert_eq!(stock.is_null(), !revealed && player == "PLAYER1");
             if turn == 1 {
                 let frames = result["data"]["loggedTurn"]["lastResolution"]["frames"]
@@ -694,7 +694,7 @@ mod tests {
                         .is_some_and(|tiles| (tiles.len() == 21) == revealed)
                 }));
                 assert!(frames.iter().all(|frame| {
-                    frame["depots"][0]["stock"].is_null() == (!revealed && player == "PLAYER1")
+                    frame["buildings"][0]["stock"].is_null() == (!revealed && player == "PLAYER1")
                 }));
             }
         }

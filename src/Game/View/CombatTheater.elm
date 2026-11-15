@@ -26,9 +26,10 @@ import Css
 import Css.Global as Global
 import Game.ArmyStyle exposing (ArmyStyle)
 import Game.BackdropCalibration as BackdropCalibration
+import Game.BattlefieldSnapshot exposing (Player)
+import Game.Building as Building exposing (Building)
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.Depot as Depot exposing (Depot)
 import Game.IndirectImpact exposing (Attacker, BuildingImpact)
 import Game.Map as Map exposing (Map)
 import Game.Road as Road
@@ -78,13 +79,15 @@ type Msg
 type alias Scenery =
     { map : Map
     , calibrations : List BackdropCalibration.Entry
-    , depots : List Depot
-    , armyStyle : Maybe { style : ArmyStyle, players : List PlayerNumber }
+    , buildings : List Building
+    , players : List Player
+    , mobile : Bool
+    , armyStyle : Maybe { style : ArmyStyle, player : PlayerNumber }
     }
 
 
-type alias DepotDamage =
-    { depot : Depot
+type alias BuildingDamage =
+    { building : Building
     , elapsed : Float
     }
 
@@ -175,9 +178,9 @@ readyToAutomaticallyClose panel =
 
 ordinaryAnimationEndsAt : Panel -> Float
 ordinaryAnimationEndsAt panel =
-    case depotSceneStartsAt panel of
+    case buildingSceneStartsAt panel of
         Just startsAt ->
-            startsAt + depotImpactStartsAt + impactContactDelayMs + rumbleDurationMs
+            startsAt + buildingImpactStartsAt + impactContactDelayMs + rumbleDurationMs
 
         Nothing ->
             participantsEndAt panel
@@ -436,8 +439,8 @@ impactTimes panel =
     let
         buildingStarts : List Float
         buildingStarts =
-            depotSceneStartsAt panel
-                |> Maybe.map (\startsAt -> [ startsAt + depotImpactStartsAt ])
+            buildingSceneStartsAt panel
+                |> Maybe.map (\startsAt -> [ startsAt + buildingImpactStartsAt ])
                 |> Maybe.withDefault []
     in
     (participantImpactStarts panel ++ buildingStarts)
@@ -484,9 +487,9 @@ ambience map panel =
 
         positions : List (Maybe Coordinate)
         positions =
-            case depotDamageAt panel of
+            case buildingDamageAt panel of
                 Just damage ->
-                    [ Just damage.depot.position ]
+                    [ Just damage.building.position ]
 
                 Nothing ->
                     participantPositions
@@ -615,39 +618,39 @@ participantsEndAt panel =
 
 
 {-| Finish the participant hits before cutting to the building as a whole.
-The depot scene uses the same panel clock, including during map peeks.
+The building scene uses the same panel clock, including during map peeks.
 -}
-depotSceneStartsAt : Panel -> Maybe Float
-depotSceneStartsAt panel =
+buildingSceneStartsAt : Panel -> Maybe Float
+buildingSceneStartsAt panel =
     case panel.encounter of
         Impact impact ->
-            impact.depot |> Maybe.map (\_ -> participantsEndAt panel + 350)
+            impact.building |> Maybe.map (\_ -> participantsEndAt panel + 350)
 
         _ ->
             Nothing
 
 
-depotDamageAt : Panel -> Maybe DepotDamage
-depotDamageAt panel =
-    case ( panel.encounter, depotSceneStartsAt panel ) of
+buildingDamageAt : Panel -> Maybe BuildingDamage
+buildingDamageAt panel =
+    case ( panel.encounter, buildingSceneStartsAt panel ) of
         ( Impact impact, Just startsAt ) ->
             let
                 elapsed : Float
                 elapsed =
                     panel.elapsed - startsAt
 
-                building : BuildingImpact -> DepotDamage
-                building damage =
+                toDamage : BuildingImpact -> BuildingDamage
+                toDamage damage =
                     let
-                        hp : Depot.Hp
+                        hp : Building.Hp
                         hp =
-                            if elapsed >= depotImpactStartsAt + CombatExplosion.spriteDisappearsAt then
+                            if elapsed >= buildingImpactStartsAt + CombatExplosion.spriteDisappearsAt then
                                 damage.after
 
                             else
                                 damage.before
                     in
-                    { depot =
+                    { building =
                         { kind = damage.kind
                         , position = impact.destination
                         , stock = Nothing
@@ -657,7 +660,7 @@ depotDamageAt panel =
                     }
             in
             if elapsed >= 0 then
-                Maybe.map building impact.depot
+                Maybe.map toDamage impact.building
 
             else
                 Nothing
@@ -668,16 +671,16 @@ depotDamageAt panel =
 
 impactStarts : Panel -> List Float
 impactStarts panel =
-    case ( depotSceneStartsAt panel, depotDamageAt panel ) of
+    case ( buildingSceneStartsAt panel, buildingDamageAt panel ) of
         ( Just startsAt, Just _ ) ->
-            [ startsAt + depotImpactStartsAt ]
+            [ startsAt + buildingImpactStartsAt ]
 
         _ ->
             participantImpactStarts panel
 
 
-depotImpactStartsAt : Float
-depotImpactStartsAt =
+buildingImpactStartsAt : Float
+buildingImpactStartsAt =
     700
 
 
@@ -705,21 +708,21 @@ type alias TheaterOptions =
 toHtml :
     { calibrations : List BackdropCalibration.Entry
     , automaticallyClose : Bool
-    , armyStyle : Maybe { style : ArmyStyle, players : List PlayerNumber }
-    , visibleTiles : List Coordinate
+    , armyStyle : Maybe { style : ArmyStyle, player : PlayerNumber }
+    , players : List Player
     , mobile : Bool
     }
-    -> List Depot
+    -> TurnPlayback.Frame
     -> Map
     -> Panel
     -> Html Msg
-toHtml config depots map panel =
+toHtml config frame map panel =
     Lazy.lazy7 theaterView
         config.calibrations
         (theaterOptions config)
         config.armyStyle
-        config.visibleTiles
-        depots
+        config.players
+        frame
         map
         panel
 
@@ -774,19 +777,21 @@ desktopManual =
 theaterView :
     List BackdropCalibration.Entry
     -> TheaterOptions
-    -> Maybe { style : ArmyStyle, players : List PlayerNumber }
-    -> List Coordinate
-    -> List Depot
+    -> Maybe { style : ArmyStyle, player : PlayerNumber }
+    -> List Player
+    -> TurnPlayback.Frame
     -> Map
     -> Panel
     -> Html Msg
-theaterView calibrations options armyStyle visibleTiles depots map panel =
+theaterView calibrations options armyStyle players frame map panel =
     let
         scenery : Scenery
         scenery =
             { map = map
             , calibrations = calibrations
-            , depots = depots
+            , buildings = frame.depots
+            , players = players
+            , mobile = options.mobile
             , armyStyle = armyStyle
             }
 
@@ -834,7 +839,7 @@ theaterView calibrations options armyStyle visibleTiles depots map panel =
                         ]
 
                 Impact impact ->
-                    impactPortraits visibleTiles scenery panel impact
+                    impactPortraits frame.visibleTiles scenery panel impact
 
                 Sabotage sabotage ->
                     [ sabotageScene scenery panel sabotage ]
@@ -844,9 +849,9 @@ theaterView calibrations options armyStyle visibleTiles depots map panel =
 
         portraits : List (Html Msg)
         portraits =
-            case depotDamageAt panel of
+            case buildingDamageAt panel of
                 Just damage ->
-                    [ depotScene scenery panel damage ]
+                    [ buildingScene scenery panel damage ]
 
                 Nothing ->
                     participantPortraits
@@ -907,31 +912,36 @@ theaterView calibrations options armyStyle visibleTiles depots map panel =
                                         " a unit was hit at this space."
 
                                 Nothing ->
-                                    if impact.depot == Nothing then
+                                    if impact.building == Nothing then
                                         " no target or damage could be confirmed."
 
                                     else
                                         ""
 
-                        depotOutcome : String
-                        depotOutcome =
-                            case depotDamageAt panel of
+                        buildingOutcome : String
+                        buildingOutcome =
+                            case buildingDamageAt panel of
                                 Just damage ->
-                                    if Depot.isDestroyed damage.depot then
-                                        " the depot was destroyed."
+                                    let
+                                        name : String
+                                        name =
+                                            Building.kindLabel damage.building.kind
+                                    in
+                                    if Building.isDestroyed damage.building then
+                                        " the " ++ name ++ " was destroyed."
 
-                                    else if damage.elapsed < depotImpactStartsAt then
-                                        " the shell also struck the depot."
+                                    else if damage.elapsed < buildingImpactStartsAt then
+                                        " the shell also struck the " ++ name ++ "."
 
                                     else
-                                        " the depot was damaged."
+                                        " the " ++ name ++ " was damaged."
 
                                 Nothing ->
                                     ""
                     in
                     H.p
                         []
-                        [ H.text (source ++ outcome ++ depotOutcome) ]
+                        [ H.text (source ++ outcome ++ buildingOutcome) ]
 
                 Exchange _ ->
                     H.text ""
@@ -939,7 +949,7 @@ theaterView calibrations options armyStyle visibleTiles depots map panel =
                 Sabotage sabotage ->
                     H.p
                         []
-                        [ H.text ("infantry sabotaged the " ++ Depot.kindLabel sabotage.kind ++ ".") ]
+                        [ H.text ("infantry sabotaged the " ++ Building.kindLabel sabotage.kind ++ ".") ]
 
                 Exhaustion unit ->
                     H.p
@@ -1179,7 +1189,7 @@ fullscreenScene artwork =
                     , Css.property "--combat-flank-inset"
                         "max(0.5rem, calc((100% - 150cqh) / 2 + 0.5rem))"
                     ]
-                , Global.selector "[data-depot-damage]"
+                , Global.selector "[data-building-damage]"
                     [ Css.property "display" "contents"
                     , Global.children
                         [ Global.typeSelector "div"
@@ -1212,13 +1222,13 @@ seeMapKey message =
 backdropAt : Scenery -> Coordinate -> String
 backdropAt scenery position =
     let
-        atPosition : Depot -> Bool
-        atPosition depot =
-            depot.position == position
+        atPosition : Building -> Bool
+        atPosition building =
+            building.position == position
     in
-    case ListUtil.find atPosition scenery.depots of
-        Just depot ->
-            buildingBackdropPath scenery.map.theme depot.kind
+    case ListUtil.find atPosition scenery.buildings of
+        Just building ->
+            buildingBackdropPath scenery.map.theme building.kind
 
         Nothing ->
             backdropPath scenery.map.theme (Map.terrainAt scenery.map position)
@@ -1469,12 +1479,12 @@ impactScene visibleTiles scenery panel position =
         content
 
 
-depotScene : Scenery -> Panel -> DepotDamage -> Html Msg
-depotScene scenery panel damage =
+buildingScene : Scenery -> Panel -> BuildingDamage -> Html Msg
+buildingScene scenery panel damage =
     let
         age : Float
         age =
-            damage.elapsed - depotImpactStartsAt
+            damage.elapsed - buildingImpactStartsAt
 
         explosion : List (Svg.Svg Msg)
         explosion =
@@ -1494,7 +1504,7 @@ depotScene scenery panel damage =
                 , SA.y "8"
                 , SA.width "48"
                 , SA.height "48"
-                , SA.xlinkHref (Depot.image damage.depot)
+                , SA.xlinkHref (Building.image damage.building)
                 ]
                 []
             ]
@@ -1502,10 +1512,10 @@ depotScene scenery panel damage =
 
         description : String
         description =
-            Depot.label damage.depot ++ "; struck by indirect fire"
+            Building.label damage.building ++ "; struck by indirect fire"
     in
     H.div
-        [ A.attribute "data-depot-damage" ""
+        [ A.attribute "data-building-damage" ""
         , A.css
             [ S.row
             , S.justifyCenter
@@ -1518,7 +1528,7 @@ depotScene scenery panel damage =
                 ]
             ]
             [ scene
-                (Just (backdropPath scenery.map.theme (Map.terrainAt scenery.map damage.depot.position)))
+                (Just (backdropPath scenery.map.theme (Map.terrainAt scenery.map damage.building.position)))
                 (rumbleTransform panel)
                 description
                 artwork
@@ -1549,7 +1559,7 @@ armyStyleFor : Scenery -> Unit -> Maybe ArmyStyle
 armyStyleFor scenery unit =
     case scenery.armyStyle of
         Just selection ->
-            if List.member unit.playerNumber selection.players then
+            if unit.playerNumber == selection.player then
                 Just selection.style
 
             else
@@ -1587,14 +1597,14 @@ exhaustionScene scenery panel unit =
         )
 
 
-sabotageScene : Scenery -> Panel -> Depot -> Html Msg
+sabotageScene : Scenery -> Panel -> Building -> Html Msg
 sabotageScene scenery panel building =
     let
         age : Float
         age =
             panel.elapsed - sabotageBlastAt
 
-        shownBuilding : Depot
+        shownBuilding : Building
         shownBuilding =
             if age >= CombatExplosion.spriteDisappearsAt then
                 { building | hp = { current = 0, maximum = building.hp.maximum } }
@@ -1636,7 +1646,7 @@ sabotageScene scenery panel building =
                 , SA.y "9"
                 , SA.width "48"
                 , SA.height "48"
-                , SA.xlinkHref (Depot.image shownBuilding)
+                , SA.xlinkHref (Building.image shownBuilding)
                 ]
                 []
             ]
@@ -1646,7 +1656,7 @@ sabotageScene scenery panel building =
     scene
         (Just (backdropPath scenery.map.theme (Map.terrainAt scenery.map building.position)))
         (rumbleTransform panel)
-        (Depot.kindLabel building.kind ++ "; destroyed by infantry sabotage")
+        (Building.kindLabel building.kind ++ "; destroyed by infantry sabotage")
         artwork
 
 
@@ -1705,6 +1715,44 @@ portrait scenery panel health unit =
                 SpriteFacing.Left ->
                     Css.property "right" "var(--combat-flank-inset, 0.5rem)"
 
+        caption : Html Msg
+        caption =
+            case ListUtil.find (\player -> player.playerNumber == unit.playerNumber) scenery.players of
+                Just player ->
+                    participantCaption scenery.mobile panel health unit player
+
+                Nothing ->
+                    H.text ""
+
+        artwork : Html Msg
+        artwork =
+            portraitScene scenery panel health unit
+
+        sceneWithCaption : Html Msg
+        sceneWithCaption =
+            if scenery.mobile then
+                H.div
+                    [ A.css
+                        [ S.relative
+                        , S.mAuto
+                        , Css.property "width" "min(100%, 150cqh)"
+                        ]
+                    ]
+                    [ artwork
+                    , caption
+                    ]
+
+            else
+                artwork
+
+        footerCaption : Html Msg
+        footerCaption =
+            if scenery.mobile then
+                H.text ""
+
+            else
+                caption
+
         flankChip : Html Msg
         flankChip =
             if hasFlankBonus then
@@ -1740,10 +1788,115 @@ portrait scenery panel health unit =
             [ A.class portraitArtClass
             , A.css [ S.relative ]
             ]
-            [ portraitScene scenery panel health unit
+            [ sceneWithCaption
             , flankChip
             ]
+        , footerCaption
         , CombatReadiness.toHtml unit.combatState
+        ]
+
+
+participantCaption : Bool -> Panel -> CombatHealth -> Unit -> Player -> Html Msg
+participantCaption mobile panel health unit player =
+    let
+        unitName : String
+        unitName =
+            UnitKindLabel.label unit.kind
+
+        hitPoints : HitPoints
+        hitPoints =
+            case List.minimum (CombatFormation.impactStarts (infantryLoadout panel unit) unit.kind health) of
+                Just startsAt ->
+                    if panel.elapsed >= startsAt + attackDelay panel + impactContactDelayMs then
+                        health.after
+
+                    else
+                        health.before
+
+                Nothing ->
+                    health.before
+
+        meter : Html Msg
+        meter =
+            healthBar
+                (player.name ++ "'s " ++ unitName ++ " health")
+                unit.playerNumber
+                hitPoints
+    in
+    if mobile then
+        H.div
+            [ A.css
+                [ S.absolute
+                , S.top0
+                , S.left0
+                , S.right0
+                , S.pointerEventsNone
+                ]
+            ]
+            [ meter ]
+
+    else
+        H.div
+            [ A.css
+                [ S.col
+                , S.bgNightwood3
+                , S.indentStrong
+                , S.textAlignCenter
+                , S.shrink0
+                ]
+            ]
+            [ meter
+            , H.span
+                [ A.title player.name
+                , A.css
+                    [ S.px2
+                    , S.fontSizeRem 0.875
+                    , S.textEllipsis
+                    , S.textGray4
+                    ]
+                ]
+                [ H.text player.name ]
+            , H.span
+                []
+                [ H.text unitName ]
+            ]
+
+
+healthBar : String -> PlayerNumber -> HitPoints -> Html Msg
+healthBar label player hitPoints =
+    let
+        fill : Css.Style
+        fill =
+            case player of
+                PlayerNumber.Player1 ->
+                    S.bgRed1
+
+                PlayerNumber.Player2 ->
+                    S.bgBlue1
+
+        percent : Float
+        percent =
+            clamp 0 100 (100 * toFloat hitPoints.current / toFloat (max 1 hitPoints.maximum))
+    in
+    H.div
+        [ Aria.role Aria.Meter
+        , Aria.label label
+        , Aria.valueMin 0
+        , Aria.valueMax hitPoints.maximum
+        , Aria.valueNow hitPoints.current
+        , A.css
+            [ S.bgGray0
+            , S.h3px
+            ]
+        ]
+        [ H.div
+            [ A.css
+                [ fill
+                , S.hFull
+                , S.widthPct percent
+                ]
+            ]
+            []
         ]
 
 
@@ -1779,14 +1932,14 @@ trenchOccupancy appearance panel unit =
 portraitScene : Scenery -> Panel -> CombatHealth -> Unit -> Html Msg
 portraitScene scenery panel health unit =
     let
-        insideFortress : Depot -> Bool
-        insideFortress depot =
-            (depot.kind == BuildingKind.Fortress)
-                && (Unit.mapPosition unit == Just depot.position)
+        insideFortress : Building -> Bool
+        insideFortress building =
+            (building.kind == BuildingKind.Fortress)
+                && (Unit.mapPosition unit == Just building.position)
 
         appearance : Appearance
         appearance =
-            if List.any insideFortress scenery.depots then
+            if List.any insideFortress scenery.buildings then
                 UnitSprite.appearance (Unit.setEntrenchment Entrenchment.Exposed unit)
 
             else

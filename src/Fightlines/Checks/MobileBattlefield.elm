@@ -11,15 +11,22 @@ import Api.Scalar exposing (MapId(..))
 import Browser
 import Browser.Dom
 import Error
+import Fightlines.GameOrigin as GameOrigin
 import Fightlines.Page.GamePage as GamePage
+import Fightlines.Route as Route
 import Fightlines.View.MobileBattlefield as MobileBattlefield
 import Fightlines.View.OrderMenu as OrderMenu
 import Game.BattlefieldNavigation as BattlefieldNavigation
+import Game.BattlefieldSnapshot
+    exposing
+        ( Player
+        )
 import Game.Camera as Camera
 import Game.Coordinate exposing (Coordinate)
 import Game.CurrentTurn as CurrentTurn
 import Game.Inactivity as Inactivity
 import Game.Map as Map
+import Game.Matchup as Matchup
 import Game.Movement as Movement
 import Game.OrderPlanning as OrderPlanning
 import Game.Outcome as GameOutcome
@@ -108,21 +115,31 @@ main =
 checks : LobbyId -> UnitId -> UnitId -> Shared.Model -> List String
 checks lobbyId friendlyId enemyId shared =
     let
+        you : Player
+        you =
+            { name = "commander"
+            , playerNumber = PlayerNumber.Player1
+            , isYou = True
+            }
+
+        opponent : Player
+        opponent =
+            { name = "opponent"
+            , playerNumber = PlayerNumber.Player2
+            , isYou = False
+            }
+
         flags : GamePage.Flags
         flags =
             { messages = []
+            , matchup = { you = you, opponent = opponent }
             , snapshot =
                 { inactivity = Inactivity.Disabled
                 , battlefield =
                     { name = "mobile fixture"
                     , mapType = MapId "fixture"
                     , unitStats = []
-                    , players =
-                        [ { name = "commander"
-                          , playerNumber = PlayerNumber.Player1
-                          , isYou = True
-                          }
-                        ]
+                    , players = [ you, opponent ]
                     , map =
                         Map.fromFeatures
                             { width = 4
@@ -170,7 +187,7 @@ checks lobbyId friendlyId enemyId shared =
 
         initial : GamePage.Model
         initial =
-            GamePage.init shared flags
+            GamePage.init shared GameOrigin.DirectEntry flags
                 |> Tuple.first
                 |> step GamePage.WelcomeBriefingDismissed
 
@@ -212,9 +229,40 @@ checks lobbyId friendlyId enemyId shared =
         selected =
             select friendlyId ready
 
+        delayedOrderPick : GamePage.Msg
+        delayedOrderPick =
+            GamePage.OrderMenuMsg
+                (OrderMenu.OrderPicked friendlyId UnitOrder.HoldPosition)
+
+        differentUnitSelected : GamePage.Model
+        differentUnitSelected =
+            ready
+                |> GamePage.setUnits
+                    [ unit friendlyId PlayerNumber.Player1 0
+                    , unit enemyId PlayerNumber.Player1 3
+                    ]
+                |> select friendlyId
+                |> select enemyId
+
+        ignoresDelayedOrderPick : GamePage.Model -> Bool
+        ignoresDelayedOrderPick before =
+            let
+                after : GamePage.Model
+                after =
+                    step delayedOrderPick before
+            in
+            (after.currentTurn == before.currentTurn)
+                && (after.planningReports == before.planningReports)
+
+        missingSelectedUnit : GamePage.Model
+        missingSelectedUnit =
+            selected
+                |> GamePage.setUnits []
+                |> step delayedOrderPick
+
         moving : GamePage.Model
         moving =
-            step (GamePage.OrderMenuMsg (OrderMenu.OrderPicked UnitOrder.Move)) selected
+            step (GamePage.OrderMenuMsg (OrderMenu.OrderPicked friendlyId UnitOrder.Move)) selected
 
         details : GamePage.Model
         details =
@@ -317,7 +365,7 @@ checks lobbyId friendlyId enemyId shared =
         desktopPlanning =
             select friendlyId
                 (GamePage.setShared desktopShared ready)
-                |> step (GamePage.OrderMenuMsg (OrderMenu.OrderPicked UnitOrder.Move))
+                |> step (GamePage.OrderMenuMsg (OrderMenu.OrderPicked friendlyId UnitOrder.Move))
 
         desktopHelp : GamePage.Model
         desktopHelp =
@@ -361,7 +409,7 @@ checks lobbyId friendlyId enemyId shared =
         saved =
             step
                 (GamePage.OrderMenuMsg
-                    (OrderMenu.OrderPicked UnitOrder.HoldPosition)
+                    (OrderMenu.OrderPicked friendlyId UnitOrder.HoldPosition)
                 )
                 selected
 
@@ -460,7 +508,7 @@ checks lobbyId friendlyId enemyId shared =
             missingRule
                 |> GamePage.setUnits [ truck, passenger ]
                 |> select friendlyId
-                |> step (GamePage.OrderMenuMsg (OrderMenu.OrderPicked UnitOrder.HoldPosition))
+                |> step (GamePage.OrderMenuMsg (OrderMenu.OrderPicked friendlyId UnitOrder.HoldPosition))
 
         unloadViolation : OrderPlanning.InvariantViolation
         unloadViolation =
@@ -507,7 +555,7 @@ checks lobbyId friendlyId enemyId shared =
             in
             fresh
                 |> select friendlyId
-                |> step (GamePage.OrderMenuMsg (OrderMenu.OrderPicked UnitOrder.Move))
+                |> step (GamePage.OrderMenuMsg (OrderMenu.OrderPicked friendlyId UnitOrder.Move))
 
         resolvedFlags : GamePage.Flags
         resolvedFlags =
@@ -619,7 +667,40 @@ checks lobbyId friendlyId enemyId shared =
                     False
     in
     List.concat
-        [ expect "wide viewports use the desktop layout"
+        [ expect "an order pick from the previous menu cannot order the newly selected unit"
+            ((TurnLifecycle.planning differentUnitSelected.currentTurn.phase
+                |> Maybe.andThen OrderPlanning.orderMenuUnitId
+             )
+                == Just enemyId
+                && ignoresDelayedOrderPick differentUnitSelected
+            )
+        , expect "an order pick from a closed menu does not report a planning error"
+            (ignoresDelayedOrderPick
+                (step (GamePage.OrderMenuMsg OrderMenu.CancelClicked) selected)
+            )
+        , expect "an order pick from the active menu reports a missing unit"
+            (List.map .violation missingSelectedUnit.planningReports.pending
+                == [ OrderPlanning.PlanningUnitNotFound friendlyId ]
+            )
+        , expect "the matchup identifies the viewer even when they are player two"
+            (Matchup.fromPlayers
+                [ { you | isYou = False }
+                , { opponent | isYou = True }
+                ]
+                == Ok
+                    { you = { opponent | isYou = True }
+                    , opponent = { you | isYou = False }
+                    }
+            )
+        , expect "the matchup rejects a missing opponent"
+            (Matchup.fromPlayers [ you ]
+                == Err "the game roster must contain one player on your side and one opponent."
+            )
+        , expect "the matchup rejects two players on the same side"
+            (Matchup.fromPlayers [ you, { opponent | playerNumber = you.playerNumber } ]
+                == Err "the game roster assigned both players to the same side."
+            )
+        , expect "wide viewports use the desktop layout"
             (not (Shared.isMobileView desktop.shared))
         , expect "switching to desktop updates the navigation zoom cap"
             (desktop.navigation /= moving.navigation)

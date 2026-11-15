@@ -123,7 +123,7 @@ pub(super) fn plan(
             unit.assume_full_resources();
         }
     }
-    for depot in &mut observed.depots {
+    for depot in &mut observed.buildings {
         if !depot.stock_visible
             && let Some(kind) = depot.kind.resource_kind()
         {
@@ -280,7 +280,10 @@ fn candidates(
         && unit.entrenchment() == Entrenchment::Exposed
         && available >= rules.dig_in_cost
         && !scenario.map.tile_at(origin).is_some_and(Terrain::is_road)
-        && !scenario.depots.iter().any(|depot| depot.position == origin)
+        && !scenario
+            .buildings
+            .iter()
+            .any(|depot| depot.position == origin)
     {
         let mut order = hold(unit, origin);
         order.dig_in = Some(true);
@@ -506,7 +509,7 @@ mod tests {
         map::{Map, RoadShape},
         map_definition::MapDefinition,
         map_id::MapId,
-        scenario::{BuildingKind, Depot},
+        scenario::{Building, BuildingKind},
         test_support::{FixtureValue, TestResult},
         turns,
     };
@@ -590,7 +593,7 @@ mod tests {
         let visible = visibility::visible_tiles(&scenario, PlayerNumber::Player1);
         let mut changed = scenario.clone();
         let mut hidden_count = 0;
-        for depot in &mut changed.depots {
+        for depot in &mut changed.buildings {
             if !visible.contains(&depot.position) {
                 depot.stock.current = 0;
                 hidden_count += 1;
@@ -658,11 +661,11 @@ mod tests {
         ] {
             for destroyed in [false, true] {
                 let mut scenario = initial.clone();
-                let mut depot = Depot::new(kind, Coordinate::new(0, 0));
+                let mut depot = Building::new(kind, Coordinate::new(0, 0));
                 if destroyed {
                     depot.sabotage();
                 }
-                scenario.depots = vec![depot];
+                scenario.buildings = vec![depot];
                 let unit = scenario.units.first().fixture()?;
                 let goal = StrategicGoal::new(&scenario, unit).fixture()?;
                 let orders = candidates(&scenario, unit, &BTreeSet::new(), &goal).fixture()?;

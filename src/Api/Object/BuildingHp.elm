@@ -2,7 +2,7 @@
 -- https://github.com/dillonkearns/elm-graphql
 
 
-module Api.Object.DepotHp exposing (..)
+module Api.Object.BuildingHp exposing (..)
 
 import Api.InputObject
 import Api.Interface
@@ -19,11 +19,11 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
-current : SelectionSet Int Api.Object.DepotHp
+current : SelectionSet Int Api.Object.BuildingHp
 current =
     Object.selectionForField "Int" "current" [] Decode.int
 
 
-maximum : SelectionSet Int Api.Object.DepotHp
+maximum : SelectionSet Int Api.Object.BuildingHp
 maximum =
     Object.selectionForField "Int" "maximum" [] Decode.int

@@ -26,11 +26,11 @@ map object____ =
     Object.selectionForCompositeField "map" [] object____ Basics.identity
 
 
-depots :
-    SelectionSet decodesTo Api.Object.Depot
+buildings :
+    SelectionSet decodesTo Api.Object.Building
     -> SelectionSet (List decodesTo) Api.Object.Scenario
-depots object____ =
-    Object.selectionForCompositeField "depots" [] object____ (Basics.identity >> Decode.list)
+buildings object____ =
+    Object.selectionForCompositeField "buildings" [] object____ (Basics.identity >> Decode.list)
 
 
 units :

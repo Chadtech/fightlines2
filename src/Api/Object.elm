@@ -41,8 +41,20 @@ type BackdropCalibration
     = BackdropCalibration
 
 
+type Building
+    = Building
+
+
+type BuildingHp
+    = BuildingHp
+
+
 type BuildingImpact
     = BuildingImpact
+
+
+type BuildingPlacement
+    = BuildingPlacement
 
 
 type CalibratedBackdrop
@@ -115,18 +127,6 @@ type DeploymentObservation
 
 type DeploymentStatus
     = DeploymentStatus
-
-
-type Depot
-    = Depot
-
-
-type DepotHp
-    = DepotHp
-
-
-type DepotPlacement
-    = DepotPlacement
 
 
 type EnabledInactivity

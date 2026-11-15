@@ -5,7 +5,8 @@ use crate::{
     map::{Coordinate, Terrain},
     player_number::PlayerNumber,
     scenario::{
-        BuildingKind, DepotHp, Direction, Entrenchment, HitPoints, Scenario, Unit, UnitId, UnitKind,
+        BuildingHp, BuildingKind, Direction, Entrenchment, HitPoints, Scenario, Unit, UnitId,
+        UnitKind,
     },
     turns::TurnFrame,
     unit_loss,
@@ -306,8 +307,8 @@ fn attack_aspect(unit: &Unit, opponent: &Unit) -> AttackAspect {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndirectImpact {
-    #[serde(default)]
-    pub depot: Option<BuildingImpact>,
+    #[serde(default, rename = "depot")]
+    pub building: Option<BuildingImpact>,
     pub attacker: Option<IndirectFireAttacker>,
     pub player_number: PlayerNumber,
     pub destination: Coordinate,
@@ -316,8 +317,8 @@ pub struct IndirectImpact {
 
 #[graphql_object]
 impl IndirectImpact {
-    fn depot(&self) -> Option<&BuildingImpact> {
-        self.depot.as_ref()
+    fn building(&self) -> Option<&BuildingImpact> {
+        self.building.as_ref()
     }
     fn attacker(&self) -> Option<&IndirectFireAttacker> {
         self.attacker.as_ref()
@@ -339,8 +340,8 @@ impl IndirectImpact {
 #[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
 pub struct BuildingImpact {
     pub kind: BuildingKind,
-    pub before: DepotHp,
-    pub after: DepotHp,
+    pub before: BuildingHp,
+    pub after: BuildingHp,
 }
 
 #[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
@@ -608,10 +609,10 @@ impl Combat {
         } else {
             1.0
         };
-        let fortified = board.depots.iter().any(|depot| {
-            depot.kind == BuildingKind::Fortress
-                && !depot.is_destroyed()
-                && Some(depot.position) == target.board_position()
+        let fortified = board.buildings.iter().any(|building| {
+            building.kind == BuildingKind::Fortress
+                && !building.is_destroyed()
+                && Some(building.position) == target.board_position()
         });
         let fortification = if fortified { 0.25 } else { 1.0 };
         let factors = DamageFactors {
@@ -771,7 +772,7 @@ impl Combat {
             sabotages: Vec::new(),
             departures: Vec::new(),
             indirect_impacts: Vec::new(),
-            depots: board.depots.clone(),
+            buildings: board.buildings.clone(),
             supply_crates: board.supply_crates.clone(),
             units: board.units.clone(),
             visible_tiles: Vec::new(),
@@ -788,7 +789,7 @@ impl Combat {
             sabotages: Vec::new(),
             departures: Vec::new(),
             indirect_impacts: Vec::new(),
-            depots: board.depots.clone(),
+            buildings: board.buildings.clone(),
             supply_crates: board.supply_crates.clone(),
             units: board.units.clone(),
             visible_tiles: Vec::new(),
@@ -1018,7 +1019,7 @@ impl Combat {
                 continue;
             };
             impacts.push(IndirectImpact {
-                depot: None,
+                building: None,
                 attacker: Some(IndirectFireAttacker {
                     unit: theater_participant(shooter),
                     health: shooter.hit_points(),
@@ -1062,19 +1063,17 @@ impl Combat {
             }
         }
         // A shell hits infrastructure independently of any unit sharing its tile.
-        // Freight is deliberately unaffected, and a destroyed depot has no blast radius.
+        // Freight is deliberately unaffected, and a destroyed building has no blast radius.
         for impact in &mut impacts {
-            if let Some(depot) = board
-                .depots
-                .iter_mut()
-                .find(|depot| depot.position == impact.destination && !depot.is_destroyed())
-            {
-                let before = depot.hit_points();
-                depot.take_structural_hit();
-                impact.depot = Some(BuildingImpact {
-                    kind: depot.kind,
+            if let Some(building) = board.buildings.iter_mut().find(|building| {
+                building.position == impact.destination && !building.is_destroyed()
+            }) {
+                let before = building.hit_points();
+                building.take_structural_hit();
+                impact.building = Some(BuildingImpact {
+                    kind: building.kind,
                     before,
-                    after: depot.hit_points(),
+                    after: building.hit_points(),
                 });
             }
         }
@@ -1089,7 +1088,7 @@ impl Combat {
                 sabotages: Vec::new(),
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
-                depots: board.depots.clone(),
+                buildings: board.buildings.clone(),
                 supply_crates: board.supply_crates.clone(),
                 units: board.units.clone(),
                 visible_tiles: Vec::new(),
@@ -1101,7 +1100,7 @@ impl Combat {
                 sabotages: Vec::new(),
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
-                depots: board.depots.clone(),
+                buildings: board.buildings.clone(),
                 supply_crates: board.supply_crates.clone(),
                 units: board.units.clone(),
                 visible_tiles: Vec::new(),
@@ -1137,7 +1136,7 @@ mod tests {
         map::{Map, Terrain},
         movement_resolution,
         player_number::PlayerNumber,
-        scenario::Depot,
+        scenario::Building,
         test_support::{FixtureValue, TestResult},
     };
 
@@ -1314,7 +1313,7 @@ mod tests {
             ] {
                 let position = Coordinate::new(4, 3);
                 let (mut board, orders) = fixture(UnitKind::FieldGun, target_kind, position)?;
-                board.depots.clear();
+                board.buildings.clear();
                 let combat = prepare_fixture(&mut board, &orders);
                 let damage = |board: &Scenario| -> TestResult<i32> {
                     Ok(combat.damage(
@@ -1326,17 +1325,17 @@ mod tests {
                 };
                 let exposed = damage(&board)?;
                 board
-                    .depots
-                    .push(Depot::new(BuildingKind::Fortress, position));
+                    .buildings
+                    .push(Building::new(BuildingKind::Fortress, position));
                 assert_eq!(damage(&board)?, 4, "{target_kind:?} {attack:?}");
-                board.depots.first_mut().fixture()?.position = Coordinate::new(4, 4);
+                board.buildings.first_mut().fixture()?.position = Coordinate::new(4, 4);
                 assert_eq!(
                     damage(&board)?,
                     exposed,
                     "adjacent units receive no protection"
                 );
-                board.depots.first_mut().fixture()?.position = position;
-                board.depots.first_mut().fixture()?.sabotage();
+                board.buildings.first_mut().fixture()?.position = position;
+                board.buildings.first_mut().fixture()?.sabotage();
                 assert_eq!(
                     damage(&board)?,
                     exposed,
@@ -1351,14 +1350,14 @@ mod tests {
     fn a_fortress_protects_during_its_last_shell_hit_but_not_the_next_volley() -> TestResult<()> {
         let position = Coordinate::new(4, 3);
         let (mut board, mut orders) = fixture(UnitKind::FieldGun, UnitKind::Infantry, position)?;
-        board.depots = vec![Depot {
+        board.buildings = vec![Building {
             damage: 7,
-            ..Depot::new(BuildingKind::Fortress, position)
+            ..Building::new(BuildingKind::Fortress, position)
         }];
         orders.first_mut().fixture()?.action = CombatAction::IndirectFire(position);
         let mut frames = Vec::new();
         prepare_fixture(&mut board, &orders).bombard(&mut board, &mut frames);
-        assert!(board.depots.first().fixture()?.is_destroyed());
+        assert!(board.buildings.first().fixture()?.is_destroyed());
         assert_eq!(board.units.get(1).fixture()?.hit_points().current(), 12);
         assert_eq!(
             frames
@@ -1374,7 +1373,7 @@ mod tests {
             .flat_map(|frame| &frame.indirect_impacts)
             .next()
             .fixture()?
-            .depot
+            .building
             .as_ref()
             .fixture()?;
         assert_eq!(impact.before.current, 1);
@@ -1398,7 +1397,7 @@ mod tests {
     fn fortress_cover_stacks_with_entrenchment_and_keeps_the_minimum_hit() -> TestResult<()> {
         let position = Coordinate::new(4, 3);
         let (mut board, orders) = fixture(UnitKind::Infantry, UnitKind::Infantry, position)?;
-        board.depots = vec![Depot::new(BuildingKind::Fortress, position)];
+        board.buildings = vec![Building::new(BuildingKind::Fortress, position)];
         let combat = prepare_fixture(&mut board, &orders);
         assert_eq!(
             combat.damage(
@@ -1419,7 +1418,7 @@ mod tests {
             ),
             1
         );
-        board.depots.first_mut().fixture()?.sabotage();
+        board.buildings.first_mut().fixture()?.sabotage();
         assert_eq!(
             combat.damage(
                 &board,
@@ -1542,8 +1541,8 @@ mod tests {
                         board.map = Map::new(9, 9, terrain, BTreeMap::new()).fixture()?;
                         board.units.get_mut(1).fixture()?.dig_in();
                         orders.get_mut(1).fixture()?.action = defense;
-                        board.depots = if fortress {
-                            vec![Depot::new(BuildingKind::Fortress, position)]
+                        board.buildings = if fortress {
+                            vec![Building::new(BuildingKind::Fortress, position)]
                         } else {
                             Vec::new()
                         };

@@ -28,7 +28,7 @@ losses object____ =
     Object.selectionForCompositeField "losses" [] object____ (Basics.identity >> Decode.list)
 
 
-{-| Successful demolitions; hidden depot tiles are removed during projection.
+{-| Successful demolitions; hidden building tiles are removed during projection.
 -}
 sabotages :
     SelectionSet decodesTo Api.Object.Coordinate
@@ -60,11 +60,11 @@ shots object____ =
     Object.selectionForCompositeField "shots" [] object____ (Basics.identity >> Decode.list)
 
 
-depots :
-    SelectionSet decodesTo Api.Object.Depot
+buildings :
+    SelectionSet decodesTo Api.Object.Building
     -> SelectionSet (List decodesTo) Api.Object.TurnFrame
-depots object____ =
-    Object.selectionForCompositeField "depots" [] object____ (Basics.identity >> Decode.list)
+buildings object____ =
+    Object.selectionForCompositeField "buildings" [] object____ (Basics.identity >> Decode.list)
 
 
 supplyCrates :

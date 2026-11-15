@@ -1,5 +1,5 @@
-module Game.Depot exposing
-    ( Depot
+module Game.Building exposing
+    ( Building
     , Hp
     , LoadingSource
     , description
@@ -19,14 +19,14 @@ module Game.Depot exposing
 import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
 import Api.Enum.ResourceKind as ResourceKind exposing (ResourceKind)
 import Api.Object
-import Api.Object.Depot as DepotApi
-import Api.Object.DepotHp as HpApi
+import Api.Object.Building as BuildingApi
+import Api.Object.BuildingHp as HpApi
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Supply as Supply
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 
 
-type alias Depot =
+type alias Building =
     { kind : BuildingKind
     , position : Coordinate
     , stock : Maybe Supply.Stock
@@ -49,30 +49,30 @@ type alias LoadingSource =
     }
 
 
-selection : SelectionSet Depot Api.Object.Depot
+selection : SelectionSet Building Api.Object.Building
 selection =
-    SS.succeed Depot
-        |> SS.with DepotApi.kind
-        |> SS.with (DepotApi.position Coordinate.selection)
-        |> SS.with (DepotApi.stock Supply.stockSelection)
-        |> SS.with (DepotApi.hp hpSelection)
+    SS.succeed Building
+        |> SS.with BuildingApi.kind
+        |> SS.with (BuildingApi.position Coordinate.selection)
+        |> SS.with (BuildingApi.stock Supply.stockSelection)
+        |> SS.with (BuildingApi.hp hpSelection)
 
 
-hpSelection : SelectionSet Hp Api.Object.DepotHp
+hpSelection : SelectionSet Hp Api.Object.BuildingHp
 hpSelection =
     SS.succeed Hp
         |> SS.with HpApi.current
         |> SS.with HpApi.maximum
 
 
-isDestroyed : Depot -> Bool
-isDestroyed depot =
-    depot.hp.current == 0
+isDestroyed : Building -> Bool
+isDestroyed building =
+    building.hp.current == 0
 
 
-resourceKind : Depot -> Maybe ResourceKind
-resourceKind depot =
-    case depot.kind of
+resourceKind : Building -> Maybe ResourceKind
+resourceKind building =
+    case building.kind of
         BuildingKind.Supply ->
             Just ResourceKind.Supply
 
@@ -83,30 +83,30 @@ resourceKind depot =
             Nothing
 
 
-loadingSource : Depot -> Maybe LoadingSource
-loadingSource depot =
+loadingSource : Building -> Maybe LoadingSource
+loadingSource building =
     let
         source : ResourceKind -> LoadingSource
         source kind =
             { kind = kind
-            , stock = depot.stock
+            , stock = building.stock
             }
     in
-    if isDestroyed depot then
+    if isDestroyed building then
         Nothing
 
     else
-        resourceKind depot
+        resourceKind building
             |> Maybe.map source
 
 
-label : Depot -> String
-label depot =
-    if isDestroyed depot then
-        "destroyed " ++ kindLabel depot.kind
+label : Building -> String
+label building =
+    if isDestroyed building then
+        "destroyed " ++ kindLabel building.kind
 
     else
-        kindLabel depot.kind
+        kindLabel building.kind
 
 
 kindLabel : BuildingKind -> String
@@ -122,13 +122,13 @@ kindLabel kind =
             "fortress"
 
 
-image : Depot -> String
-image depot =
-    if isDestroyed depot then
+image : Building -> String
+image building =
+    if isDestroyed building then
         destroyedImage
 
     else
-        kindImage depot.kind
+        kindImage building.kind
 
 
 kindImage : BuildingKind -> String
@@ -144,9 +144,9 @@ kindImage kind =
             "assets/fortress-illustrated-v2.png"
 
 
-description : Depot -> String
-description depot =
-    case depot.kind of
+description : Building -> String
+description building =
+    case building.kind of
         BuildingKind.Supply ->
             "a neutral supply source for either player. position units on or next to supply depots and they will be replenished from it at the end of the turn. trucks can load up supply crates from supply depots too."
 

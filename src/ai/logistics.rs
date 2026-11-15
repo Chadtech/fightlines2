@@ -226,7 +226,7 @@ pub(super) fn path_to(
 
 fn pickup_targets(scenario: &Scenario, kind: ResourceKind) -> Vec<Destination> {
     scenario
-        .depots
+        .buildings
         .iter()
         .filter(|depot| {
             !depot.is_destroyed()
@@ -406,7 +406,7 @@ fn freight_plan(
         }
         if room > 0
             && order.pickup_ground_freight.is_none()
-            && let Some(depot) = scenario.depots.iter().find(|depot| {
+            && let Some(depot) = scenario.buildings.iter().find(|depot| {
                 !depot.is_destroyed()
                     && depot.position == destination
                     && depot.kind.resource_kind() == Some(resource)
@@ -666,7 +666,7 @@ mod tests {
                 unit.position =
                     Coordinate::new(41 - unit.position.x() as u16, unit.position.y() as u16);
             }
-            for depot in &mut definition.depots {
+            for depot in &mut definition.buildings {
                 depot.position =
                     Coordinate::new(41 - depot.position.x() as u16, depot.position.y() as u16);
             }
@@ -769,7 +769,7 @@ mod tests {
     fn explicitly_collects_ground_fuel_or_loads_partial_depot_stock() -> TestResult {
         for ground_freight in [false, true] {
             let mut scenario = convoy_fixture(PlayerNumber::Player1)?;
-            scenario.depots.first_mut().fixture()?.stock.current = 19;
+            scenario.buildings.first_mut().fixture()?.stock.current = 19;
             if ground_freight {
                 scenario.supply_crates.push(GroundSupplyCrate {
                     position: Coordinate::new(1, 1),

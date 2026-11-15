@@ -2,7 +2,7 @@
 use super::{AttackAspect, Combat, CombatAction, CombatKind, CombatPlan, DamageCalculation};
 use crate::{
     map::{Coordinate, MapTheme, Terrain},
-    map_definition::{DepotPlacement, MapDefinition, TerrainPlacement, UnitPlacement},
+    map_definition::{BuildingPlacement, MapDefinition, TerrainPlacement, UnitPlacement},
     player_number::PlayerNumber,
     scenario::{BuildingKind, Direction, UnitKind},
 };
@@ -128,8 +128,8 @@ fn hit(
                 terrain: Terrain::Hills,
             }],
         },
-        depots: if input.fortress {
-            vec![DepotPlacement {
+        buildings: if input.fortress {
+            vec![BuildingPlacement {
                 position: destination,
                 kind: BuildingKind::Fortress,
             }]

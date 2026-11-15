@@ -1,6 +1,6 @@
 module Game.View.MapPreview exposing
-    ( definitionToHtml
-    , depotToSvg
+    ( buildingToSvg
+    , definitionToHtml
     , toHtml
     , unitToSvg
     )
@@ -11,13 +11,13 @@ import Api.Enum.UnitKind as UnitKind
 import Api.Scalar exposing (MapId)
 import EditableMap
     exposing
-        ( Definition
-        , DepotPlacement
+        ( BuildingPlacement
+        , Definition
         , NamedMap
         , UnitPlacement
         )
+import Game.Building as Building
 import Game.Coordinate exposing (Coordinate)
-import Game.Depot as Depot
 import Game.Map as Map exposing (Map)
 import Game.MapId as MapId
 import Game.View.TerrainTile as TerrainTile
@@ -74,9 +74,9 @@ artwork definition =
         terrainAt position =
             placed position (TerrainTile.stillOnMap map position)
 
-        depotAt : DepotPlacement -> Svg msg
-        depotAt depot =
-            placed depot.position (depotToSvg depot)
+        buildingAt : BuildingPlacement -> Svg msg
+        buildingAt building =
+            placed building.position (buildingToSvg building)
 
         unitAt : UnitPlacement -> Svg msg
         unitAt unit =
@@ -86,9 +86,9 @@ artwork definition =
         terrain =
             List.map terrainAt (Map.positions map)
 
-        depots : List (Svg msg)
-        depots =
-            List.map depotAt definition.depots
+        buildings : List (Svg msg)
+        buildings =
+            List.map buildingAt definition.buildings
 
         units : List (Svg msg)
         units =
@@ -96,7 +96,7 @@ artwork definition =
     in
     Svg.g
         []
-        (terrain ++ depots ++ units)
+        (terrain ++ buildings ++ units)
 
 
 placed : Coordinate -> Svg msg -> Svg msg
@@ -108,10 +108,10 @@ placed position image =
         ]
 
 
-depotToSvg : DepotPlacement -> Svg msg
-depotToSvg depot =
+buildingToSvg : BuildingPlacement -> Svg msg
+buildingToSvg building =
     Svg.image
-        [ SA.xlinkHref (Depot.kindImage depot.kind)
+        [ SA.xlinkHref (Building.kindImage building.kind)
         , SA.width "16"
         , SA.height "16"
         , SA.pointerEvents "none"

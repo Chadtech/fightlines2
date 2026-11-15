@@ -145,6 +145,7 @@ module Style exposing
     , h1px
     , h2
     , h24
+    , h2p5
     , h2px
     , h3
     , h32
@@ -192,6 +193,7 @@ module Style exposing
     , justifySelfCenter
     , justifySpaceAround
     , justifySpaceBetween
+    , justifyStart
     , left0
     , left1
     , left2
@@ -483,6 +485,7 @@ module Style exposing
     , w20
     , w24
     , w256
+    , w2p5
     , w2x
     , w3
     , w30Pct
@@ -1279,6 +1282,11 @@ w2 =
     Css.width s2
 
 
+w2p5 : Css.Style
+w2p5 =
+    Css.width s2p5
+
+
 w3 : Css.Style
 w3 =
     Css.width s3
@@ -1552,6 +1560,11 @@ h16px =
 h2 : Css.Style
 h2 =
     Css.height s2
+
+
+h2p5 : Css.Style
+h2p5 =
+    Css.height s2p5
 
 
 h3 : Css.Style
@@ -1852,6 +1865,11 @@ colReverse =
 justifyCenter : Css.Style
 justifyCenter =
     Css.justifyContent Css.center
+
+
+justifyStart : Css.Style
+justifyStart =
+    Css.justifyContent Css.flexStart
 
 
 justifyEnd : Css.Style
@@ -2658,6 +2676,15 @@ s2 :
         }
 s2 =
     Css.rem 0.5
+
+
+s2p5 :
+    Value
+        { provides
+            | rem : Supported
+        }
+s2p5 =
+    Css.rem 0.625
 
 
 s3 :

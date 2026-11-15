@@ -20,11 +20,11 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
-depot :
+building :
     SelectionSet decodesTo Api.Object.BuildingImpact
     -> SelectionSet (Maybe decodesTo) Api.Object.IndirectImpact
-depot object____ =
-    Object.selectionForCompositeField "depot" [] object____ (Basics.identity >> Decode.nullable)
+building object____ =
+    Object.selectionForCompositeField "building" [] object____ (Basics.identity >> Decode.nullable)
 
 
 attacker :

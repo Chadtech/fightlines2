@@ -367,7 +367,7 @@ mod tests {
             indirect_impacts: Vec::new(),
             shots: Vec::new(),
             units: board.units.clone(),
-            depots: Vec::new(),
+            buildings: Vec::new(),
             supply_crates: Vec::new(),
             duration_ms: 180,
             visible_tiles: Vec::new(),

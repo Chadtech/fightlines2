@@ -1,7 +1,7 @@
 module Game.View.StockGauge exposing (Help(..), hp, toHtml)
 
 import Css
-import Game.Depot as Depot
+import Game.Building as Building
 import Game.Supply as Supply
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -43,7 +43,7 @@ toHtml =
     gauge ResourceStock
 
 
-hp : { accessibleLabel : String, help : Help msg } -> Depot.Hp -> Html msg
+hp : { accessibleLabel : String, help : Help msg } -> Building.Hp -> Html msg
 hp config =
     gauge DepotHp
         { label = "hp"

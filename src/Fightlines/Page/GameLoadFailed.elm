@@ -14,6 +14,10 @@ import Effect
     exposing
         ( Eff
         )
+import Fightlines.GameOrigin
+    exposing
+        ( GameOrigin
+        )
 import Fightlines.Page.GamePage as GamePage
 import Fightlines.Route as Route
 import Graphql.Http
@@ -43,6 +47,7 @@ import View.CardHeader as CardHeader
 type alias Model =
     { shared : Shared.Model
     , id : LobbyId
+    , origin : GameOrigin
     , error : String
     }
 
@@ -58,10 +63,16 @@ type Msg
 ----------------------------------------------------------------
 
 
-init : Shared.Model -> LobbyId -> Graphql.Http.Error GamePage.Flags -> Model
-init shared id error =
+init :
+    Shared.Model
+    -> LobbyId
+    -> GameOrigin
+    -> Graphql.Http.Error GamePage.Flags
+    -> Model
+init shared id origin error =
     { shared = shared
     , id = id
+    , origin = origin
     , error = ApiRequest.errorMessage error
     }
 
@@ -97,7 +108,9 @@ update : Msg -> Model -> Eff Msg
 update msg model =
     case msg of
         RetryButtonClicked ->
-            Route.navigate model.shared.deployment (Route.Game model.id)
+            Route.navigate
+                model.shared.deployment
+                (Route.Game model.id model.origin)
 
         ReturnHomeButtonClicked ->
             Route.navigate model.shared.deployment Route.Home

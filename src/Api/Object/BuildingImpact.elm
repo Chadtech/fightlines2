@@ -26,14 +26,14 @@ kind =
 
 
 before :
-    SelectionSet decodesTo Api.Object.DepotHp
+    SelectionSet decodesTo Api.Object.BuildingHp
     -> SelectionSet decodesTo Api.Object.BuildingImpact
 before object____ =
     Object.selectionForCompositeField "before" [] object____ Basics.identity
 
 
 after :
-    SelectionSet decodesTo Api.Object.DepotHp
+    SelectionSet decodesTo Api.Object.BuildingHp
     -> SelectionSet decodesTo Api.Object.BuildingImpact
 after object____ =
     Object.selectionForCompositeField "after" [] object____ Basics.identity

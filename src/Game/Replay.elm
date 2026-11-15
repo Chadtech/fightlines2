@@ -1449,7 +1449,7 @@ battlefieldView model =
         args =
             { map = model.battlefield.map
             , units = model.battlefield.units
-            , depots = model.battlefield.depots
+            , buildings = model.battlefield.depots
             , supplyCrates = model.battlefield.supplyCrates
             , visibleTiles = model.battlefield.visibleTiles
             , frame = model.frame
@@ -1504,6 +1504,7 @@ view model =
                 { calibrations = CombatTheaterCalibrations.catalog
                 , automaticallyClose = model.automaticallyCloseCombatTheater
                 , armyStyle = Nothing
+                , players = model.battlefield.players
                 , mobile = Shared.isMobileView model.shared
                 }
                 model.battlefield.map
@@ -1537,7 +1538,7 @@ selectionView model =
                     Nothing
                 , BattlefieldInspection.cargo
                     { units = model.battlefield.units
-                    , ownPlayers = [ model.position.player ]
+                    , ownPlayer = model.position.player
                     , onSelectPassenger = CargoUnitClicked
                     , onHelp = InspectionHelpClicked
                     }
@@ -1549,7 +1550,7 @@ selectionView model =
         Layout.Desktop
         { onHelp = InspectionHelpClicked
         , map = model.battlefield.map
-        , depots = model.battlefield.depots
+        , buildings = model.battlefield.depots
         , supplyCrates = model.battlefield.supplyCrates
         , visibleTiles = model.battlefield.visibleTiles
         , position = inspectionPosition model
@@ -1803,7 +1804,7 @@ battlefieldDialog model =
             PlaybackPresentation.lossDialog
                 { skipDialogs = model.skipUnitLossDialogs
                 , players = model.battlefield.players
-                , ownPlayers = [ model.position.player ]
+                , ownPlayer = model.position.player
                 }
                 (playback model)
                 |> Maybe.map (Dialog.map UnitDeathMsg)

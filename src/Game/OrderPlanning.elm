@@ -33,6 +33,7 @@ module Game.OrderPlanning exposing
     , openOrderGuide
     , orderGuideOpen
     , orderMenuUnit
+    , orderMenuUnitId
     , orders
     , pathPreview
     , previewDirection
@@ -67,12 +68,12 @@ module Game.OrderPlanning exposing
 import Api.Enum.Direction exposing (Direction)
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Api.Enum.UnitKind as Kind
-import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.Depot as Depot
+import Game.Building as Building
     exposing
-        ( Depot
+        ( Building
         , LoadingSource
         )
+import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.DestinationFeedback exposing (DestinationFeedback(..))
 import Game.DirectionPlanning as DirectionPlanning
 import Game.IndirectFirePlanning as IndirectFirePlanning exposing (IndirectFirePlanning)
@@ -141,6 +142,7 @@ type alias DismountOrderProgress =
 
 type InvariantViolation
     = PlanningUnitNotFound UnitId
+    | OrderPickedWithoutActiveMenu UnitOrder.Order
     | OrderUnitHasNoPosition UnitId
     | LoadingOrderNotFound UnitId
     | DismountTruckOrderNotFound UnitId
@@ -335,9 +337,12 @@ activeTruckSequence units model =
             IC.happy (unloadingTruck id)
 
         OrdinaryPlanning _ ->
-            selectedUnitFromSelection units (selection model)
-                |> Maybe.map pendingPassengers
-                |> Maybe.withDefault (IC.happy Nothing)
+            case selectedUnitFromSelection units (selection model) of
+                Just unit ->
+                    pendingPassengers unit
+
+                Nothing ->
+                    missingSelectedUnit (selection model) Nothing
 
         ConfirmingSubmission _ ->
             IC.happy Nothing
@@ -399,17 +404,17 @@ Checked cargo always remains removable.
 canSelectUnloadCargo :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
     -> UnloadCargo
     -> Model
     -> InvariantCheck InvariantViolation Bool
-canSelectUnloadCargo map units playerNumbers movementRules supplyCrates cargo model =
+canSelectUnloadCargo map units ownPlayer movementRules supplyCrates cargo model =
     case model of
         ChoosingPassengers choice ->
             UnloadPlanning.canSelectCargo
-                (unloadOptions map units playerNumbers movementRules supplyCrates)
+                (unloadOptions map units ownPlayer movementRules supplyCrates)
                 cargo
                 choice
 
@@ -420,14 +425,14 @@ canSelectUnloadCargo map units playerNumbers movementRules supplyCrates cargo mo
 toggleAvailableUnloadCargo :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
     -> UnloadCargo
     -> Bool
     -> Model
     -> InvariantCheck InvariantViolation Model
-toggleAvailableUnloadCargo map units playerNumbers movementRules supplyCrates cargo checked model =
+toggleAvailableUnloadCargo map units ownPlayer movementRules supplyCrates cargo checked model =
     if not checked then
         IC.happy (toggleUnloadCargo cargo False model)
 
@@ -441,7 +446,7 @@ toggleAvailableUnloadCargo map units playerNumbers movementRules supplyCrates ca
                 else
                     model
         in
-        canSelectUnloadCargo map units playerNumbers movementRules supplyCrates cargo model
+        canSelectUnloadCargo map units ownPlayer movementRules supplyCrates cargo model
             |> IC.map toggleIfAvailable
 
 
@@ -463,7 +468,7 @@ toggleUnloadCargo cargo checked model =
 confirmUnloadPassengers :
     List Unit
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> (UnloadPlanning -> InvariantCheck InvariantViolation (List Movement.Option))
     -> Model
     -> InvariantCheck InvariantViolation Model
@@ -480,7 +485,7 @@ confirmUnloadPassengers units supplyCrates depots exitOptions model =
 saveUnloadDestination :
     List Unit
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> (UnloadPlanning -> InvariantCheck InvariantViolation (List Movement.Option))
     -> Coordinate
     -> Model
@@ -599,19 +604,19 @@ confirmGroundPickup model =
 chooseUnloadSquare :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> Coordinate
     -> Model
     -> InvariantCheck InvariantViolation Model
-chooseUnloadSquare map units playerNumbers movementRules supplyCrates depots destination model =
+chooseUnloadSquare map units ownPlayer movementRules supplyCrates depots destination model =
     model
         |> saveUnloadDestination units
             supplyCrates
             depots
-            (UnloadPlanning.availableOptions (unloadOptions map units playerNumbers movementRules supplyCrates))
+            (UnloadPlanning.availableOptions (unloadOptions map units ownPlayer movementRules supplyCrates))
             destination
         |> IC.andThen (promptDismountedOrders map units)
 
@@ -631,7 +636,7 @@ promptDismountedOrders map units model =
                     IC.happy model
 
         Nothing ->
-            IC.happy model
+            missingSelectedUnit (selection model) model
 
 
 {-| Open the infantry picker once the truck finishes its cargo choices.
@@ -865,14 +870,14 @@ holdRemainingInfantry units model =
 applyOrder :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> UnitOrder.Order
     -> Model
     -> InvariantCheck InvariantViolation Model
-applyOrder map units playerNumbers movementRules supplyCrates depots order model =
+applyOrder map units ownPlayer movementRules supplyCrates depots order model =
     case ( selection model, hasDialog model ) of
         ( Just (UnitSelection { interaction }), False ) ->
             case interaction of
@@ -882,7 +887,7 @@ applyOrder map units playerNumbers movementRules supplyCrates depots order model
                             applyUnitOrder
                                 map
                                 units
-                                playerNumbers
+                                ownPlayer
                                 movementRules
                                 supplyCrates
                                 depots
@@ -897,7 +902,7 @@ applyOrder map units playerNumbers movementRules supplyCrates depots order model
                     IC.happy model
 
         _ ->
-            IC.happy model
+            IC.violated (OrderPickedWithoutActiveMenu order) model
 
 
 orderGuideOpen : Model -> Bool
@@ -920,15 +925,15 @@ orderGuideOpen model =
             False
 
 
-openOrderGuide : Map -> List Unit -> List PlayerNumber -> Model -> Model
-openOrderGuide map units playerNumbers model =
+openOrderGuide : Map -> List Unit -> PlayerNumber -> Model -> Model
+openOrderGuide map units ownPlayer model =
     case ( model, orderMenuUnit map units model ) of
         ( OrdinaryPlanning drafts, Just unit ) ->
             case drafts.selection of
                 Just (UnitSelection selected) ->
                     case selected.interaction of
                         OrderMenu (ChoosingOrder focused) ->
-                            if isOwnUnit playerNumbers unit then
+                            if isOwnUnit ownPlayer unit then
                                 setSelection
                                     (Just
                                         (UnitSelection
@@ -954,11 +959,20 @@ openOrderGuide map units playerNumbers model =
 
 orderMenuUnit : Map -> List Unit -> Model -> Maybe Unit
 orderMenuUnit map units model =
+    orderMenuUnitId model
+        |> Maybe.andThen (\_ -> selectedUnit map units model)
+
+
+{-| Identify the open menu even if its unit is missing from the board. A
+matching order pick still needs to report that failed lookup.
+-}
+orderMenuUnitId : Model -> Maybe UnitId
+orderMenuUnitId model =
     case ( selection model, hasDialog model ) of
-        ( Just (UnitSelection { interaction }), False ) ->
+        ( Just (UnitSelection { id, interaction }), False ) ->
             case interaction of
                 OrderMenu _ ->
-                    selectedUnit map units model
+                    Just id
 
                 _ ->
                     Nothing
@@ -984,8 +998,8 @@ focusOrder map units order model =
             model
 
 
-canRevokeOrder : Map -> List Unit -> List PlayerNumber -> UnitId -> Model -> Bool
-canRevokeOrder map units playerNumbers unitId model =
+canRevokeOrder : Map -> List Unit -> PlayerNumber -> UnitId -> Model -> Bool
+canRevokeOrder map units ownPlayer unitId model =
     case ( model, selectedUnit map units model ) of
         ( OrdinaryPlanning drafts, Just unit ) ->
             let
@@ -1008,7 +1022,7 @@ canRevokeOrder map units playerNumbers unitId model =
             in
             selectionAllowsRevoking
                 && (unit.id == unitId)
-                && isOwnUnit playerNumbers unit
+                && isOwnUnit ownPlayer unit
                 && (Unit.carrierId unit == Nothing)
                 && List.any (\order -> order.unitId == unitId) drafts.orders
 
@@ -1019,13 +1033,13 @@ canRevokeOrder map units playerNumbers unitId model =
 revokeSelectedOrder :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> Model
     -> InvariantCheck InvariantViolation Model
-revokeSelectedOrder map units playerNumbers model =
+revokeSelectedOrder map units ownPlayer model =
     case selectedUnit map units model of
         Just unit ->
-            if canRevokeOrder map units playerNumbers unit.id model then
+            if canRevokeOrder map units ownPlayer unit.id model then
                 let
                     saveOrders : List PlannedOrder -> Model
                     saveOrders retained =
@@ -1046,11 +1060,11 @@ revokeSelectedOrder map units playerNumbers model =
 saveDirection :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> Direction
     -> Model
     -> InvariantCheck InvariantViolation Model
-saveDirection map units playerNumbers direction model =
+saveDirection map units ownPlayer direction model =
     case selection model of
         Just (UnitSelection { id, interaction }) ->
             let
@@ -1078,7 +1092,7 @@ saveDirection map units playerNumbers direction model =
                                     let
                                         canSave : Bool
                                         canSave =
-                                            isOwnUnit playerNumbers unit
+                                            isOwnUnit ownPlayer unit
                                                 && not (PlannedTransport.receivingLoad units unit (orders model))
                                     in
                                     if canSave then
@@ -1102,14 +1116,14 @@ saveDirection map units playerNumbers direction model =
 selectUnit :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> UnitId
     -> Model
     -> InvariantCheck InvariantViolation Model
-selectUnit map units playerNumbers movementRules supplyCrates depots id model =
+selectUnit map units ownPlayer movementRules supplyCrates depots id model =
     case ListUtil.find (\unit -> unit.id == id) units of
         Nothing ->
             IC.happy model
@@ -1127,7 +1141,7 @@ selectUnit map units playerNumbers movementRules supplyCrates depots id model =
 
                 nextSelection : Selection
                 nextSelection =
-                    unitSelection map units playerNumbers unit model
+                    unitSelection map units ownPlayer unit model
 
                 reopeningOrders : Bool
                 reopeningOrders =
@@ -1141,7 +1155,7 @@ selectUnit map units playerNumbers movementRules supplyCrates depots id model =
                             selectTile
                                 map
                                 units
-                                playerNumbers
+                                ownPlayer
                                 movementRules
                                 supplyCrates
                                 depots
@@ -1157,14 +1171,14 @@ selectUnit map units playerNumbers movementRules supplyCrates depots id model =
                 IC.happy (setSelection (Just nextSelection) model)
 
 
-selectNextUnorderedUnit : Map -> List Unit -> List PlayerNumber -> Model -> Model
-selectNextUnorderedUnit map units playerNumbers model =
+selectNextUnorderedUnit : Map -> List Unit -> PlayerNumber -> Model -> Model
+selectNextUnorderedUnit map units ownPlayer model =
     case ( model, hasDialog model ) of
         ( OrdinaryPlanning _, False ) ->
             let
                 candidates : List Unit
                 candidates =
-                    missingOrders map units playerNumbers (orders model)
+                    missingOrders map units ownPlayer (orders model)
 
                 currentId : Maybe UnitId
                 currentId =
@@ -1194,7 +1208,7 @@ selectNextUnorderedUnit map units playerNumbers model =
             in
             case next of
                 Just unit ->
-                    setSelection (Just (unitSelection map units playerNumbers unit model)) model
+                    setSelection (Just (unitSelection map units ownPlayer unit model)) model
 
                 Nothing ->
                     model
@@ -1206,37 +1220,37 @@ selectNextUnorderedUnit map units playerNumbers model =
 selectTile :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> Coordinate
     -> Model
     -> InvariantCheck InvariantViolation Model
-selectTile map units playerNumbers movementRules supplyCrates depots position model =
+selectTile map units ownPlayer movementRules supplyCrates depots position model =
     if choosingIndirectFire model then
         saveIndirectFire map units position model
 
     else
-        selectTransportTile map units playerNumbers movementRules supplyCrates depots position model
+        selectTransportTile map units ownPlayer movementRules supplyCrates depots position model
 
 
 selectTransportTile :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> Coordinate
     -> Model
     -> InvariantCheck InvariantViolation Model
-selectTransportTile map units playerNumbers movementRules supplyCrates depots position model =
+selectTransportTile map units ownPlayer movementRules supplyCrates depots position model =
     if unloadPlanning model /= Nothing then
         chooseUnloadSquare
             map
             units
-            playerNumbers
+            ownPlayer
             movementRules
             supplyCrates
             depots
@@ -1247,7 +1261,7 @@ selectTransportTile map units playerNumbers movementRules supplyCrates depots po
         selectMovementTile
             map
             units
-            playerNumbers
+            ownPlayer
             movementRules
             supplyCrates
             depots
@@ -1258,12 +1272,12 @@ selectTransportTile map units playerNumbers movementRules supplyCrates depots po
 previewTile :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> Coordinate
     -> Model
     -> Model
-previewTile map units playerNumbers movementRules position model =
+previewTile map units ownPlayer movementRules position model =
     case selection model of
         Just (UnitSelection selected) ->
             case selected.interaction of
@@ -1275,7 +1289,7 @@ previewTile map units playerNumbers movementRules position model =
                     in
                     case selectedUnit map units model of
                         Just unit ->
-                            if isOwnUnit playerNumbers unit then
+                            if isOwnUnit ownPlayer unit then
                                 MovePlanning.previewTo map units movementRules unit position planning
                                     |> Maybe.map savePreview
                                     |> Maybe.withDefault model
@@ -1301,12 +1315,12 @@ previewTile map units playerNumbers movementRules position model =
 extendPath :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> Direction
     -> Model
     -> Model
-extendPath map units playerNumbers movementRules direction model =
+extendPath map units ownPlayer movementRules direction model =
     case ( selectedUnit map units model, movementPlanning model ) of
         ( Just unit, Just planning ) ->
             let
@@ -1314,7 +1328,7 @@ extendPath map units playerNumbers movementRules direction model =
                 savePreview updated =
                     setUnitInteraction unit.id (ChoosingMove updated) model
             in
-            if isOwnUnit playerNumbers unit then
+            if isOwnUnit ownPlayer unit then
                 MovePlanning.extendPath map units movementRules unit direction planning
                     |> Maybe.map savePreview
                     |> Maybe.withDefault model
@@ -1329,19 +1343,19 @@ extendPath map units playerNumbers movementRules direction model =
 confirmPath :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> Model
     -> InvariantCheck InvariantViolation Model
-confirmPath map units playerNumbers movementRules supplyCrates depots model =
+confirmPath map units ownPlayer movementRules supplyCrates depots model =
     case pathPreview model of
         Just preview ->
             selectMovementTile
                 map
                 units
-                playerNumbers
+                ownPlayer
                 movementRules
                 supplyCrates
                 depots
@@ -1488,9 +1502,9 @@ moveOptions model =
                 |> Maybe.withDefault []
 
 
-isOwnUnit : List PlayerNumber -> Unit -> Bool
-isOwnUnit playerNumbers unit =
-    List.member unit.playerNumber playerNumbers
+isOwnUnit : PlayerNumber -> Unit -> Bool
+isOwnUnit ownPlayer unit =
+    unit.playerNumber == ownPlayer
 
 
 selectedUnitFromSelection : List Unit -> Maybe Selection -> Maybe Unit
@@ -1511,14 +1525,12 @@ selectedUnitFromSelection units selected =
     id |> Maybe.andThen (\unitId -> ListUtil.find (\unit -> unit.id == unitId) units)
 
 
-missingOrders : Map -> List Unit -> List PlayerNumber -> List PlannedOrder -> List Unit
-missingOrders map units playerNumbers drafts =
+missingOrders : Map -> List Unit -> PlayerNumber -> List PlannedOrder -> List Unit
+missingOrders map units ownPlayer drafts =
     let
         missing : Unit -> Bool
         missing unit =
-            isOwnUnit
-                playerNumbers
-                unit
+            isOwnUnit ownPlayer unit
                 && Unit.onMap unit
                 && not (List.any (\order -> order.unitId == unit.id) drafts)
     in
@@ -1530,16 +1542,14 @@ missingOrders map units playerNumbers drafts =
 submissionOrders :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List PlannedOrder
     -> InvariantCheck InvariantViolation (List PlannedOrder)
-submissionOrders map units playerNumbers drafts =
+submissionOrders map units ownPlayer drafts =
     let
         missing : Unit -> Bool
         missing unit =
-            isOwnUnit
-                playerNumbers
-                unit
+            isOwnUnit ownPlayer unit
                 && not (List.any (\order -> order.unitId == unit.id) drafts)
 
         addHold :
@@ -1573,13 +1583,13 @@ submissionOrders map units playerNumbers drafts =
 confirmPassengers :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> Model
     -> InvariantCheck InvariantViolation Model
-confirmPassengers map units playerNumbers movementRules supplyCrates depots model =
+confirmPassengers map units ownPlayer movementRules supplyCrates depots model =
     case model of
         ChoosingPassengers choice ->
             let
@@ -1587,7 +1597,7 @@ confirmPassengers map units playerNumbers movementRules supplyCrates depots mode
                     UnloadPlanning
                     -> InvariantCheck InvariantViolation (List Movement.Option)
                 rawOptions =
-                    unloadOptions map units playerNumbers movementRules supplyCrates
+                    unloadOptions map units ownPlayer movementRules supplyCrates
 
                 confirmIfPossible : Bool -> InvariantCheck InvariantViolation Model
                 confirmIfPossible possible =
@@ -1642,19 +1652,19 @@ setDraftOrders value model =
 applyUnitOrder :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> UnitOrder.Order
     -> Unit
     -> Model
     -> InvariantCheck InvariantViolation Model
-applyUnitOrder map units playerNumbers movementRules supplyCrates depots order unit model =
+applyUnitOrder map units ownPlayer movementRules supplyCrates depots order unit model =
     let
         canApply : Bool
         canApply =
-            isOwnUnit playerNumbers unit
+            isOwnUnit ownPlayer unit
                 && not (PlannedTransport.receivingLoad units unit (orders model))
                 && List.member order (UnitOrder.available depots unit)
                 && UnitOrder.canUse map depots unit order
@@ -1753,13 +1763,13 @@ Crate unloading already owns freight handling and cannot combine with loading.
 offerCrateLoading :
     List Unit
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> PlannedOrder
     -> Drafts
     -> Model
 offerCrateLoading units supplyCrates depots order drafts =
     let
-        atDestination : Depot -> Bool
+        atDestination : Building -> Bool
         atDestination depot =
             depot.position == PlannedOrder.destination order
 
@@ -1775,7 +1785,7 @@ offerCrateLoading units supplyCrates depots order drafts =
         destinationDepot : Maybe LoadingSource
         destinationDepot =
             ListUtil.find atDestination depots
-                |> Maybe.andThen Depot.loadingSource
+                |> Maybe.andThen Building.loadingSource
 
         atGroundDestination : Supply.GroundCrate -> Bool
         atGroundDestination freight =
@@ -1810,7 +1820,7 @@ offerCrateLoading units supplyCrates depots order drafts =
 offerTruckLoading :
     List Unit
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> Unit
     -> Model
     -> InvariantCheck InvariantViolation Model
@@ -1828,7 +1838,7 @@ offerTruckLoading units supplyCrates depots unit model =
             IC.happy model
 
 
-applyUnloadStep : List Unit -> List Supply.GroundCrate -> List Depot -> UnloadPlanning.Step -> Model
+applyUnloadStep : List Unit -> List Supply.GroundCrate -> List Building -> UnloadPlanning.Step -> Model
 applyUnloadStep units supplyCrates depots step =
     case step of
         UnloadPlanning.ChoosingExit planning ->
@@ -1843,7 +1853,7 @@ applyUnloadStep units supplyCrates depots step =
                 (Just (Inspecting (UnitInspection (UnloadingTruck.unitId truck))))
 
 
-finishUnloading : List Unit -> List Supply.GroundCrate -> List Depot -> UnloadingTruck -> List PlannedOrder -> Maybe Selection -> Model
+finishUnloading : List Unit -> List Supply.GroundCrate -> List Building -> UnloadingTruck -> List PlannedOrder -> Maybe Selection -> Model
 finishUnloading units supplyCrates depots truck otherOrders selected =
     let
         order : PlannedOrder
@@ -1859,7 +1869,7 @@ finishUnloading units supplyCrates depots truck otherOrders selected =
         }
 
 
-skipUnloading : Map -> List Unit -> List Supply.GroundCrate -> List Depot -> Model -> InvariantCheck InvariantViolation Model
+skipUnloading : Map -> List Unit -> List Supply.GroundCrate -> List Building -> Model -> InvariantCheck InvariantViolation Model
 skipUnloading map units supplyCrates depots model =
     case model of
         ChoosingPassengers choice ->
@@ -1952,7 +1962,7 @@ openUnloadPrompt :
     List Unit
     -> List Movement.Rule
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> Unit
     -> Movement.Option
     -> Model
@@ -1973,7 +1983,7 @@ holdPosition :
     -> List Unit
     -> List Movement.Rule
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> Unit
     -> Model
     -> InvariantCheck InvariantViolation Model
@@ -2010,12 +2020,12 @@ holdPosition map units movementRules supplyCrates depots unit model =
 unloadOptions :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
     -> UnloadPlanning
     -> InvariantCheck InvariantViolation (List Movement.Option)
-unloadOptions map units playerNumbers movementRules supplyCrates planning =
+unloadOptions map units ownPlayer movementRules supplyCrates planning =
     let
         violation : UnloadPlanning.InvariantViolation -> InvariantViolation
         violation error =
@@ -2031,7 +2041,7 @@ unloadOptions map units playerNumbers movementRules supplyCrates planning =
     in
     UnloadPlanning.options map
         units
-        playerNumbers
+        ownPlayer
         movementRules
         supplyCrates
         (PlannedTransport.occupancy units)
@@ -2048,15 +2058,15 @@ selectedUnit map units model =
 traceTo :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> Coordinate
     -> Model
     -> Maybe Movement.Option
-traceTo map units playerNumbers movementRules position model =
+traceTo map units ownPlayer movementRules position model =
     case ( selectedUnit map units model, movementPlanning model ) of
         ( Just unit, Just planning ) ->
-            if isOwnUnit playerNumbers unit then
+            if isOwnUnit ownPlayer unit then
                 MovePlanning.traceTo map units movementRules unit position planning
 
             else
@@ -2109,20 +2119,20 @@ finishUnitOrder map units model =
 restoreOrderMenu :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> Model
     -> InvariantCheck InvariantViolation Model
-restoreOrderMenu map units playerNumbers model =
+restoreOrderMenu map units ownPlayer model =
     case selectedUnit map units model of
         Just unit ->
-            IC.happy (setSelection (Just (unitSelection map units playerNumbers unit model)) model)
+            IC.happy (setSelection (Just (unitSelection map units ownPlayer unit model)) model)
 
         Nothing ->
             missingSelectedUnit (selection model) model
 
 
-unitSelection : Map -> List Unit -> List PlayerNumber -> Unit -> Model -> Selection
-unitSelection map units playerNumbers original model =
+unitSelection : Map -> List Unit -> PlayerNumber -> Unit -> Model -> Selection
+unitSelection map units ownPlayer original model =
     let
         unit : Unit
         unit =
@@ -2134,7 +2144,7 @@ unitSelection map units playerNumbers original model =
 
         canChooseOrder : Bool
         canChooseOrder =
-            isOwnUnit playerNumbers unit
+            isOwnUnit ownPlayer unit
                 && Unit.onMap unit
                 && not (PlannedTransport.receivingLoad units unit (orders model))
                 && not hasOrder
@@ -2149,14 +2159,14 @@ unitSelection map units playerNumbers original model =
 selectMovementTile :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
-    -> List Depot
+    -> List Building
     -> Coordinate
     -> Model
     -> InvariantCheck InvariantViolation Model
-selectMovementTile map units playerNumbers movementRules supplyCrates depots position model =
+selectMovementTile map units ownPlayer movementRules supplyCrates depots position model =
     let
         notOwnUnit : () -> Model
         notOwnUnit _ =
@@ -2164,7 +2174,7 @@ selectMovementTile map units playerNumbers movementRules supplyCrates depots pos
     in
     case selectedUnit map units model of
         Just unit ->
-            if isOwnUnit playerNumbers unit && pathPreview model /= Nothing then
+            if isOwnUnit ownPlayer unit && pathPreview model /= Nothing then
                 let
                     destinationOption : Movement.Option -> Maybe Movement.Option
                     destinationOption preview =
@@ -2175,7 +2185,7 @@ selectMovementTile map units playerNumbers movementRules supplyCrates depots pos
                             Nothing
                 in
                 case
-                    traceTo map units playerNumbers movementRules position model
+                    traceTo map units ownPlayer movementRules position model
                         |> Maybe.andThen destinationOption
                 of
                     Just move ->

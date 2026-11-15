@@ -6,7 +6,7 @@ module Game.Assets exposing
 import Api.Enum.BuildingKind as BuildingKind
 import Api.Enum.MapTheme exposing (MapTheme)
 import Api.Enum.ResourceKind as ResourceKind
-import Game.Depot as Depot
+import Game.Building as Building
 import Game.Supply as Supply
 import Game.UnitOrder as Order
 import Game.View.CombatAttack as CombatAttack
@@ -30,8 +30,8 @@ imagePaths : MapTheme -> List String
 imagePaths theme =
     TerrainTile.imagePaths theme
         ++ UnitSprite.imagePaths
-        ++ List.map Depot.kindImage [ BuildingKind.Supply, BuildingKind.Fuel, BuildingKind.Fortress ]
-        ++ [ Depot.destroyedImage
+        ++ List.map Building.kindImage [ BuildingKind.Supply, BuildingKind.Fuel, BuildingKind.Fortress ]
+        ++ [ Building.destroyedImage
            , Supply.cargoImage ResourceKind.Supply
            , Supply.cargoImage ResourceKind.Fuel
            , UnitDeath.imagePath

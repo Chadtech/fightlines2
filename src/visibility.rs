@@ -2,16 +2,16 @@ use crate::{
     combat::CombatKind,
     map::{Coordinate, Map, Terrain},
     player_number::PlayerNumber,
-    scenario::{Depot, Direction, Scenario, Unit, UnitKind},
+    scenario::{Building, Direction, Scenario, Unit, UnitKind},
     supplies::GroundSupplyCrate,
     turns::{TurnFrame, TurnResolution, UnitDeparture},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Per-player depot condition and freight observations, advanced during resolution.
+/// Per-player building condition and freight observations, advanced during resolution.
 /// Memories are presentation data only; validation uses observed_scenario.
 pub struct PlayerObservation {
-    depot_damage: BTreeMap<Coordinate, i32>,
+    building_damage: BTreeMap<Coordinate, i32>,
     pub supply_crates: Vec<GroundSupplyCrate>,
     pub last_resolution: Option<TurnResolution>,
 }
@@ -20,14 +20,14 @@ impl PlayerObservation {
     pub fn new(scenario: &Scenario, player: PlayerNumber) -> Self {
         let visible = visible_tiles(scenario, player);
         let mut observation = Self {
-            depot_damage: scenario
-                .depots
+            building_damage: scenario
+                .buildings
                 .iter()
-                .map(|depot| {
+                .map(|building| {
                     (
-                        depot.position,
-                        if visible.contains(&depot.position) {
-                            depot.damage
+                        building.position,
+                        if visible.contains(&building.position) {
+                            building.damage
                         } else {
                             0
                         },
@@ -51,31 +51,35 @@ impl PlayerObservation {
         let mut projected = observed_resolution(scenario, player, &visible, resolution);
         for frame in &mut projected.frames {
             let sight = frame.visible_tiles.iter().copied().collect();
-            self.refresh_depots(&mut frame.depots, &sight);
+            self.refresh_buildings(&mut frame.buildings, &sight);
             self.refresh_crates(&frame.supply_crates, &sight);
             frame.supply_crates = self.supply_crates.clone();
         }
-        let mut depots = scenario.depots.clone();
-        self.refresh_depots(&mut depots, &visible);
+        let mut buildings = scenario.buildings.clone();
+        self.refresh_buildings(&mut buildings, &visible);
         self.refresh_crates(&scenario.supply_crates, &visible);
         self.last_resolution = Some(projected);
     }
 
     /// Current stock stays hidden in fog; only the last observed structural state persists.
-    fn refresh_depots(&mut self, depots: &mut [Depot], visible: &BTreeSet<Coordinate>) {
-        for depot in depots {
-            if visible.contains(&depot.position) {
-                self.depot_damage.insert(depot.position, depot.damage);
-            } else if let Some(damage) = self.depot_damage.get(&depot.position) {
-                depot.damage = *damage;
+    fn refresh_buildings(&mut self, buildings: &mut [Building], visible: &BTreeSet<Coordinate>) {
+        for building in buildings {
+            if visible.contains(&building.position) {
+                self.building_damage
+                    .insert(building.position, building.damage);
+            } else if let Some(damage) = self.building_damage.get(&building.position) {
+                building.damage = *damage;
             }
         }
     }
 
-    pub fn apply_depot_memory(&self, depots: &mut [Depot]) {
-        for depot in depots.iter_mut().filter(|depot| !depot.stock_visible) {
-            if let Some(damage) = self.depot_damage.get(&depot.position) {
-                depot.damage = *damage;
+    pub fn apply_building_memory(&self, buildings: &mut [Building]) {
+        for building in buildings
+            .iter_mut()
+            .filter(|building| !building.stock_visible)
+        {
+            if let Some(damage) = self.building_damage.get(&building.position) {
+                building.damage = *damage;
             }
         }
     }
@@ -232,10 +236,10 @@ pub fn observed_scenario(
             unit.conceal_resources();
         }
     }
-    for depot in &mut observed.depots {
-        depot.stock_visible = visible.contains(&depot.position);
-        if !depot.stock_visible {
-            depot.damage = 0;
+    for building in &mut observed.buildings {
+        building.stock_visible = visible.contains(&building.position);
+        if !building.stock_visible {
+            building.damage = 0;
         }
     }
     observed
@@ -338,7 +342,7 @@ fn observed_frames(
         .map(|frame| {
             let mut board = scenario.clone();
             board.units = frame.units.clone();
-            board.depots = frame.depots.clone();
+            board.buildings = frame.buildings.clone();
             board.supply_crates = frame.supply_crates.clone();
             let mut visible = visible_tiles(&board, player_number);
             // Keep the observed exchange visible when the volley kills an observer.
@@ -395,7 +399,7 @@ fn observed_frames(
                     .map(|impact| {
                         let mut projected = impact.clone();
                         if !visible.contains(&impact.destination) {
-                            projected.depot = None;
+                            projected.building = None;
                         }
                         // Known target health survives concealed-gun filtering.
                         // Hidden occupants, their health, and hidden casualties do not.
@@ -422,7 +426,7 @@ fn observed_frames(
                         projected
                     })
                     .collect(),
-                depots: observed.depots,
+                buildings: observed.buildings,
                 supply_crates: observed.supply_crates,
                 shots: frame
                     .shots
@@ -529,7 +533,7 @@ mod tests {
             departures: Vec::new(),
             indirect_impacts: Vec::new(),
             shots: Vec::new(),
-            depots: board.depots.clone(),
+            buildings: board.buildings.clone(),
             supply_crates: board.supply_crates.clone(),
             units: board.units.clone(),
             visible_tiles: Vec::new(),
@@ -553,9 +557,9 @@ mod tests {
     fn check_building_destruction_memory(kind: BuildingKind) -> TestResult<()> {
         let mut board = scenario(UnitKind::Infantry, "............")?;
         let position = Coordinate::new(7, 0);
-        board.depots = vec![Depot::new(kind, position)];
+        board.buildings = vec![Building::new(kind, position)];
         let mut observation = PlayerObservation::new(&board, PlayerNumber::Player1);
-        board.depots.first_mut().fixture()?.sabotage();
+        board.buildings.first_mut().fixture()?.sabotage();
         let resolution = |board: &Scenario| TurnResolution {
             turn_number: 1,
             reports: Vec::new(),
@@ -566,7 +570,7 @@ mod tests {
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
                 shots: Vec::new(),
-                depots: board.depots.clone(),
+                buildings: board.buildings.clone(),
                 supply_crates: Vec::new(),
                 units: board.units.clone(),
                 visible_tiles: Vec::new(),
@@ -582,7 +586,7 @@ mod tests {
             .first()
             .fixture()?;
         assert!(frame.sabotages.is_empty());
-        assert!(!frame.depots.first().fixture()?.is_destroyed());
+        assert!(!frame.buildings.first().fixture()?.is_destroyed());
         board.units.first_mut().fixture()?.move_to(position);
         observation.resolve(&board, PlayerNumber::Player1, &resolution(&board));
         let frame = observation
@@ -593,7 +597,7 @@ mod tests {
             .first()
             .fixture()?;
         assert_eq!(frame.sabotages, vec![position]);
-        assert!(frame.depots.first().fixture()?.is_destroyed());
+        assert!(frame.buildings.first().fixture()?.is_destroyed());
         board
             .units
             .first_mut()
@@ -608,12 +612,12 @@ mod tests {
             .first()
             .fixture()?;
         assert!(frame.sabotages.is_empty());
-        assert!(frame.depots.first().fixture()?.is_destroyed());
-        assert!(!frame.depots.first().fixture()?.stock_visible);
+        assert!(frame.buildings.first().fixture()?.is_destroyed());
+        assert!(!frame.buildings.first().fixture()?.stock_visible);
         let visible = visible_tiles(&board, PlayerNumber::Player1);
         let mut snapshot = observed_scenario(&board, PlayerNumber::Player1, &visible);
-        observation.apply_depot_memory(&mut snapshot.depots);
-        assert!(snapshot.depots.first().fixture()?.is_destroyed());
+        observation.apply_building_memory(&mut snapshot.buildings);
+        assert!(snapshot.buildings.first().fixture()?.is_destroyed());
         Ok(())
     }
 
@@ -643,7 +647,7 @@ mod tests {
                 sabotages: Vec::new(),
                 departures: Vec::new(),
                 units: board.units.clone(),
-                depots: board.depots.clone(),
+                buildings: board.buildings.clone(),
                 supply_crates: board.supply_crates.clone(),
                 visible_tiles: Vec::new(),
                 shots: Vec::new(),
@@ -726,7 +730,7 @@ mod tests {
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
                 units: board.units.clone(),
-                depots: board.depots.clone(),
+                buildings: board.buildings.clone(),
                 supply_crates: board.supply_crates.clone(),
                 shots: vec![],
                 visible_tiles: vec![],
@@ -841,7 +845,7 @@ mod tests {
                 sabotages: Vec::new(),
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
-                depots: board.depots.clone(),
+                buildings: board.buildings.clone(),
                 supply_crates: board.supply_crates.clone(),
                 shots: Vec::new(),
                 duration_ms: 0,
@@ -1315,7 +1319,7 @@ mod tests {
             departures: Vec::new(),
             indirect_impacts: Vec::new(),
             shots: Vec::new(),
-            depots: board.depots.clone(),
+            buildings: board.buildings.clone(),
             supply_crates: Vec::new(),
             units: board.units.clone(),
             visible_tiles: Vec::new(),

@@ -1,8 +1,10 @@
 module View.LoadingBar exposing
     ( styles
+    , sweep
     , toHtml
     )
 
+import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
@@ -20,15 +22,8 @@ toHtml active =
             if active then
                 [ H.div
                     [ A.css
-                        [ S.absolute
-                        , S.hFull
-                        , S.bgGray4
-                        , S.w40Pct
-                        , S.animation "fightlines-loading-sweep 1.8s linear infinite"
-                        , S.reducedMotion
-                            [ S.animationNone
-                            , S.left30Pct
-                            ]
+                        [ S.bgGray4
+                        , sweep
                         ]
                     ]
                     []
@@ -50,6 +45,20 @@ toHtml active =
             ]
         ]
         content
+
+
+sweep : Css.Style
+sweep =
+    S.batch
+        [ S.absolute
+        , S.inset0
+        , S.w40Pct
+        , S.animation "fightlines-loading-sweep 1.8s linear infinite"
+        , S.reducedMotion
+            [ S.animationNone
+            , S.left30Pct
+            ]
+        ]
 
 
 styles : Html msg

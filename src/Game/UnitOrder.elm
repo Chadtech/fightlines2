@@ -14,7 +14,7 @@ module Game.UnitOrder exposing
 
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.UnitKind as Kind
-import Game.Depot as Depot exposing (Depot)
+import Game.Building as Building exposing (Building)
 import Game.Map as Map exposing (Map)
 import Game.Terrain as Terrain
 import Game.Unit as Unit exposing (Unit)
@@ -43,7 +43,7 @@ all =
     [ Move, AttackMove, Ambush, HoldPosition, IndirectFire, StandGround, DigIn, Sabotage ]
 
 
-enabledOptions : Map -> List Depot -> Unit -> List MenuOption
+enabledOptions : Map -> List Building -> Unit -> List MenuOption
 enabledOptions map depots unit =
     let
         orders : List MenuOption
@@ -55,7 +55,7 @@ enabledOptions map depots unit =
     orders ++ [ CancelOption ]
 
 
-available : List Depot -> Unit -> List Order
+available : List Building -> Unit -> List Order
 available depots unit =
     if Unit.carrierId unit /= Nothing then
         []
@@ -188,7 +188,7 @@ assetName order =
             "ambush"
 
 
-canUse : Map -> List Depot -> Unit -> Order -> Bool
+canUse : Map -> List Building -> Unit -> Order -> Bool
 canUse map depots unit order =
     if order == Sabotage then
         let
@@ -287,14 +287,14 @@ canUse map depots unit order =
         isImplemented order
 
 
-sabotageOrders : List Depot -> Unit -> List Order
+sabotageOrders : List Building -> Unit -> List Order
 sabotageOrders depots unit =
     case unit.location of
         Location.OnMap position ->
             let
-                survivingDepot : Depot -> Bool
+                survivingDepot : Building -> Bool
                 survivingDepot depot =
-                    (depot.position == position) && not (Depot.isDestroyed depot)
+                    (depot.position == position) && not (Building.isDestroyed depot)
 
                 eligible : Bool
                 eligible =

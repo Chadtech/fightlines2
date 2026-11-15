@@ -2,7 +2,7 @@
 //! stable across processes; bump the render version when shared artwork changes.
 use crate::{
     map::MapTheme,
-    map_definition::{DepotPlacement, MapDefinition, TerrainPlacement, UnitPlacement},
+    map_definition::{BuildingPlacement, MapDefinition, TerrainPlacement, UnitPlacement},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::Serialize;
@@ -22,7 +22,8 @@ pub fn url(definition: &MapDefinition) -> Result<String, serde_json::Error> {
         height: u16,
         theme: MapTheme,
         features: &'a [TerrainPlacement],
-        depots: &'a [DepotPlacement],
+        #[serde(rename = "depots")]
+        buildings: &'a [BuildingPlacement],
         units: &'a [UnitPlacement],
     }
     let content = Content {
@@ -31,7 +32,7 @@ pub fn url(definition: &MapDefinition) -> Result<String, serde_json::Error> {
         height: definition.height,
         theme: definition.theme,
         features: &definition.features,
-        depots: &definition.depots,
+        buildings: &definition.buildings,
         units: &definition.units,
     };
     let hash = serde_json::to_vec(&content)?
@@ -98,7 +99,7 @@ mod tests {
             height: 1,
             theme: MapTheme::GreenForest,
             features: vec![],
-            depots: vec![],
+            buildings: vec![],
             units: vec![],
         }
     }
@@ -107,7 +108,7 @@ mod tests {
     fn fingerprint_is_stable_and_changes_with_saved_content() -> TestResult<()> {
         let original = definition();
         let original_url = url(&original)?;
-        assert!(original_url.starts_with("map-thumbnails/"));
+        assert_eq!(original_url, "map-thumbnails/v1-22c7a1cb680dd606.png");
         assert_eq!(original_url, url(&original)?);
         let mut changed = original.clone();
         changed.release_status = crate::map_definition::MapReleaseStatus::Released;

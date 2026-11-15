@@ -32,7 +32,9 @@ pub struct MapDefinition {
     pub height: u16,
     pub theme: MapTheme,
     pub features: Vec<TerrainPlacement>,
-    pub depots: Vec<DepotPlacement>,
+    // Keep the on-disk map key for compatibility with existing releases.
+    #[serde(rename = "depots")]
+    pub buildings: Vec<BuildingPlacement>,
     pub units: Vec<UnitPlacement>,
 }
 
@@ -45,7 +47,7 @@ pub struct TerrainPlacement {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DepotPlacement {
+pub struct BuildingPlacement {
     pub position: Coordinate,
     pub kind: BuildingKind,
 }
@@ -103,8 +105,8 @@ impl MapDefinition {
     fn features(&self) -> &[TerrainPlacement] {
         &self.features
     }
-    fn depots(&self) -> &[DepotPlacement] {
-        &self.depots
+    fn buildings(&self) -> &[BuildingPlacement] {
+        &self.buildings
     }
     fn units(&self) -> &[UnitPlacement] {
         &self.units
@@ -121,7 +123,7 @@ impl TerrainPlacement {
     }
 }
 #[graphql_object(context = Context)]
-impl DepotPlacement {
+impl BuildingPlacement {
     fn position(&self) -> Coordinate {
         self.position
     }
@@ -166,13 +168,13 @@ impl MapDefinition {
         }
         let map =
             Map::new(self.width, self.height, Terrain::Plain, features)?.with_theme(self.theme);
-        let mut depot_positions = BTreeSet::new();
-        for depot in &self.depots {
-            if !map.contains(depot.position) {
-                return Err(MapError::PositionOutOfBounds(depot.position));
+        let mut building_positions = BTreeSet::new();
+        for building in &self.buildings {
+            if !map.contains(building.position) {
+                return Err(MapError::PositionOutOfBounds(building.position));
             }
-            if !depot_positions.insert(depot.position) {
-                return Err(invalid("two depots cannot share a tile"));
+            if !building_positions.insert(building.position) {
+                return Err(invalid("two buildings cannot share a tile"));
             }
         }
         if self.units.len() > 256 {
@@ -246,7 +248,7 @@ mod tests {
             .fixture()?
             .scenario()
             .fixture()?;
-        let fortress = scenario.depots.first().fixture()?;
+        let fortress = scenario.buildings.first().fixture()?;
         assert_eq!(fortress.kind, BuildingKind::Fortress);
         assert_eq!(fortress.hit_points().current, 8);
         assert_eq!(fortress.hit_points().maximum, 8);
@@ -263,7 +265,7 @@ mod tests {
         );
         // Building positions share the existing occupancy validation.
         let mut overlapping = definition;
-        overlapping.depots.push(DepotPlacement {
+        overlapping.buildings.push(BuildingPlacement {
             position: Coordinate::new(1, 0),
             kind: BuildingKind::Supply,
         });
@@ -359,7 +361,7 @@ mod tests {
             .retain(|unit| unit.player_number == PlayerNumber::Player1);
         assert!(draft.scenario().is_err());
         let mut draft = original.clone();
-        draft.depots.first_mut().fixture()?.position = Coordinate::new(64, 64);
+        draft.buildings.first_mut().fixture()?.position = Coordinate::new(64, 64);
         assert!(draft.scenario().is_err());
         let mut draft = original;
         let unit = draft.units.first_mut().fixture()?;

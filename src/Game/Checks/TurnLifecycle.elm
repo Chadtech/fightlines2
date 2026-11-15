@@ -3,9 +3,9 @@ port module Game.Checks.TurnLifecycle exposing (main)
 import Api.Enum.BuildingKind as BuildingKind
 import Api.Enum.InactivityRenewalReason exposing (InactivityRenewalReason)
 import Api.Enum.PlayerNumber as PlayerNumber
+import Game.Building exposing (Building)
 import Game.Coordinate as Coordinate
 import Game.CurrentTurn as CurrentTurn
-import Game.Depot exposing (Depot)
 import Game.DestinationFeedback exposing (DestinationFeedback(..))
 import Game.Inactivity as Inactivity exposing (Inactivity)
 import Game.Inspection as Inspection exposing (Inspection(..))
@@ -75,7 +75,7 @@ main =
 combatEnterChecks : List String
 combatEnterChecks =
     let
-        building : Int -> Depot
+        building : Int -> Building
         building x =
             { kind = BuildingKind.Fortress
             , position = { x = x, y = 1 }

@@ -30,10 +30,10 @@ import Css
 import Game.AnimationFrame as AnimationFrame
 import Game.ArmyStyle exposing (ArmyStyle)
 import Game.BattlefieldNavigation as Navigation exposing (TouchInput)
+import Game.Building as Building exposing (Building)
 import Game.Camera as Camera exposing (Camera)
 import Game.CombatRules exposing (CombatRules)
 import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.Depot as Depot exposing (Depot)
 import Game.Direction as Direction
 import Game.Map as Map exposing (Map)
 import Game.Movement as Movement
@@ -692,11 +692,11 @@ savedCoverage dimensions units orders =
 type alias Args =
     { map : Map
     , units : List Unit
-    , depots : List Depot
+    , buildings : List Building
     , supplyCrates : List Supply.GroundCrate
     , visibleTiles : List Coordinate
     , frame : AnimationFrame.Frame
-    , armyStyle : Maybe { style : ArmyStyle, players : List PlayerNumber }
+    , armyStyle : Maybe { style : ArmyStyle, player : PlayerNumber }
     , selected : Maybe Coordinate
     , selectedUnitId : Maybe UnitId
     , facingUnits : List UnitId
@@ -850,11 +850,11 @@ toSvg args =
                 (Set.member (Coordinate.key crate.position) visiblePositions)
                 crate
 
-        depotView : Depot -> Svg Msg
+        depotView : Building -> Svg Msg
         depotView depot =
             SvgLazy.lazy2 boardDepot (terrainFilter depot.position) depot
 
-        depotStockView : Depot -> Maybe (Svg Msg)
+        depotStockView : Building -> Maybe (Svg Msg)
         depotStockView depot =
             let
                 stockView : Supply.Stock -> Svg Msg
@@ -1050,7 +1050,7 @@ toSvg args =
                 armyStyle =
                     case args.armyStyle of
                         Just army ->
-                            if List.member unit.playerNumber army.players then
+                            if unit.playerNumber == army.player then
                                 Just army.style
 
                             else
@@ -1282,7 +1282,7 @@ toSvg args =
         (List.concat
             [ [ orderedUnitFilter, terrain ]
             , [ interactionTileTargets args.map boardInteraction ]
-            , List.map depotView args.depots
+            , List.map depotView args.buildings
             , List.map crateView args.supplyCrates
             , [ SvgLazy.lazy2 fogShading args.map args.visibleTiles
               , interactionMovement args.map paths boardInteraction
@@ -1300,7 +1300,7 @@ toSvg args =
             , selection
             , rotationOverlay
             , facingOverlay
-            , List.filterMap depotStockView args.depots
+            , List.filterMap depotStockView args.buildings
             , [ indirectFireOverlay ]
             , targetPreview
             , spotlightOverlay
@@ -1396,13 +1396,13 @@ boardCrate filter visible crate =
         ]
 
 
-boardDepot : String -> Depot -> Svg Msg
+boardDepot : String -> Building -> Svg Msg
 boardDepot filter depot =
     at depot.position
         [ Svg.image
             [ SA.width "16"
             , SA.height "16"
-            , SA.xlinkHref (Depot.image depot)
+            , SA.xlinkHref (Building.image depot)
             , HA.style "filter" filter
             , SA.pointerEvents "none"
             , Aria.svgHidden True
@@ -1414,7 +1414,7 @@ boardDepot filter depot =
             , SA.fill "transparent"
             , HA.attribute "tabindex" "0"
             , Aria.svgRole Aria.Button
-            , Aria.svgLabel (Depot.label depot)
+            , Aria.svgLabel (Building.label depot)
             , Ev.onMouseOver (MouseOverDepot depot.position)
             , Ev.on "focus" (Decode.succeed (FocusedBoardTile depot.position))
             , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
@@ -1426,7 +1426,7 @@ boardDepot filter depot =
             ]
             [ Svg.title
                 []
-                [ Svg.text (Depot.label depot)
+                [ Svg.text (Building.label depot)
                 ]
             ]
         ]

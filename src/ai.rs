@@ -149,7 +149,7 @@ fn resource_target(scenario: &Scenario, unit: &Unit, origin: Coordinate) -> Opti
         return None;
     };
     scenario
-        .depots
+        .buildings
         .iter()
         // Unknown stock is not knowledge of an empty or full source.
         .filter(|depot| {
@@ -167,7 +167,7 @@ fn objective(scenario: &Scenario, origin: Coordinate) -> Coordinate {
         (scenario.map.height() / 2) as u16,
     );
     scenario
-        .depots
+        .buildings
         .iter()
         .filter(|depot| {
             !depot.is_destroyed() && depot.kind.resource_kind() == Some(ResourceKind::Supply)
@@ -329,7 +329,7 @@ mod tests {
         ] {
             let mut scenario = Scenario::supply_point().fixture()?;
             scenario.map = Map::from_ascii(".~.").fixture()?;
-            scenario.depots.clear();
+            scenario.buildings.clear();
             scenario.units.retain(|unit| unit.kind() == kind);
             for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
                 let mut retained = false;
@@ -417,7 +417,7 @@ mod tests {
                 .retain(|unit| unit.unit_id() == attacker || unit.unit_id() == defender);
             scenario.map =
                 crate::map::Map::from_ascii("........\n........\n........\n........").fixture()?;
-            scenario.depots.clear();
+            scenario.buildings.clear();
             for unit in &mut scenario.units {
                 let position = if unit.unit_id() == attacker {
                     Coordinate::new(2, 2)

@@ -44,7 +44,7 @@ definition positions =
     , theme = MapTheme.GreenForest
     , features = List.map (\position -> { position = position, terrain = Terrain.Road Road.NorthSouth }) positions
     , units = []
-    , depots = []
+    , buildings = []
     }
 
 

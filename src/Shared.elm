@@ -40,6 +40,7 @@ import Game.PlayerNumber as PlayerNumber
 import Game.TurnPlayback as TurnPlayback
 import Game.UnitId as UnitId
 import Game.UnitKind as UnitKind
+import Game.UnitOrder as UnitOrder
 import Json.Decode as Decode
 import KeyCmd exposing (KeyCmd)
 import LocalStorage exposing (LocalStorage)
@@ -324,6 +325,9 @@ planningErrorDetails violation =
     case violation of
         OrderPlanning.PlanningUnitNotFound unitId ->
             "planning unit not found: " ++ UnitId.toString unitId
+
+        OrderPlanning.OrderPickedWithoutActiveMenu order ->
+            "order picked without an active order menu: " ++ UnitOrder.label order
 
         OrderPlanning.OrderUnitHasNoPosition unitId ->
             "order unit has no position: " ++ UnitId.toString unitId

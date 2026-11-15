@@ -17,7 +17,6 @@ import Html.Styled.Attributes as A
 import Style as S
 import View.Aria as Aria
 import View.Button as Button
-import View.LoadingBar as LoadingBar
 
 
 type Activity
@@ -122,8 +121,7 @@ submitButton activity label =
                 |> Button.attention
 
         Waiting ->
-            Button.disabled label
-                |> Button.highlighted
+            Button.waiting label
 
         _ ->
             Button.disabled label
@@ -145,25 +143,9 @@ headerSurrender state =
 
 submit : Activity -> String -> Html Msg
 submit activity label =
-    let
-        button : Html Msg
-        button =
-            submitButton activity label
-                |> Button.fullWidth
-                |> Button.toHtml
-
-        loading : List (Html Msg)
-        loading =
-            if activity == Waiting then
-                [ LoadingBar.toHtml True ]
-
-            else
-                []
-    in
     H.div
         [ A.css
             [ S.col
-            , S.g1
             , S.shrink0
             , S.w32
             , S.compactViewport
@@ -172,7 +154,10 @@ submit activity label =
                 ]
             ]
         ]
-        (button :: loading)
+        [ submitButton activity label
+            |> Button.fullWidth
+            |> Button.toHtml
+        ]
 
 
 surrenderButton :

@@ -76,7 +76,7 @@ prototype; do not update it unless the task explicitly requires that.
   OrderPlanning.selectUnit
       map
       units
-      playerNumbers
+      ownPlayer
       movementRules
       supplyCrates
       depots

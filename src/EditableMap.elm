@@ -1,6 +1,6 @@
 module EditableMap exposing
-    ( Definition
-    , DepotPlacement
+    ( BuildingPlacement
+    , Definition
     , NamedMap
     , SaveMode(..)
     , UnitPlacement
@@ -9,7 +9,7 @@ module EditableMap exposing
     , namedSelection
     , reconnectRoads
     , saveMutation
-    , setDepots
+    , setBuildings
     , setFeatures
     , setUnits
     )
@@ -23,7 +23,7 @@ import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Api.InputObject as Input
 import Api.Mutation as Mutation
 import Api.Object
-import Api.Object.DepotPlacement as DepotApi
+import Api.Object.BuildingPlacement as BuildingApi
 import Api.Object.MapDefinition as DefinitionApi
 import Api.Object.NamedMap as NamedApi
 import Api.Object.TerrainPlacement as TerrainApi
@@ -49,12 +49,12 @@ type alias Definition =
     , height : Int
     , theme : MapTheme
     , features : List TerrainFeature
-    , depots : List DepotPlacement
+    , buildings : List BuildingPlacement
     , units : List UnitPlacement
     }
 
 
-type alias DepotPlacement =
+type alias BuildingPlacement =
     { position : Coordinate
     , kind : BuildingKind
     }
@@ -91,9 +91,9 @@ setUnits units model =
     { model | units = units }
 
 
-setDepots : List DepotPlacement -> Definition -> Definition
-setDepots depots model =
-    { model | depots = depots }
+setBuildings : List BuildingPlacement -> Definition -> Definition
+setBuildings buildings model =
+    { model | buildings = buildings }
 
 
 map : Definition -> Map
@@ -171,7 +171,7 @@ definitionSelection =
         |> SS.with DefinitionApi.height
         |> SS.with DefinitionApi.theme
         |> SS.with (DefinitionApi.features terrainSelection)
-        |> SS.with (DefinitionApi.depots depotSelection)
+        |> SS.with (DefinitionApi.buildings buildingSelection)
         |> SS.with (DefinitionApi.units unitSelection)
 
 
@@ -182,11 +182,11 @@ terrainSelection =
         |> SS.with (SS.map Terrain.fromApi TerrainApi.terrain)
 
 
-depotSelection : SelectionSet DepotPlacement Api.Object.DepotPlacement
-depotSelection =
-    SS.succeed DepotPlacement
-        |> SS.with (DepotApi.position Coordinate.selection)
-        |> SS.with DepotApi.kind
+buildingSelection : SelectionSet BuildingPlacement Api.Object.BuildingPlacement
+buildingSelection =
+    SS.succeed BuildingPlacement
+        |> SS.with (BuildingApi.position Coordinate.selection)
+        |> SS.with BuildingApi.kind
 
 
 unitSelection : SelectionSet UnitPlacement Api.Object.UnitPlacement
@@ -245,7 +245,7 @@ definitionInput definition =
         , height = definition.height
         , theme = definition.theme
         , features = List.map terrainInput definition.features
-        , depots = List.map depotInput definition.depots
+        , buildings = List.map buildingInput definition.buildings
         , units = List.map unitInput definition.units
         }
         optionalFields
@@ -259,11 +259,11 @@ terrainInput feature =
         }
 
 
-depotInput : DepotPlacement -> Input.DepotPlacementInput
-depotInput depot =
-    Input.buildDepotPlacementInput
-        { position = positionInput depot.position
-        , kind = depot.kind
+buildingInput : BuildingPlacement -> Input.BuildingPlacementInput
+buildingInput building =
+    Input.buildBuildingPlacementInput
+        { position = positionInput building.position
+        , kind = building.kind
         }
 
 

@@ -1172,7 +1172,7 @@ mod tests {
         let request = test::TestRequest::post()
             .uri("/graphql")
             .peer_addr("192.0.2.1:1234".parse()?)
-            .set_json(json!({"query": "{ mapPreviews { mapType definition { description width height theme features { position { x y } terrain } depots { position { x y } kind } units { id position { x y } playerNumber kind direction } } } }"}))
+            .set_json(json!({"query": "{ mapPreviews { mapType definition { description width height theme features { position { x y } terrain } buildings { position { x y } kind } units { id position { x y } playerNumber kind direction } } } }"}))
             .to_request();
         let body: Value = test::call_and_read_body_json(&app, request).await;
         assert!(body.get("errors").is_none(), "{body}");
@@ -1193,8 +1193,11 @@ mod tests {
                 definition.features.len()
             );
             assert_eq!(
-                preview["definition"]["depots"].as_array().fixture()?.len(),
-                definition.depots.len()
+                preview["definition"]["buildings"]
+                    .as_array()
+                    .fixture()?
+                    .len(),
+                definition.buildings.len()
             );
             assert_eq!(
                 preview["definition"]["units"].as_array().fixture()?.len(),
@@ -2086,7 +2089,7 @@ mod tests {
 
     #[actix_web::test]
     async fn development_game_is_opt_in_and_does_not_replace_identity() -> TestResult<()> {
-        let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { playerNumber isYou } movementRules { kind budget terrainCosts { terrain cost } } visibleTiles { x y } scenario { units { id playerNumber } depots { position { x y } } } } }";
+        let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { playerNumber isYou } movementRules { kind budget terrainCosts { terrain cost } } visibleTiles { x y } scenario { units { id playerNumber } buildings { position { x y } } } } }";
         for development in [false, true] {
             let seed = crate::seed::Seed::new([7; 32]);
             let store = if development {
@@ -2133,7 +2136,7 @@ mod tests {
                             .all(|unit| unit["playerNumber"] == "PLAYER1")
                     );
                     assert!(!game["visibleTiles"].as_array().fixture()?.is_empty());
-                    assert_eq!(game["scenario"]["depots"].as_array().fixture()?.len(), 3);
+                    assert_eq!(game["scenario"]["buildings"].as_array().fixture()?.len(), 3);
                 } else {
                     assert!(body["errors"].is_array());
                 }
@@ -2336,7 +2339,7 @@ mod tests {
                 .contains("already started")
         );
         let game = format!(
-            "{{ game(id: \"{id}\") {{ {FIELDS} visibleTiles {{ x y }} players {{ playerNumber isYou }} scenario {{ map {{ width height baseTile theme features {{ position {{ x y }} terrain }} }} depots {{ position {{ x y }} }} units {{ id playerNumber kind location {{ __typename ... on OnMap {{ position {{ x y }} }} ... on Aboard {{ carrierId }} }} }} }} }} }}"
+            "{{ game(id: \"{id}\") {{ {FIELDS} visibleTiles {{ x y }} players {{ playerNumber isYou }} scenario {{ map {{ width height baseTile theme features {{ position {{ x y }} terrain }} }} buildings {{ position {{ x y }} }} units {{ id playerNumber kind location {{ __typename ... on OnMap {{ position {{ x y }} }} ... on Aboard {{ carrierId }} }} }} }} }} }}"
         );
         let (member, _) = execute!(&game, Some(guest.clone()));
         assert_eq!(member["data"]["game"]["name"], "Friday Night");
@@ -2360,8 +2363,8 @@ mod tests {
             definition.features.len()
         );
         assert_eq!(
-            scenario["depots"].as_array().fixture()?.len(),
-            definition.depots.len()
+            scenario["buildings"].as_array().fixture()?.len(),
+            definition.buildings.len()
         );
         assert!(scenario["units"].as_array().fixture()?.iter().all(|unit| {
             unit["location"]["__typename"] == "OnMap"

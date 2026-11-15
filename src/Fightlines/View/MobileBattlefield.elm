@@ -136,7 +136,7 @@ topBar controls =
         [ Aria.label "turn actions"
         , A.css
             [ S.grid
-            , S.gridColumns "minmax(0, 1fr) minmax(0, 21rem) minmax(0, 1fr)"
+            , S.gridColumns "minmax(0, 1fr) minmax(0, clamp(21rem, calc(100vw - 13rem), 34rem)) minmax(0, 1fr)"
             , S.itemsCenter
             , S.g2
             , S.p1

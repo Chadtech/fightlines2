@@ -62,7 +62,7 @@ fn frame(board: &Scenario, duration_ms: i32) -> TurnFrame {
         sabotages: Vec::new(),
         departures: Vec::new(),
         indirect_impacts: Vec::new(),
-        depots: board.depots.clone(),
+        buildings: board.buildings.clone(),
         supply_crates: board.supply_crates.clone(),
         shots: Vec::new(),
         units: board.units.clone(),

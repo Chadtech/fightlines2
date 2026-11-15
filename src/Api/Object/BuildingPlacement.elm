@@ -2,7 +2,7 @@
 -- https://github.com/dillonkearns/elm-graphql
 
 
-module Api.Object.DepotPlacement exposing (..)
+module Api.Object.BuildingPlacement exposing (..)
 
 import Api.Enum.BuildingKind
 import Api.InputObject
@@ -22,11 +22,11 @@ import Json.Decode as Decode
 
 position :
     SelectionSet decodesTo Api.Object.Coordinate
-    -> SelectionSet decodesTo Api.Object.DepotPlacement
+    -> SelectionSet decodesTo Api.Object.BuildingPlacement
 position object____ =
     Object.selectionForCompositeField "position" [] object____ Basics.identity
 
 
-kind : SelectionSet Api.Enum.BuildingKind.BuildingKind Api.Object.DepotPlacement
+kind : SelectionSet Api.Enum.BuildingKind.BuildingKind Api.Object.BuildingPlacement
 kind =
     Object.selectionForField "Enum.BuildingKind.BuildingKind" "kind" [] Api.Enum.BuildingKind.decoder

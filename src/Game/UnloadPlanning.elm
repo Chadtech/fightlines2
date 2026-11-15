@@ -207,13 +207,13 @@ availableOptions rawOptions planning =
 options :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
     -> (Unit -> List PlannedOrder -> Occupancy)
     -> UnloadPlanning
     -> InvariantCheck InvariantViolation (List Movement.Option)
-options map units playerNumbers movementRules supplyCrates occupancy planning =
+options map units ownPlayer movementRules supplyCrates occupancy planning =
     let
         truckId : UnitId
         truckId =
@@ -265,7 +265,7 @@ options map units playerNumbers movementRules supplyCrates occupancy planning =
                     IC.violated (PassengerNotFound passengerId) []
 
         UnloadCargo.Crate _ ->
-            IC.happy (crateExitOptions map units playerNumbers supplyCrates planning drafts)
+            IC.happy (crateExitOptions map units ownPlayer supplyCrates planning drafts)
 
 
 
@@ -358,12 +358,12 @@ canComplete rawOptions step =
 crateExitOptions :
     Map
     -> List Unit
-    -> List PlayerNumber
+    -> PlayerNumber
     -> List Supply.GroundCrate
     -> UnloadPlanning
     -> List PlannedOrder
     -> List Movement.Option
-crateExitOptions map units playerNumbers supplyCrates planning plans =
+crateExitOptions map units ownPlayer supplyCrates planning plans =
     let
         origin : Coordinate
         origin =
@@ -385,7 +385,7 @@ crateExitOptions map units playerNumbers supplyCrates planning plans =
 
                 blocksExit : Unit -> Bool
                 blocksExit unit =
-                    not (List.member unit.playerNumber playerNumbers) && Unit.mapPosition unit == Just exit
+                    (unit.playerNumber /= ownPlayer) && Unit.mapPosition unit == Just exit
 
                 hasUnit : Bool
                 hasUnit =
