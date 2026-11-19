@@ -1672,7 +1672,26 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn ai_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
+    async fn ai_easy_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
+        assert_ai_lobby_authorization_and_turns("AI").await
+    }
+
+    #[actix_web::test]
+    async fn ai_medium_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
+        assert_ai_lobby_authorization_and_turns("AI_MEDIUM").await
+    }
+
+    #[actix_web::test]
+    async fn ai_hard_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
+        assert_ai_lobby_authorization_and_turns("AI_HARD").await
+    }
+
+    #[actix_web::test]
+    async fn ai_very_hard_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
+        assert_ai_lobby_authorization_and_turns("AI_VERY_HARD").await
+    }
+
+    async fn assert_ai_lobby_authorization_and_turns(controller: &str) -> TestResult<()> {
         let endpoint = web::Data::new(endpoint(Environment::Development));
         let app = test::init_service(
             App::new()
@@ -1698,7 +1717,7 @@ mod tests {
         );
         let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
         let ai = format!(
-            "mutation {{ setLobbyController(id: \"{id}\", controller: AI) {{ players {{ name isAi }} isMember }} }}"
+            "mutation {{ setLobbyController(id: \"{id}\", controller: {controller}) {{ players {{ name isAi }} isMember }} }}"
         );
         let (denied, _) = execute!(&ai, None);
         assert!(denied["errors"].is_array());
@@ -1710,7 +1729,7 @@ mod tests {
         );
         let (updated, _) = execute!(
             format!(
-                "mutation {{ setLobbyController(id: \"{id}\", controller: AI) {{ players {{ controller isAi }} }} }}"
+                "mutation {{ setLobbyController(id: \"{id}\", controller: {controller}) {{ players {{ controller isAi }} }} }}"
             ),
             host.clone()
         );
@@ -1721,7 +1740,7 @@ mod tests {
         );
         assert_eq!(
             updated["data"]["setLobbyController"]["players"][1]["controller"],
-            "AI"
+            controller
         );
         let (public, _) = execute!(
             format!("{{ lobby(id: \"{id}\") {{ isMember isHost }} }}"),
@@ -1756,7 +1775,7 @@ mod tests {
         );
         let (game, _) = execute!(&game_query, host.clone());
         assert_eq!(game["data"]["game"]["players"][1]["isAi"], true);
-        assert_eq!(game["data"]["game"]["players"][1]["controller"], "AI");
+        assert_eq!(game["data"]["game"]["players"][1]["controller"], controller);
         assert_eq!(game["data"]["game"]["players"][1]["isYou"], false);
         for number in 1..=3 {
             let (game, _) = execute!(&game_query, host.clone());
@@ -1833,7 +1852,7 @@ mod tests {
         );
         assert!(joined.get("errors").is_none());
         let change = format!(
-            "mutation {{ setLobbyController(id: \"{other_id}\", controller: AI) {{ id }} }}"
+            "mutation {{ setLobbyController(id: \"{other_id}\", controller: {controller}) {{ id }} }}"
         );
         for cookie in [host, guest] {
             let (denied, _) = execute!(&change, cookie);

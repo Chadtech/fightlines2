@@ -10,9 +10,9 @@ import Time
 
 current : String
 current =
-    "30"
+    "31"
 
 
 releasedAt : Time.Posix
 releasedAt =
-    Time.millisToPosix 1794783250000
+    Time.millisToPosix 1795067666000

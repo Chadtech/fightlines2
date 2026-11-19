@@ -12,11 +12,14 @@ import Json.Decode as Decode exposing (Decoder)
 type Controller
     = Human
     | Ai
+    | AiMedium
+    | AiHard
+    | AiVeryHard
 
 
 list : List Controller
 list =
-    [ Human, Ai ]
+    [ Human, Ai, AiMedium, AiHard, AiVeryHard ]
 
 
 decoder : Decoder Controller
@@ -30,6 +33,15 @@ decoder =
 
                     "AI" ->
                         Decode.succeed Ai
+
+                    "AI_MEDIUM" ->
+                        Decode.succeed AiMedium
+
+                    "AI_HARD" ->
+                        Decode.succeed AiHard
+
+                    "AI_VERY_HARD" ->
+                        Decode.succeed AiVeryHard
 
                     _ ->
                         Decode.fail ("Invalid Controller type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -46,6 +58,15 @@ toString enum____ =
 
         Ai ->
             "AI"
+
+        AiMedium ->
+            "AI_MEDIUM"
+
+        AiHard ->
+            "AI_HARD"
+
+        AiVeryHard ->
+            "AI_VERY_HARD"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -67,6 +88,15 @@ fromString enumString____ =
 
         "AI" ->
             Just Ai
+
+        "AI_MEDIUM" ->
+            Just AiMedium
+
+        "AI_HARD" ->
+            Just AiHard
+
+        "AI_VERY_HARD" ->
+            Just AiVeryHard
 
         _ ->
             Nothing

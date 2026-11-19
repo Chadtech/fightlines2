@@ -102,12 +102,19 @@ the right card; the cards stack on narrow screens. Each player can choose
 **your side**: **player 1 (red)** or **player 2 (blue)**. Choosing the other side
 swaps assignments with the opponent, including an AI. Hosting permissions stay
 with the host, and sides lock when the game starts.
-For a solo game, set the other side’s dropdown to **ai**, then choose **Start game**.
+For a solo game, select **ai easy**, **ai medium**, **ai hard**, or **ai very hard**
+in the other side’s dropdown, then choose **start game**.
+Medium runs Break Contact, Hard runs Screened Battery, and Very Hard runs
+Find the Blind Side.
 The AI controls the other side and responds automatically when you submit a turn.
 It evaluates candidate orders through the normal game engine, coordinating fire,
 considering flanking routes, defending supply points, and balancing advances with
-resupply. It tests plans against stationary defenses and an advancing opponent,
-favors safer worst-case results, and revisits allied orders to improve coordination.
+resupply. Medium tests plans against a stationary defense. Easy, Hard, and Very
+Hard also test an advancing response when enemies are visible, favor safer
+worst-case results, and revisit allied orders to improve coordination.
+On Medium, Hard, and Very Hard, infantry and tanks may attack move toward
+unseen ground before an enemy comes into view. Easy uses normal movement to
+scout until it spots an enemy.
 Planning uses visible enemies with assumed healthy resources because their actual
 gauges are private. The AI obeys fog of war and uses the same resources and rules as human
 players. Trucks compare fuel escorts, supply deliveries, and passenger transport

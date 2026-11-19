@@ -171,7 +171,8 @@ starts with no enabled features; malformed values also record a diagnostic.
 Open the dev panel with backtick and select **features** to toggle local features.
 Changes apply immediately and persist on this device, including across reloads
 and other open tabs. The **placeholder** flag exercises the switch and storage
-flow. The retired `"mobileLandscape"` value is ignored when reading preferences.
+flow. The retired `"mobileLandscape"` and `"ai-difficulty"` values are ignored
+when reading preferences.
 
 Army style switches change the current player's tank and unentrenched infantry
 sprites on the live board, including turn playback. If several army styles are

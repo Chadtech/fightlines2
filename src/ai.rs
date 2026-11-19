@@ -11,16 +11,16 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+mod board;
+pub(crate) mod easy;
+pub(crate) mod hard;
 mod logistics;
-mod search;
+pub(crate) mod medium;
+mod memory;
+pub(crate) use memory::EnemyMemory;
+mod tactics;
 mod transport;
-
-pub fn plan(
-    scenario: &Scenario,
-    player: PlayerNumber,
-) -> Result<Vec<UnitOrderInput>, &'static str> {
-    search::plan(scenario, player)
-}
+pub(crate) mod very_hard;
 
 // A simple advancing response for the tactical search to evaluate against.
 fn advancing_orders(
@@ -192,71 +192,107 @@ fn route(
     reserved: &BTreeSet<Coordinate>,
     attack: bool,
 ) -> Result<Vec<Coordinate>, &'static str> {
-    let origin = unit
-        .board_position()
-        .ok_or("the AI mover is not on the map.")?;
-    let rule = movement::rules()
-        .into_iter()
-        .find(|rule| rule.kind == unit.kind())
-        .ok_or("the AI unit has no movement rule.")?;
-    let occupied: BTreeSet<_> = scenario
-        .units
-        .iter()
-        .filter(|other| other.unit_id() != unit.unit_id())
-        .filter(|other| other.player_number() == unit.player_number() || !attack)
-        .filter_map(Unit::board_position)
-        .collect();
-    let mut costs = BTreeMap::from([(origin, 0)]);
-    let mut parents = BTreeMap::new();
-    let mut pending = BTreeSet::from([(0, origin)]);
-    while let Some((cost, position)) = pending.pop_first() {
-        if costs.get(&position) != Some(&cost) {
-            continue;
+    RouteSearch::new(scenario, unit, reserved, attack)?.path_to(target)
+}
+
+/// All targets for one movement mode and set of reservations use the same tree.
+struct RouteSearch<'a> {
+    scenario: &'a Scenario,
+    unit: &'a Unit,
+    attack: bool,
+    origin: Coordinate,
+    costs: BTreeMap<Coordinate, i32>,
+    parents: BTreeMap<Coordinate, Coordinate>,
+}
+
+impl<'a> RouteSearch<'a> {
+    fn new(
+        scenario: &'a Scenario,
+        unit: &'a Unit,
+        reserved: &BTreeSet<Coordinate>,
+        attack: bool,
+    ) -> Result<Self, &'static str> {
+        let origin = unit
+            .board_position()
+            .ok_or("the AI mover is not on the map.")?;
+        let rule = movement::rules()
+            .into_iter()
+            .find(|rule| rule.kind == unit.kind())
+            .ok_or("the AI unit has no movement rule.")?;
+        let occupied: BTreeSet<_> = scenario
+            .units
+            .iter()
+            .filter(|other| other.unit_id() != unit.unit_id())
+            .filter(|other| other.player_number() == unit.player_number() || !attack)
+            .filter_map(Unit::board_position)
+            .collect();
+        let mut costs = BTreeMap::from([(origin, 0)]);
+        let mut parents = BTreeMap::new();
+        let mut pending = BTreeSet::from([(0, origin)]);
+        while let Some((cost, position)) = pending.pop_first() {
+            if costs.get(&position) != Some(&cost) {
+                continue;
+            }
+            for (x, y) in [
+                (position.x() - 1, position.y()),
+                (position.x() + 1, position.y()),
+                (position.x(), position.y() - 1),
+                (position.x(), position.y() + 1),
+            ] {
+                if x < 0 || y < 0 {
+                    continue;
+                }
+                let next = Coordinate::new(x as u16, y as u16);
+                if occupied.contains(&next) || reserved.contains(&next) {
+                    continue;
+                }
+                let Some(terrain) = scenario.map.tile_at(next) else {
+                    continue;
+                };
+                let Some(entry) = rule
+                    .terrain_costs
+                    .iter()
+                    .find(|entry| entry.terrain == terrain && entry.cost > 0)
+                else {
+                    continue;
+                };
+                let total = cost + entry.cost;
+                if costs.get(&next).is_none_or(|previous| total < *previous) {
+                    costs.insert(next, total);
+                    parents.insert(next, position);
+                    pending.insert((total, next));
+                }
+            }
         }
-        for (x, y) in [
-            (position.x() - 1, position.y()),
-            (position.x() + 1, position.y()),
-            (position.x(), position.y() - 1),
-            (position.x(), position.y() + 1),
-        ] {
-            if x < 0 || y < 0 {
-                continue;
-            }
-            let next = Coordinate::new(x as u16, y as u16);
-            if occupied.contains(&next) || reserved.contains(&next) {
-                continue;
-            }
-            let Some(terrain) = scenario.map.tile_at(next) else {
-                continue;
-            };
-            let Some(entry) = rule
-                .terrain_costs
-                .iter()
-                .find(|entry| entry.terrain == terrain && entry.cost > 0)
-            else {
-                continue;
-            };
-            let total = cost + entry.cost;
-            if costs.get(&next).is_none_or(|previous| total < *previous) {
-                costs.insert(next, total);
-                parents.insert(next, position);
-                pending.insert((total, next));
-            }
+        Ok(Self {
+            scenario,
+            unit,
+            attack,
+            origin,
+            costs,
+            parents,
+        })
+    }
+
+    fn path_to(&self, target: Coordinate) -> Result<Vec<Coordinate>, &'static str> {
+        let destination = self
+            .costs
+            .iter()
+            .min_by_key(|(position, cost)| (distance(**position, target), **cost, **position))
+            .map(|(position, _)| *position)
+            .ok_or("the AI route has no origin.")?;
+        let mut path = vec![destination];
+        let mut cursor = destination;
+        while cursor != self.origin {
+            cursor = *self
+                .parents
+                .get(&cursor)
+                .ok_or("the AI route is incomplete.")?;
+            path.push(cursor);
         }
+        path.reverse();
+        affordable_path(self.scenario, self.unit, &path, self.attack)
     }
-    let destination = costs
-        .iter()
-        .min_by_key(|(position, cost)| (distance(**position, target), **cost, **position))
-        .map(|(position, _)| *position)
-        .ok_or("the AI route has no origin.")?;
-    let mut path = vec![destination];
-    let mut cursor = destination;
-    while cursor != origin {
-        cursor = *parents.get(&cursor).ok_or("the AI route is incomplete.")?;
-        path.push(cursor);
-    }
-    path.reverse();
-    affordable_path(scenario, unit, &path, attack)
 }
 
 fn affordable_path(
@@ -352,7 +388,7 @@ mod tests {
                 };
                 unit.move_to(Coordinate::new(x, 0));
             }
-            let inputs = plan(&scenario, PlayerNumber::Player1).fixture()?;
+            let inputs = easy::plan(&scenario, PlayerNumber::Player1).fixture()?;
             let orders = turns::validate(&scenario, PlayerNumber::Player1, inputs).fixture()?;
             assert!(
                 orders
@@ -380,13 +416,13 @@ mod tests {
         let original = turns::validate(
             &scenario,
             PlayerNumber::Player2,
-            plan(&scenario, PlayerNumber::Player2).fixture()?,
+            easy::plan(&scenario, PlayerNumber::Player2).fixture()?,
         )
         .fixture()?;
         let other = turns::validate(
             &changed,
             PlayerNumber::Player2,
-            plan(&changed, PlayerNumber::Player2).fixture()?,
+            easy::plan(&changed, PlayerNumber::Player2).fixture()?,
         )
         .fixture()?;
         assert_eq!(format!("{original:?}"), format!("{other:?}"));
@@ -463,7 +499,7 @@ mod tests {
         let orders = turns::validate(
             &scenario,
             PlayerNumber::Player2,
-            plan(&scenario, PlayerNumber::Player2).fixture()?,
+            easy::plan(&scenario, PlayerNumber::Player2).fixture()?,
         )
         .fixture()?;
         assert!(orders.iter().all(|order| order.path().len() == 1));

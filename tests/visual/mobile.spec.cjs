@@ -204,7 +204,7 @@ test('short landscape lobby keeps setup, chat, and map selection reachable', int
   await closeDialog.getByRole('button', { name: 'cancel', exact: true }).tap();
   await expect(closeDialog).toBeHidden();
 
-  await page.getByLabel('player 2').selectOption({ label: 'ai' });
+  await page.getByLabel('player 2').selectOption({ label: 'ai easy' });
   await start.tap();
   await expect(page).toHaveURL(/\/game\/[0-9a-f]+$/);
 });

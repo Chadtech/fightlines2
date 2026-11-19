@@ -156,5 +156,14 @@ playerLabel player =
 
                 Controller.Ai ->
                     "ai"
+
+                Controller.AiMedium ->
+                    "break contact"
+
+                Controller.AiHard ->
+                    "screened battery"
+
+                Controller.AiVeryHard ->
+                    "find the blind side"
     in
     PlayerNumber.label player.playerNumber ++ ": " ++ player.name ++ " (" ++ controller ++ ")"

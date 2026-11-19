@@ -73,12 +73,28 @@ impl UnloadOrderInput {
         let y = u16::try_from(self.destination.y).map_err(|_| "unloading is outside the map.")?;
         Ok(Coordinate::new(x, y))
     }
+
+    pub(crate) fn is_for(&self, passenger: UnitId) -> bool {
+        UnitId::parse(&self.unit_id) == Some(passenger)
+    }
 }
 
 #[derive(Clone, GraphQLInputObject, Serialize, Deserialize)]
 pub struct CrateUnloadInput {
     cargo_index: i32,
     pub(crate) destination: CoordinateInput,
+}
+
+impl CrateUnloadInput {
+    pub(crate) fn new(cargo_index: i32, destination: Coordinate) -> Self {
+        Self {
+            cargo_index,
+            destination: CoordinateInput {
+                x: destination.x(),
+                y: destination.y(),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]

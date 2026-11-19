@@ -1,13 +1,14 @@
-//! Passenger missions use the same fog-limited goals and ordinary transport orders.
+//! Passenger missions use fog-limited goals and ordinary transport orders.
 use super::{
     affordable_path, coordinate_input, distance, facing, hold,
     logistics::{self, Destination, TruckMission, TruckPlan},
-    resource_target, search,
+    objective, resource_target,
 };
 use crate::{
     combat,
     map::Coordinate,
     movement,
+    player_number::PlayerNumber,
     scenario::{Entrenchment, ResourceKind, Scenario, Unit, UnitKind},
     supplies,
     turns::{self, UnitOrderInput, UnloadOrderInput},
@@ -36,7 +37,7 @@ fn goal(scenario: &Scenario, passenger: &Unit) -> Result<Destination, &'static s
         .ok_or("the AI passenger has no position.")?;
     let resupply = resource_target(scenario, passenger, origin);
     Ok(Destination {
-        position: resupply.unwrap_or_else(|| search::strategic_target(scenario, passenger, origin)),
+        position: resupply.unwrap_or_else(|| non_supply_target(scenario, passenger, origin)),
         range: if resupply.is_some() {
             1
         } else if passenger.kind() == UnitKind::FieldGun {
@@ -45,6 +46,38 @@ fn goal(scenario: &Scenario, passenger: &Unit) -> Result<Destination, &'static s
             2
         },
     })
+}
+
+fn non_supply_target(scenario: &Scenario, unit: &Unit, origin: Coordinate) -> Coordinate {
+    if unit.kind() != UnitKind::Truck
+        && let Some(target) = scenario
+            .units
+            .iter()
+            .filter(|other| other.player_number() != unit.player_number())
+            .filter_map(Unit::board_position)
+            .min_by_key(|position| (distance(origin, *position), *position))
+    {
+        return target;
+    }
+    let center = objective(scenario, origin);
+    // Keep one infantry guarding the central supply point; other combat units
+    // scout the opposing half instead of all camping there. Goals depend on the
+    // public map geometry and assigned side, never hidden starting positions.
+    let guard = scenario.units.iter().find(|other| {
+        other.player_number() == unit.player_number() && other.kind() == UnitKind::Infantry
+    });
+    if guard.is_none_or(|guard| guard.unit_id() != unit.unit_id()) && unit.kind() != UnitKind::Truck
+    {
+        Coordinate::new(
+            match unit.player_number() {
+                PlayerNumber::Player1 => (scenario.map.width() * 3 / 4) as u16,
+                PlayerNumber::Player2 => (scenario.map.width() / 4) as u16,
+            },
+            (scenario.map.height() / 2) as u16,
+        )
+    } else {
+        center
+    }
 }
 
 fn threatened(scenario: &Scenario, passenger: &Unit, position: Coordinate) -> bool {
@@ -181,7 +214,13 @@ pub(super) fn pickups(
         };
         let rendezvous = logistics::planned_destination(orders, passenger)?;
         let mut blocked = route_blocked.clone();
-        if threatened(scenario, truck, rendezvous) {
+        // An attack-move can target an occupied tile. A boarding route
+        // cannot end on an enemy truck, even though it poses no fire threat.
+        let enemy_occupied = scenario.units.iter().any(|unit| {
+            unit.player_number() != truck.player_number()
+                && unit.board_position() == Some(rendezvous)
+        });
+        if enemy_occupied || threatened(scenario, truck, rendezvous) {
             continue;
         }
         blocked.remove(&rendezvous);
@@ -475,9 +514,10 @@ pub(super) fn deployment(
 mod tests {
     use super::*;
     use crate::{
-        ai,
+        ai::easy,
         map_definition::MapDefinition,
         player_number::PlayerNumber,
+        scenario::Direction,
         supplies::CargoStock,
         test_support::{FixtureValue, TestResult},
         turns::Turns,
@@ -528,6 +568,42 @@ mod tests {
     }
 
     #[test]
+    fn boarding_does_not_convert_an_attack_on_an_enemy_truck_to_a_move() -> TestResult {
+        let player = PlayerNumber::Player1;
+        let mut scenario = fixture(UnitKind::Infantry, player)?;
+        scenario
+            .units
+            .first_mut()
+            .fixture()?
+            .set_supplies_for_test(90);
+        let extra = MapDefinition::parse(
+            r#"{
+            "width": 40, "height": 7, "theme": "GreenForest", "features": [], "depots": [],
+            "units": [
+                {"id": 4, "position": {"x": 39, "y": 3}, "playerNumber": "Player2", "kind": "Truck"},
+                {"id": 5, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"}
+            ]
+        }"#,
+        )
+        .fixture()?
+        .scenario()
+        .fixture()?;
+        let truck = scenario.units.get(1).fixture()?;
+        let passenger = scenario.units.first().fixture()?;
+        let rendezvous = Coordinate::new(3, 3);
+        let mut attack = hold(passenger, passenger.board_position().fixture()?);
+        attack.path.push(coordinate_input(rendezvous));
+        attack.attack_move = Some(true);
+        attack.direction = Some(Direction::East);
+        let orders = vec![attack, hold(truck, truck.board_position().fixture()?)];
+        scenario.units.push(extra.units.first().fixture()?.clone());
+        assert!(!pickups(&scenario, scenario.units.get(1).fixture()?, &orders, &[])?.is_empty());
+        scenario.units.last_mut().fixture()?.move_to(rendezvous);
+        assert!(pickups(&scenario, scenario.units.get(1).fixture()?, &orders, &[])?.is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn picks_up_carries_and_deploys_both_passenger_kinds_on_both_sides() -> TestResult {
         for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
             for kind in [UnitKind::Infantry, UnitKind::FieldGun] {
@@ -536,7 +612,7 @@ mod tests {
                 let mut boarded = false;
                 let mut deployed = false;
                 for _ in 0..12 {
-                    let orders = ai::plan(&scenario, player).fixture()?;
+                    let orders = easy::plan(&scenario, player).fixture()?;
                     resolve(&mut scenario, &mut turns, player, orders)?;
                     let passenger = scenario
                         .units
@@ -571,7 +647,7 @@ mod tests {
             .supply_cargo
             .push(CargoStock::new(ResourceKind::Fuel, 1024));
         let mut turns = Turns::default();
-        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        let orders = easy::plan(&scenario, PlayerNumber::Player1).fixture()?;
         resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
         let passenger = scenario
             .units
@@ -605,7 +681,7 @@ mod tests {
             .fixture()?
             .board(carrier);
         let mut turns = Turns::default();
-        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        let orders = easy::plan(&scenario, PlayerNumber::Player1).fixture()?;
         resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
         assert!(
             scenario
@@ -642,7 +718,7 @@ mod tests {
             .fixture()?
             .move_to(Coordinate::new(28, 3));
         let mut turns = Turns::default();
-        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        let orders = easy::plan(&scenario, PlayerNumber::Player1).fixture()?;
         assert!(
             orders
                 .iter()
@@ -661,7 +737,7 @@ mod tests {
                 .board_position()
                 .is_some()
         );
-        let mut orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        let mut orders = easy::plan(&scenario, PlayerNumber::Player1).fixture()?;
         let gun = scenario
             .units
             .iter()
@@ -703,7 +779,7 @@ mod tests {
         }"#).fixture()?.scenario().fixture()?;
         scenario.units.push(extra.units.first().fixture()?.clone());
         let mut turns = Turns::default();
-        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        let orders = easy::plan(&scenario, PlayerNumber::Player1).fixture()?;
         let submitted = serde_json::to_string(&orders).fixture()?;
         resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
         let truck = scenario
@@ -713,7 +789,7 @@ mod tests {
             .fixture()?;
         assert_eq!(scenario.passenger_count(truck.unit_id()), 2, "{submitted}");
         for _ in 0..8 {
-            let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+            let orders = easy::plan(&scenario, PlayerNumber::Player1).fixture()?;
             resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
             let first = scenario
                 .units
@@ -772,7 +848,7 @@ mod tests {
             .supply_cargo
             .push(CargoStock::new(ResourceKind::Fuel, 272));
         let mut board = scenario.clone();
-        let orders = ai::plan(&board, PlayerNumber::Player1).fixture()?;
+        let orders = easy::plan(&board, PlayerNumber::Player1).fixture()?;
         let carrier_order = orders.iter().find(|order| order.unit_id == "3").fixture()?;
         let gun_exit = carrier_order
             .unloads
@@ -829,7 +905,7 @@ mod tests {
             .push(CargoStock::new(ResourceKind::Supply, 256));
         scenario.units.push(donor);
         let mut board = scenario.clone();
-        let orders = ai::plan(&board, PlayerNumber::Player1).fixture()?;
+        let orders = easy::plan(&board, PlayerNumber::Player1).fixture()?;
         assert!(
             !orders
                 .iter()

@@ -2266,7 +2266,16 @@ controllerLabel controller =
             "human"
 
         Ai ->
-            "ai"
+            "ai easy"
+
+        AiMedium ->
+            "ai medium"
+
+        AiHard ->
+            "ai hard"
+
+        AiVeryHard ->
+            "ai very hard"
 
 
 startControlsView : Model -> Html Msg

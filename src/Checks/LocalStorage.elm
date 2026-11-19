@@ -463,6 +463,8 @@ featureChecks =
             (load "{\"features\":[\"mobileLandscape\"]}" == Ok ( off, Nothing ))
         , check "retired mobile feature preserves other features"
             (load "{\"features\":[\"mobileLandscape\",\"placeholder\"]}" == Ok ( on, Nothing ))
+        , check "retired AI difficulty feature preserves other features"
+            (load "{\"features\":[\"ai-difficulty\",\"placeholder\"]}" == Ok ( on, Nothing ))
         , check "feature storage round trips"
             (roundTrip { enabled = Features.all })
         , check "army styles default to the standard artwork"

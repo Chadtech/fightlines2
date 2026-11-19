@@ -14,7 +14,7 @@ use crate::{
     map::Coordinate,
     map_id::MapId,
     movement::{self, MovementRule},
-    player::{Controller, Player, PlayerController},
+    player::{AiOpponent, Controller, Player, PlayerController},
     player_number::PlayerNumber,
     scenario::Scenario,
     server_limits::{Limits, Rejection},
@@ -45,6 +45,7 @@ pub(crate) struct Game {
     // Only human players in live games have clocks, indexed by map side.
     activity: [Option<ActivityClock>; 2],
     observations: [visibility::PlayerObservation; 2],
+    ai_memory: ai::EnemyMemory,
     access: GameAccess,
     scenario: Scenario,
     source_lobby: LobbyId,
@@ -116,6 +117,7 @@ impl Game {
             activity,
             chat: Transcript::default(),
             log: None,
+            ai_memory: ai::EnemyMemory::default(),
             observations: PlayerNumber::ALL
                 .map(|player| visibility::PlayerObservation::new(&scenario, player)),
             turns: Turns::default(),
@@ -507,7 +509,7 @@ impl Game {
             .players
             .iter()
             .find_map(|player| match player.controller {
-                PlayerController::Ai => Some(player.player_number),
+                PlayerController::Ai(opponent) => Some((player.player_number, opponent)),
                 PlayerController::Human(_) => None,
             });
         let mut next_turns = self.turns.clone();
@@ -532,10 +534,22 @@ impl Game {
             player_number,
             orders,
         }];
-        if let Some(ai_player) = ai_player {
+        if let Some((ai_player, opponent)) = ai_player {
             // Planning sees only the AI's observation of the pre-turn board. It never
             // receives the human's draft or submitted orders.
-            let ai_orders = ai::plan(&self.scenario, ai_player).map_err(|error| {
+            let ai_orders = match opponent {
+                AiOpponent::Easy => ai::easy::plan(&self.scenario, ai_player),
+                AiOpponent::BreakContact => {
+                    ai::medium::plan(&self.scenario, ai_player, &self.ai_memory, turn_number)
+                }
+                AiOpponent::ScreenedBattery => {
+                    ai::hard::plan(&self.scenario, ai_player, &self.ai_memory, turn_number)
+                }
+                AiOpponent::FindTheBlindSide => {
+                    ai::very_hard::plan(&self.scenario, ai_player, &self.ai_memory, turn_number)
+                }
+            }
+            .map_err(|error| {
                 tracing::error!(
                     event = "ai_planning_failed",
                     game_id = %self.source_lobby,
@@ -591,6 +605,13 @@ impl Game {
             if let Some(resolution) = &self.turns.last_resolution {
                 for (observation, player) in self.observations.iter_mut().zip(PlayerNumber::ALL) {
                     observation.resolve(&self.scenario, player, resolution);
+                }
+                if let Some((player, opponent)) = ai_player
+                    && !matches!(opponent, AiOpponent::Easy)
+                    && let Some(projected) = &self.observations[player.index()].last_resolution
+                {
+                    self.ai_memory
+                        .observe(player, projected.turn_number, &projected.frames);
                 }
             }
         }
@@ -1196,7 +1217,8 @@ mod tests {
             let ai = human.opponent();
             let mut fixture = inactivity_fixture(Instant::now())?;
             let host = SessionToken::from_token(format!("{human:?}"));
-            fixture.players.get_mut(ai.index()).fixture()?.controller = PlayerController::Ai;
+            fixture.players.get_mut(ai.index()).fixture()?.controller =
+                PlayerController::Ai(AiOpponent::Easy);
             let mut game = Game::new(
                 fixture.source_lobby,
                 fixture.name,
@@ -1307,7 +1329,7 @@ mod tests {
                 },
                 Player {
                     player_number: PlayerNumber::Player2,
-                    controller: PlayerController::Ai,
+                    controller: PlayerController::Ai(AiOpponent::Easy),
                     name: PlayerName::parse("AI").fixture()?,
                 },
             ],
@@ -1339,7 +1361,7 @@ mod tests {
             .fixture()?;
         assert!(game.turns.orders.first().fixture()?.is_some());
         game.turns = Turns::default();
-        game.players.get_mut(1).fixture()?.controller = PlayerController::Ai;
+        game.players.get_mut(1).fixture()?.controller = PlayerController::Ai(AiOpponent::Easy);
         drop(permit);
         game.submit_turn(Some(&host), 1, orders, &limits)
             .fixture()?;

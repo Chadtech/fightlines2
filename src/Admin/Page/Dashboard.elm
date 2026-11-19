@@ -1147,11 +1147,21 @@ entryDetails htmlId entry =
             let
                 controller : String
                 controller =
-                    if value.controller == Controller.Ai then
-                        "ai"
+                    case value.controller of
+                        Controller.Human ->
+                            "human"
 
-                    else
-                        "human"
+                        Controller.Ai ->
+                            "ai"
+
+                        Controller.AiMedium ->
+                            "ai medium"
+
+                        Controller.AiHard ->
+                            "ai hard"
+
+                        Controller.AiVeryHard ->
+                            "ai very hard"
 
                 readiness : String
                 readiness =

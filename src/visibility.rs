@@ -7,6 +7,7 @@ use crate::{
     turns::{TurnFrame, TurnResolution, UnitDeparture},
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::iter;
 
 /// Per-player building condition and freight observations, advanced during resolution.
 /// Memories are presentation data only; validation uses observed_scenario.
@@ -107,6 +108,43 @@ pub fn sight_range(kind: UnitKind) -> i32 {
     }
 }
 
+pub(crate) fn sight_bonus(map: &Map, position: Coordinate) -> i32 {
+    match map.tile_at(position) {
+        Some(Terrain::Mountains) => 2,
+        Some(Terrain::Hills) => 1,
+        _ => 0,
+    }
+}
+
+/// Natural sight from one unit's position. Forests conceal other tiles'
+/// contents, and combat reveals are applied separately.
+pub(crate) fn terrain_sight(
+    map: &Map,
+    origin: Coordinate,
+    kind: UnitKind,
+) -> impl Iterator<Item = Coordinate> + '_ {
+    let range = sight_range(kind) + sight_bonus(map, origin);
+    let min_x = (origin.x() - range).max(0);
+    let max_x = (origin.x() + range).min(map.width() - 1);
+    let min_y = (origin.y() - range).max(0);
+    let max_y = (origin.y() + range).min(map.height() - 1);
+    let visible_tiles = (min_y..=max_y).flat_map(move |y| {
+        (min_x..=max_x).filter_map(move |x| {
+            let target = Coordinate::new(x as u16, y as u16);
+            let dx = x - origin.x();
+            let dy = y - origin.y();
+            let within_sight = dx * dx + dy * dy <= range * range;
+            (target != origin
+                && within_sight
+                && map.tile_at(target) != Some(Terrain::Forest)
+                && clear_line(map, origin, target))
+            .then_some(target)
+        })
+    });
+    // The occupied square is known even when the unit is in a forest.
+    iter::once(origin).chain(visible_tiles)
+}
+
 pub fn visible_tiles(scenario: &Scenario, player_number: PlayerNumber) -> BTreeSet<Coordinate> {
     let mut visible = BTreeSet::new();
     for (unit, origin) in scenario
@@ -115,30 +153,7 @@ pub fn visible_tiles(scenario: &Scenario, player_number: PlayerNumber) -> BTreeS
         .filter(|unit| unit.player_number() == player_number && unit.is_alive())
         .filter_map(|unit| unit.board_position().map(|origin| (unit, origin)))
     {
-        // The occupied square is known even when the unit is in a forest.
-        visible.insert(origin);
-        let bonus = match scenario.map.tile_at(origin) {
-            Some(Terrain::Mountains) => 2,
-            Some(Terrain::Hills) => 1,
-            _ => 0,
-        };
-        let range = sight_range(unit.kind()) + bonus;
-        for y in (origin.y() - range).max(0)..=(origin.y() + range).min(scenario.map.height() - 1) {
-            for x in
-                (origin.x() - range).max(0)..=(origin.x() + range).min(scenario.map.width() - 1)
-            {
-                let target = Coordinate::new(x as u16, y as u16);
-                let dx = x - origin.x();
-                let dy = y - origin.y();
-                let within_sight = dx * dx + dy * dy <= range * range;
-                if within_sight
-                    && scenario.map.tile_at(target) != Some(Terrain::Forest)
-                    && clear_line(&scenario.map, origin, target)
-                {
-                    visible.insert(target);
-                }
-            }
-        }
+        visible.extend(terrain_sight(&scenario.map, origin, unit.kind()));
     }
     // Revealed positions contribute only their occupied tile.
     visible.extend(

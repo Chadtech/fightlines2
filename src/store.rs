@@ -431,6 +431,7 @@ mod tests {
         game_log, graphql,
         map_definition::MapDefinition,
         map_id::MapId,
+        player::AiOpponent,
         scenario::Scenario,
         test_support::{FixtureValue, TestResult},
     };
@@ -727,7 +728,7 @@ mod tests {
                         },
                         Player {
                             player_number: PlayerNumber::Player2,
-                            controller: PlayerController::Ai,
+                            controller: PlayerController::Ai(AiOpponent::Easy),
                             name: PlayerName::parse("AI player").fixture()?,
                         },
                     ],

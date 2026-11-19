@@ -220,18 +220,26 @@ impl Lobby {
         }) {
             return error("another player has joined. the controller cannot be changed.");
         }
-        let ai_name = PlayerName::parse("AI player")
-            .ok_or_else(|| FieldError::from("the AI name is invalid."))?;
+        let opponent = match controller.ai_opponent() {
+            Some(opponent) => {
+                let ai_name = PlayerName::parse("AI player")
+                    .ok_or_else(|| FieldError::from("the AI name is invalid."))?;
+                let host = self
+                    .players
+                    .iter()
+                    .find(|player| player.controller.session() == Some(&self.host))
+                    .ok_or("the lobby has no host.")?;
+                Some(Player {
+                    player_number: host.player_number.opponent(),
+                    controller: PlayerController::Ai(opponent),
+                    name: ai_name,
+                })
+            }
+            None => None,
+        };
         self.players
             .retain(|player| player.controller.session().is_some());
-        if controller == Controller::Ai {
-            let player_number = vacant_side(&self.players)?;
-            self.players.push(Player {
-                player_number,
-                controller: PlayerController::Ai,
-                name: ai_name,
-            });
-        }
+        self.players.extend(opponent);
         self.last_activity = Instant::now();
         Ok(self.snapshot(session))
     }

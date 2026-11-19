@@ -721,7 +721,7 @@ mod tests {
 
     #[test]
     fn legacy_ai_difficulties_decode_as_ai() -> TestResult<()> {
-        for controller in ["Ai", "AiMedium", "AiHard"] {
+        for controller in ["Ai", "AiMedium", "AiHard", "ScreenLateralSkirmish"] {
             let value = json!({
                 "player_number": "Player1",
                 "name": "Recorded AI",
@@ -735,16 +735,22 @@ mod tests {
 
     #[test]
     fn recorded_players_accept_legacy_opponent_fields_and_write_controller() -> TestResult<()> {
-        for controller in [Controller::Human, Controller::Ai] {
+        for (controller, label) in [
+            (Controller::Human, "Human"),
+            (Controller::Ai, "Ai"),
+            (Controller::BreakContact, "BreakContact"),
+            (Controller::ScreenedBattery, "ScreenedBattery"),
+            (Controller::FindTheBlindSide, "FindTheBlindSide"),
+        ] {
             let current = json!({
                 "player_number": "Player1",
                 "name": "Recorded player",
-                "controller": controller,
+                "controller": label,
             });
             let legacy = json!({
                 "player_number": "Player1",
                 "name": "Recorded player",
-                "opponent": controller,
+                "opponent": label,
             });
             for value in [current.clone(), legacy] {
                 let player: RecordedPlayer = serde_json::from_value(value)?;

@@ -1,5 +1,5 @@
 //! Shared freight and fuel-reserve planning on the already projected board.
-//! Trucks carry their stock to allies; ordinary settlement performs transfers.
+//! Ordinary settlement performs transfers from trucks and ground freight.
 use super::{affordable_path, coordinate_input, distance, hold, transport};
 use crate::{
     map::Coordinate,
@@ -10,6 +10,8 @@ use crate::{
     turns::UnitOrderInput,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+mod freight;
 
 #[derive(Clone, Copy)]
 pub(super) struct Destination {
@@ -39,6 +41,15 @@ pub(super) fn support(
     scenario: &Scenario,
     player: PlayerNumber,
     orders: &mut [UnitOrderInput],
+) -> Result<(), &'static str> {
+    support_with_freight(scenario, player, orders, false)
+}
+
+pub(super) fn support_with_freight(
+    scenario: &Scenario,
+    player: PlayerNumber,
+    orders: &mut [UnitOrderInput],
+    unload_freight: bool,
 ) -> Result<(), &'static str> {
     let mut assigned = Vec::new();
     for truck in scenario.units.iter().filter(|unit| {
@@ -99,6 +110,9 @@ pub(super) fn support(
             && unit.board_position().is_some()
     }) {
         protect_reserve(scenario, vehicle, orders)?;
+    }
+    if unload_freight {
+        freight::plan_unloads(scenario, player, orders)?;
     }
     Ok(())
 }
@@ -599,7 +613,7 @@ fn protect_reserve(
 mod tests {
     use super::*;
     use crate::{
-        ai,
+        ai::easy,
         map::{Coordinate, RoadShape, Terrain},
         map_definition::{MapDefinition, TerrainPlacement},
         supplies::{CargoStock, GroundSupplyCrate},
@@ -680,7 +694,7 @@ mod tests {
         player: PlayerNumber,
     ) -> TestResult {
         let number = turns.number;
-        let orders = ai::plan(scenario, player).fixture()?;
+        let orders = easy::plan(scenario, player).fixture()?;
         let enemy = player.opponent();
         let holds = scenario
             .units
@@ -776,7 +790,7 @@ mod tests {
                     stock: CargoStock::new(ResourceKind::Fuel, 23),
                 });
             }
-            let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+            let orders = easy::plan(&scenario, PlayerNumber::Player1).fixture()?;
             let truck_order = orders.iter().find(|order| order.unit_id == "2").fixture()?;
             if ground_freight {
                 assert_eq!(truck_order.pickup_ground_freight, Some(ResourceKind::Fuel));
@@ -848,7 +862,7 @@ mod tests {
             ]
         }"#).fixture()?.scenario().fixture()?;
         scenario.units.first_mut().fixture()?.set_fuel_for_test(128);
-        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        let orders = easy::plan(&scenario, PlayerNumber::Player1).fixture()?;
         assert_eq!(orders.first().fixture()?.path.len(), 1);
         Ok(())
     }
@@ -863,8 +877,8 @@ mod tests {
             position: hidden,
             stock: CargoStock::new(ResourceKind::Fuel, 1024),
         });
-        let original = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
-        let other = ai::plan(&changed, PlayerNumber::Player1).fixture()?;
+        let original = easy::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        let other = easy::plan(&changed, PlayerNumber::Player1).fixture()?;
         assert_eq!(
             serde_json::to_value(original).fixture()?,
             serde_json::to_value(other).fixture()?
@@ -927,7 +941,7 @@ mod tests {
             .find(|unit| unit.id() == "4")
             .fixture()?
             .set_supplies_for_test(28);
-        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        let orders = easy::plan(&scenario, PlayerNumber::Player1).fixture()?;
         assert!(
             orders
                 .iter()

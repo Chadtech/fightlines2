@@ -26,7 +26,11 @@ test('create a real lobby, choose a map, and start a game', async ({ page }) => 
   await expect(page.getByLabel('search maps')).toBeVisible();
   await snapshot(page, 'map-picker');
   await page.getByRole('button', { name: 'use this map', exact: true }).click();
-  await page.getByLabel('player 2').selectOption({ label: 'ai' });
+  const opponent = page.getByLabel('player 2');
+  await expect(opponent.locator('option')).toHaveText([
+    'human', 'ai easy', 'ai medium', 'ai hard', 'ai very hard',
+  ]);
+  await opponent.selectOption({ label: 'ai easy' });
   await page.getByRole('button', { name: 'start game', exact: true }).click();
   await expect(page).toHaveURL(/\/game\/[0-9a-f]+$/);
   await expect(page.getByRole('group', { name: 'battlefield', exact: true })).toBeVisible();
