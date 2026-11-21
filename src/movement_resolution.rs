@@ -1,7 +1,7 @@
 //! Shared arrivals use accumulated terrain cost / full movement allowance.
 //! Integer ticks are the least common multiple of allowances, never float comparisons.
 use crate::{
-    combat::Combat,
+    combat::{AdvanceFacing, Combat},
     map::{Coordinate, Terrain},
     movement,
     player_number::PlayerNumber,
@@ -156,6 +156,15 @@ struct MovementPlan {
     path: Vec<Coordinate>,
     kind: UnitOrderKind,
     arrival_direction: Option<Direction>,
+    advance_facings: Vec<AdvanceFacing>,
+}
+
+impl MovementPlan {
+    fn facing_for_step(&self, step_number: usize) -> Option<AdvanceFacing> {
+        self.advance_facings
+            .get(step_number.checked_sub(1)?)
+            .copied()
+    }
 }
 
 fn resolve_prepared(
@@ -189,6 +198,11 @@ fn resolve_prepared(
             } else {
                 order.path().to_vec()
             };
+            let advance_facings = if !waiting && order.kind() == UnitOrderKind::AttackMove {
+                AdvanceFacing::along_route(&path)
+            } else {
+                Vec::new()
+            };
             Ok(MovementPlan {
                 unit_id: order.unit_id,
                 path,
@@ -198,6 +212,7 @@ fn resolve_prepared(
                     order.kind()
                 },
                 arrival_direction: order.arrival_direction(),
+                advance_facings,
             })
         })
         .collect::<Result<Vec<_>, ResolutionError>>()?;
@@ -478,6 +493,8 @@ fn resolve_arrivals(
                 .min_by_key(|unit| unit.unit_id());
             if let Some(target) = target {
                 contacts.push((id, target.unit_id()));
+                let traveled = paths.get(&id).ok_or(ResolutionError::MissingPath)?;
+                combat.set_advance_facing(id, order.facing_for_step(traveled.len()));
             }
         }
         for (attacker, target) in &contacts {
@@ -487,6 +504,7 @@ fn resolve_arrivals(
             .iter()
             .filter(|order| {
                 order.kind == UnitOrderKind::AttackMove
+                    && order.path.len() == order.advance_facings.len() + 1
                     && intents.get(&order.unit_id) == order.path.last()
                     && !blocked.contains(&order.unit_id)
                     && !stop_after_arrival.contains(&order.unit_id)
@@ -512,6 +530,13 @@ fn resolve_arrivals(
             let passenger_count = scenario.passenger_count(id);
             let path = paths.get_mut(&id).ok_or(ResolutionError::MissingPath)?;
             let origin = *path.last().ok_or(ResolutionError::EmptyPath)?;
+            if let Some(facing) = orders
+                .iter()
+                .find(|order| order.unit_id == id)
+                .and_then(|order| order.facing_for_step(path.len()))
+            {
+                combat.set_advance_facing(id, Some(facing));
+            }
             unit.follow_terrain_path(&board.map, &[origin, destination], passenger_count);
             path.push(destination);
             arrived.insert(id);
@@ -528,6 +553,7 @@ fn resolve_arrivals(
                 .ok_or(ResolutionError::MissingUnit)?;
             if let Some(direction) = facing {
                 mover.rotate(direction);
+                combat.set_advance_facing(id, None);
             }
             let origin = mover.board_position().ok_or(ResolutionError::MissingUnit)?;
             let direction = mover.direction();
@@ -596,6 +622,11 @@ fn resolve_arrivals(
             if let Some(index) = free {
                 let discarded_path = path[index..].to_vec();
                 path.truncate(index + 1);
+                let facing = orders
+                    .iter()
+                    .find(|order| order.unit_id == id)
+                    .and_then(|order| order.facing_for_step(index));
+                combat.set_advance_facing(id, facing);
                 arrived.remove(&id);
                 let initial = scenario
                     .units
@@ -1534,8 +1565,8 @@ mod tests {
                 volley
                     .shots
                     .iter()
-                    .all(|shot| shot.attacker_health.after.current() == 9
-                        && shot.target_health.after.current() == 9)
+                    .all(|shot| shot.attacker_health.after.current() == 12
+                        && shot.target_health.after.current() == 12)
             );
             orders.reverse();
             let reversed = resolve(&scenario, &orders, turn)?;
@@ -1601,8 +1632,8 @@ mod tests {
                 assert!(
                     shots
                         .iter()
-                        .all(|shot| shot.target_health.after.current() == 9
-                            && shot.attacker_health.after.current() == 9)
+                        .all(|shot| shot.target_health.after.current() == 12
+                            && shot.attacker_health.after.current() == 12)
                 );
                 assert_eq!(result.stopped.len(), 2);
                 orders.reverse();
@@ -1628,6 +1659,54 @@ mod tests {
                 );
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn frontal_tank_contact_requires_reciprocal_fire_and_both_fronts() -> TestResult<()> {
+        for (first_path, second_path, expected) in [
+            (&[(2, 2), (3, 2)][..], &[(3, 2), (2, 2)][..], &[4, 4][..]),
+            (&[(2, 2), (3, 2)][..], &[(3, 3), (3, 2)][..], &[7, 12][..]),
+            (
+                &[(2, 2), (3, 2), (3, 1), (4, 1)][..],
+                &[(3, 2), (2, 2), (2, 3), (1, 3)][..],
+                &[5, 5][..],
+            ),
+        ] {
+            let (scenario, mut orders) = setup(&[("11", first_path), ("14", second_path)])?;
+            for order in &mut orders {
+                attack_move(order, ArrivalFacing::AlongRoute)?;
+            }
+            let result = resolve(&scenario, &orders, 1)?;
+            assert_eq!(result.stopped.len(), 2);
+            let damage: Vec<_> = result
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .map(|shot| shot.damage)
+                .collect();
+            assert_eq!(damage, expected);
+        }
+
+        let (mut scenario, mut orders) =
+            setup(&[("11", &[(2, 2), (3, 2)]), ("14", &[(3, 2), (2, 2)])])?;
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.id() == "14")
+            .fixture()?
+            .spend_supplies(180);
+        for order in &mut orders {
+            attack_move(order, ArrivalFacing::AlongRoute)?;
+        }
+        let result = resolve(&scenario, &orders, 1)?;
+        let damage: Vec<_> = result
+            .frames
+            .iter()
+            .flat_map(|frame| &frame.shots)
+            .map(|shot| shot.damage)
+            .collect();
+        assert_eq!(damage, [16]);
         Ok(())
     }
 

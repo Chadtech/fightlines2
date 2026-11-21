@@ -1,5 +1,6 @@
 port module Game.Checks.Replay exposing (main)
 
+import Api.Enum.AmbushBonus as AmbushBonus
 import Api.Enum.AmbushShape as AmbushShape
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.Entrenchment as Entrenchment
@@ -10,9 +11,9 @@ import Api.Enum.UnitKind as Kind
 import Api.Scalar exposing (MapId(..))
 import Browser
 import Browser.Dom
-import DevTools.Page.LoggedGames as LoggedGames
 import Effect as E exposing (Eff)
 import Error
+import Game.Archive as Archive
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot
 import Game.CombatHealth exposing (CombatHealth)
@@ -108,7 +109,7 @@ type alias RecordedTurn =
 
 checks : Shared.Model -> ( List String, Eff () )
 checks shared =
-    case Decode.decodeString (Graphql.Document.decoder LoggedGames.selection) ("{\"data\":" ++ gameJson ++ "}") of
+    case Decode.decodeString (Graphql.Document.decoder Archive.selection) ("{\"data\":" ++ gameJson ++ "}") of
         Err error ->
             ( [ Decode.errorToString error ], E.none )
 
@@ -513,6 +514,7 @@ audioChecks initial =
                               , target = target
                               , damage = 0
                               , flankBonus = False
+                              , ambushBonus = AmbushBonus.None
                               , attackerHealth = health
                               , targetHealth = health
                               }

@@ -185,8 +185,8 @@ reloads and synchronize across tabs.
 - Freeze and spotlight the observable combatants before opening the theater.
   Use beveled cards with terrain-specific backdrops and formations facing one
   another. Combine reciprocal shots in one display and preserve the firing
-  and impact order. Use the **flank bonus** chip only when recorded shot
-  metadata grants it.
+  and impact order. Use **flank bonus** and **ambush** chips on the firing
+  formation when recorded shot metadata grants them.
 - Use the approved firing drawings and synchronize audio to the shared
   presentation clock. Anchor figures to the ground across posing and
   impacts. Use recorded health transitions for casualties and show impacts

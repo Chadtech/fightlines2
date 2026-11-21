@@ -11,11 +11,11 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(crate) mod artillery_spotters;
 mod board;
 pub(crate) mod easy;
 pub(crate) mod hard;
 mod logistics;
-pub(crate) mod medium;
 mod memory;
 pub(crate) use memory::EnemyMemory;
 mod tactics;

@@ -4,15 +4,16 @@ module Game.Archive exposing
     , Game
     , LoggedGameStatus(..)
     , Player
+    , controllerLabel
     , entrySelection
     , playerLabel
     , selection
     , statusLabel
     )
 
-import Api.Enum.Controller as Controller exposing (Controller)
 import Api.Enum.LoggedGameStatusKind as StatusKind
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
+import Api.Enum.RecordedController as RecordedController exposing (RecordedController)
 import Api.Object
 import Api.Object.ArchivePlayer as PlayerApi
 import Api.Object.ArchiveReadError as ReadErrorApi
@@ -63,7 +64,7 @@ type LoggedGameStatus
 type alias Player =
     { name : String
     , playerNumber : PlayerNumber
-    , controller : Controller
+    , controller : RecordedController
     }
 
 
@@ -150,20 +151,28 @@ playerLabel player =
     let
         controller : String
         controller =
-            case player.controller of
-                Controller.Human ->
-                    "human"
-
-                Controller.Ai ->
-                    "ai"
-
-                Controller.AiMedium ->
-                    "break contact"
-
-                Controller.AiHard ->
-                    "screened battery"
-
-                Controller.AiVeryHard ->
-                    "find the blind side"
+            controllerLabel player.controller
     in
     PlayerNumber.label player.playerNumber ++ ": " ++ player.name ++ " (" ++ controller ++ ")"
+
+
+controllerLabel : RecordedController -> String
+controllerLabel controller =
+    case controller of
+        RecordedController.Human ->
+            "human"
+
+        RecordedController.Ai ->
+            "ai"
+
+        RecordedController.BreakContact ->
+            "break contact"
+
+        RecordedController.ScreenedBattery ->
+            "screened battery"
+
+        RecordedController.FindTheBlindSide ->
+            "find the blind side"
+
+        RecordedController.ArtillerySpotters ->
+            "artillery spotters"

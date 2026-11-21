@@ -625,14 +625,15 @@ reliable local storage. A filesystem supporting hard links is required.
 To browse saved games, run `make logs`, or add `--game-logs` to the
 server command, then open `/dev/logged-games` at the server's deployment address
 (`http://127.0.0.1:8080/dev/logged-games` locally). `make dev` also
-enables these pages. The list includes unfinished recordings and isolates errors
-for malformed archives. Replay reads saved boards and frames rather than rerunning
-orders, so it can display archives after rule changes. Pending submissions do not
-appear as completed turns. Turn zero is the starting board; turns one onward
-play their recorded resolution. The player selector applies normal fog and
-remembered freight, with the final reveal after terminal playback.
+enables these pages. The list shows 20 recordings per page, newest first, and
+includes unfinished games. It reads summary fields from the starting record and
+latest submission. Opening a replay validates the full recording and displays
+its saved boards and frames. Pending submissions do not appear as completed
+turns. Turn zero is the starting board; turns one onward play their recorded
+resolution. The player selector applies normal fog and remembered freight, with
+the final reveal after terminal playback.
 
-Local DevTools browsing through `loggedGames`, `loggedGame`, and `loggedTurn`
+Local DevTools browsing through `loggedGamesPage`, `loggedGame`, and `loggedTurn`
 requires this opt-in flag; serving the entry point does not grant archive access.
 These queries accept remote connections and deployment hostnames, including
 behind HTTPS reverse proxies. In development, enabling this flag allows anyone

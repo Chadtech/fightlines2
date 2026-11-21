@@ -46,6 +46,8 @@ isAi =
     Object.selectionForField "Bool" "isAi" [] Decode.bool
 
 
-controller : SelectionSet Api.Enum.Controller.Controller Api.Object.GamePlayerView
+{-| The current lobby choice, when available. Replays also have a recorded roster.
+-}
+controller : SelectionSet (Maybe Api.Enum.Controller.Controller) Api.Object.GamePlayerView
 controller =
-    Object.selectionForField "Enum.Controller.Controller" "controller" [] Api.Enum.Controller.decoder
+    Object.selectionForField "(Maybe Enum.Controller.Controller)" "controller" [] (Api.Enum.Controller.decoder |> Decode.nullable)

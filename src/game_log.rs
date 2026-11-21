@@ -4,7 +4,7 @@ use crate::{
     chat::ChatMessage,
     lobby_id::LobbyId,
     map_id::MapId,
-    player::Controller,
+    player::RecordedController,
     player_number::PlayerNumber,
     scenario::Scenario,
     seed::Seed,
@@ -43,7 +43,7 @@ pub struct RecordedPlayer {
     pub name: String,
     /// This player's control kind, never another player or a browser credential.
     #[serde(alias = "opponent")]
-    pub controller: Controller,
+    pub controller: RecordedController,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -87,10 +87,10 @@ enum Event {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Record {
+struct Record<E = Event> {
     format_version: u32,
     recorded_at_unix_ms: u128,
-    event: Event,
+    event: E,
 }
 
 /// Kept separate from game records so archive queries cannot expose the seed.
@@ -421,7 +421,7 @@ fn submitted_players(turns: &Turns) -> Vec<PlayerNumber> {
 }
 
 /// A published archive is a contiguous prefix; pending files are never read.
-fn records(directory: &Path) -> io::Result<Vec<Record>> {
+fn record_paths(directory: &Path) -> io::Result<Vec<PathBuf>> {
     let mut paths = fs::read_dir(directory)?
         .map(|entry| entry.map(|entry| entry.path()))
         .collect::<io::Result<Vec<_>>>()?;
@@ -430,7 +430,6 @@ fn records(directory: &Path) -> io::Result<Vec<Record>> {
             .is_some_and(|extension| extension == "json")
     });
     paths.sort();
-    let mut records = Vec::new();
     for (index, path) in paths.iter().enumerate() {
         let expected = format!("{index:08}.json");
         if path.file_name().and_then(|name| name.to_str()) != Some(&expected) {
@@ -438,14 +437,29 @@ fn records(directory: &Path) -> io::Result<Vec<Record>> {
                 "missing or unexpected record at {expected}"
             )));
         }
-        let mut record: Record = serde_json::from_reader(BufReader::new(File::open(path)?))
-            .map_err(|error| io::Error::other(format!("{expected}: {error}")))?;
-        if !(1..=FORMAT_VERSION).contains(&record.format_version) {
+    }
+    Ok(paths)
+}
+
+impl<E> Record<E> {
+    fn check_version(self) -> io::Result<Self> {
+        if !(1..=FORMAT_VERSION).contains(&self.format_version) {
             return Err(io::Error::other(format!(
                 "unsupported game log version {}",
-                record.format_version
+                self.format_version
             )));
         }
+        Ok(self)
+    }
+}
+
+fn records(directory: &Path) -> io::Result<Vec<Record>> {
+    let paths = record_paths(directory)?;
+    let mut records = Vec::with_capacity(paths.len());
+    for (index, path) in paths.into_iter().enumerate() {
+        let record: Record = serde_json::from_reader(BufReader::new(File::open(&path)?))
+            .map_err(|error| io::Error::other(format!("{index:08}.json: {error}")))?;
+        let mut record = record.check_version()?;
         if record.format_version == 1
             && let Event::Submitted(submitted) = &mut record.event
             && let Some(resolution) = &mut submitted.resolution
@@ -455,6 +469,79 @@ fn records(directory: &Path) -> io::Result<Vec<Record>> {
         records.push(record);
     }
     Ok(records)
+}
+
+#[derive(Deserialize)]
+pub struct RecordedGame {
+    pub name: String,
+    pub map_type: MapId,
+    pub players: Vec<RecordedPlayer>,
+}
+
+#[derive(Deserialize)]
+struct RecordedProgress {
+    next_turn_number: i32,
+    outcome: Option<GameOutcome>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", content = "data")]
+enum SummaryEvent {
+    Started(RecordedGame),
+    Submitted(RecordedProgress),
+    Chat(serde::de::IgnoredAny),
+}
+
+pub struct ArchiveSummary {
+    pub game: RecordedGame,
+    pub recorded_at_unix_ms: u128,
+    pub turn_count: i32,
+    pub outcome: Option<GameOutcome>,
+}
+
+impl ArchiveSummary {
+    pub fn read(directory: &Path) -> io::Result<Self> {
+        let paths = record_paths(directory)?;
+        let (first, remaining) = paths
+            .split_first()
+            .ok_or_else(|| io::Error::other("game log has no Started record"))?;
+        let first = summary_record(first)?;
+        let SummaryEvent::Started(game) = first.event else {
+            return Err(io::Error::other("game log must begin with Started"));
+        };
+        let mut summary = Self {
+            game,
+            recorded_at_unix_ms: first.recorded_at_unix_ms,
+            turn_count: 0,
+            outcome: None,
+        };
+        // The most recent submission already records the next turn and outcome.
+        // Chat does not change either, and opening replay validates the full log.
+        for path in remaining.iter().rev() {
+            match summary_record(path)?.event {
+                SummaryEvent::Submitted(progress) => {
+                    summary.turn_count = progress
+                        .next_turn_number
+                        .checked_sub(1)
+                        .filter(|turn| *turn >= 0)
+                        .ok_or_else(|| io::Error::other("invalid recorded next turn"))?;
+                    summary.outcome = progress.outcome;
+                    break;
+                }
+                SummaryEvent::Chat(_) => {}
+                SummaryEvent::Started(_) => {
+                    return Err(io::Error::other("unexpected Started record"));
+                }
+            }
+        }
+        Ok(summary)
+    }
+}
+
+fn summary_record(path: &Path) -> io::Result<Record<SummaryEvent>> {
+    let record: Record<SummaryEvent> = serde_json::from_slice(&fs::read(path)?)
+        .map_err(|error| io::Error::other(format!("{}: {error}", path.display())))?;
+    record.check_version()
 }
 
 pub struct Archive {
@@ -587,13 +674,14 @@ pub fn replay(directory: &Path) -> io::Result<String> {
                         }
                     }
                 }
-                // This presentation cue was absent in older records. Verify the
-                // authoritative damage and health without requiring the cue to match.
+                // Older records omit combat labels. Compare the damage and health
+                // without requiring presentation cues to match.
                 for result in [&mut actual, &mut submitted] {
                     if let Some(resolution) = &mut result.resolution {
                         for frame in &mut resolution.frames {
                             for shot in &mut frame.shots {
                                 shot.flank_bonus = false;
+                                shot.ambush_bonus = Default::default();
                             }
                         }
                     }
@@ -728,7 +816,7 @@ mod tests {
                 "controller": controller,
             });
             let player: RecordedPlayer = serde_json::from_value(value)?;
-            assert_eq!(player.controller, Controller::Ai);
+            assert_eq!(player.controller, RecordedController::Ai);
         }
         Ok(())
     }
@@ -736,11 +824,12 @@ mod tests {
     #[test]
     fn recorded_players_accept_legacy_opponent_fields_and_write_controller() -> TestResult<()> {
         for (controller, label) in [
-            (Controller::Human, "Human"),
-            (Controller::Ai, "Ai"),
-            (Controller::BreakContact, "BreakContact"),
-            (Controller::ScreenedBattery, "ScreenedBattery"),
-            (Controller::FindTheBlindSide, "FindTheBlindSide"),
+            (RecordedController::Human, "Human"),
+            (RecordedController::Ai, "Ai"),
+            (RecordedController::BreakContact, "BreakContact"),
+            (RecordedController::ScreenedBattery, "ScreenedBattery"),
+            (RecordedController::FindTheBlindSide, "FindTheBlindSide"),
+            (RecordedController::ArtillerySpotters, "ArtillerySpotters"),
         ] {
             let current = json!({
                 "player_number": "Player1",

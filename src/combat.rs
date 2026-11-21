@@ -181,10 +181,30 @@ pub struct Shot {
     /// A ready defender was struck from its flank or rear. Older recordings omit this cue.
     #[serde(default)]
     pub flank_bonus: bool,
+    #[serde(default)]
+    pub ambush_bonus: AmbushBonus,
     pub attacker: Unit,
     pub target: Unit,
     pub attacker_health: CombatHealth,
     pub target_health: CombatHealth,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
+pub enum AmbushBonus {
+    #[default]
+    None,
+    Ambush,
+    SuperAmbush,
+}
+
+impl AmbushBonus {
+    fn multiplier(self) -> f64 {
+        match self {
+            Self::None => 1.0,
+            Self::Ambush => 1.125,
+            Self::SuperAmbush => 5.0,
+        }
+    }
 }
 
 /// Encounter portraits are separate from battlefield sightings and never expose resources.
@@ -278,30 +298,95 @@ pub enum AttackAspect {
     Rear,
 }
 
-/// The forward/rear 90-degree sectors include their diagonal boundaries.
-fn attack_aspect(unit: &Unit, opponent: &Unit) -> AttackAspect {
-    if let (Some(position), Some(other), Some(direction)) = (
-        unit.board_position(),
-        opponent.board_position(),
-        unit.direction(),
-    ) {
-        let dx = other.x() - position.x();
-        let dy = other.y() - position.y();
-        let (forward, sideways) = match direction {
-            Direction::North => (-dy, dx),
-            Direction::East => (dx, dy),
-            Direction::South => (dy, dx),
-            Direction::West => (-dx, dy),
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AdvanceFacing {
+    x: i32,
+    y: i32,
+}
+
+impl From<Direction> for AdvanceFacing {
+    fn from(direction: Direction) -> Self {
+        let (x, y) = match direction {
+            Direction::North => (0, -1),
+            Direction::East => (1, 0),
+            Direction::South => (0, 1),
+            Direction::West => (-1, 0),
         };
-        if forward > 0 && forward >= sideways.abs() {
+        Self { x, y }
+    }
+}
+
+impl AdvanceFacing {
+    /// Three alternating edges distinguish a diagonal staircase from a corner.
+    /// Use the full submitted path so an interruption cannot change the heading.
+    pub fn along_route(path: &[Coordinate]) -> Vec<Self> {
+        let steps: Vec<_> = path
+            .windows(2)
+            .map(|edge| Self {
+                x: edge[1].x() - edge[0].x(),
+                y: edge[1].y() - edge[0].y(),
+            })
+            .collect();
+        let mut facings = Vec::with_capacity(steps.len());
+        while let Some(&first) = steps.get(facings.len()) {
+            let remaining = &steps[facings.len()..];
+            if let [_, second, third, ..] = remaining
+                && first == *third
+                && first.x * second.x + first.y * second.y == 0
+            {
+                let length = remaining
+                    .iter()
+                    .enumerate()
+                    .take_while(|(index, edge)| {
+                        **edge == if index % 2 == 0 { first } else { *second }
+                    })
+                    .count();
+                facings.resize(
+                    facings.len() + length,
+                    Self {
+                        x: first.x + second.x,
+                        y: first.y + second.y,
+                    },
+                );
+            } else {
+                facings.push(first);
+            }
+        }
+        facings
+    }
+
+    fn bearing(self, from: Coordinate, to: Coordinate) -> Bearing {
+        let dx = to.x() - from.x();
+        let dy = to.y() - from.y();
+        let forward = self.x * dx + self.y * dy;
+        let sideways = (self.x * dy - self.y * dx).abs();
+        let aspect = if forward > 0 && forward >= sideways {
             AttackAspect::Front
-        } else if forward < 0 && -forward >= sideways.abs() {
+        } else if forward < 0 && -forward >= sideways {
             AttackAspect::Rear
         } else {
             AttackAspect::Flank
-        }
-    } else {
-        AttackAspect::Front
+        };
+        let exposure = if self.x != 0 && self.y != 0 {
+            f64::from(sideways).atan2(f64::from(forward)) / std::f64::consts::PI
+        } else {
+            aspect_exposure(aspect)
+        };
+        Bearing { aspect, exposure }
+    }
+}
+
+struct Bearing {
+    aspect: AttackAspect,
+    /// Fraction of the angle from directly ahead to directly behind.
+    exposure: f64,
+}
+
+fn aspect_exposure(aspect: AttackAspect) -> f64 {
+    match aspect {
+        AttackAspect::Front => 0.0,
+        AttackAspect::Flank => 0.5,
+        AttackAspect::Rear => 1.0,
     }
 }
 
@@ -393,6 +478,7 @@ pub struct Combat {
     fired: BTreeSet<UnitId>,
     attack_movers: BTreeSet<UnitId>,
     deferred_targets: BTreeMap<UnitId, BTreeSet<UnitId>>,
+    advance_facings: BTreeMap<UnitId, AdvanceFacing>,
 }
 
 impl Combat {
@@ -428,6 +514,7 @@ impl Combat {
             fired: BTreeSet::new(),
             attack_movers: BTreeSet::new(),
             deferred_targets: BTreeMap::new(),
+            advance_facings: BTreeMap::new(),
         };
         for plan in plans {
             let Some(unit) = board
@@ -512,13 +599,51 @@ impl Combat {
             == DefenseReadiness::Ready
     }
 
+    pub fn set_advance_facing(&mut self, id: UnitId, facing: Option<AdvanceFacing>) {
+        if let Some(facing) = facing {
+            self.advance_facings.insert(id, facing);
+        } else {
+            self.advance_facings.remove(&id);
+        }
+    }
+
+    fn bearing(&self, unit: &Unit, opponent: &Unit) -> Bearing {
+        let facing = self
+            .advance_facings
+            .get(&unit.unit_id())
+            .copied()
+            .or_else(|| unit.direction().map(AdvanceFacing::from));
+        match (facing, unit.board_position(), opponent.board_position()) {
+            (Some(facing), Some(from), Some(to)) => facing.bearing(from, to),
+            _ => Bearing {
+                aspect: AttackAspect::Front,
+                exposure: 0.0,
+            },
+        }
+    }
+
     fn flank_bonus(&self, shooter: &Unit, target: &Unit, kind: CombatKind) -> bool {
         kind != CombatKind::IndirectFire
             && self.defensively_ready(target)
-            && match attack_aspect(target, shooter) {
+            && match self.bearing(target, shooter).aspect {
                 AttackAspect::Front => false,
                 AttackAspect::Flank | AttackAspect::Rear => true,
             }
+    }
+
+    fn ambush_bonus(&self, shooter: &Unit, target: &Unit, kind: CombatKind) -> AmbushBonus {
+        if kind != CombatKind::Ambush {
+            AmbushBonus::None
+        } else if shooter.kind() == UnitKind::Infantry
+            && target.kind() == UnitKind::Tank
+            && self.flank_bonus(shooter, target, kind)
+        {
+            AmbushBonus::SuperAmbush
+        } else if self.attack_movers.contains(&target.unit_id()) {
+            AmbushBonus::Ambush
+        } else {
+            AmbushBonus::None
+        }
     }
 
     /// Resolve against the pre-volley board so reciprocal fire is simultaneous.
@@ -533,6 +658,18 @@ impl Combat {
         target: &Unit,
         kind: CombatKind,
     ) -> DamageCalculation {
+        let factors = self.damage_factors(board, shooter, target, kind);
+        let damage = Self::apply_damage(&factors, shooter, target, 1.0);
+        DamageCalculation { damage, factors }
+    }
+
+    fn damage_factors(
+        &self,
+        board: &Scenario,
+        shooter: &Unit,
+        target: &Unit,
+        kind: CombatKind,
+    ) -> DamageFactors {
         // Only a health disadvantage reduces firepower; equally wounded units
         // retain full power against each other without a bonus for healthier attackers.
         let strength = (f64::from(shooter.hit_points().current())
@@ -553,24 +690,15 @@ impl Combat {
             _ => 1.0,
         };
         let readiness = if defensively_ready { 1.0 } else { 2.0 };
-        let target_aspect = attack_aspect(target, shooter);
         let facing = if defensively_ready && kind != CombatKind::IndirectFire {
-            match target_aspect {
-                AttackAspect::Front => 1.0,
-                AttackAspect::Flank => 1.5,
-                AttackAspect::Rear => 2.0,
-            }
+            1.0 + self.bearing(target, shooter).exposure
         } else {
             1.0
         };
         let aim = if kind == CombatKind::IndirectFire {
             1.0
         } else {
-            match attack_aspect(shooter, target) {
-                AttackAspect::Front => 1.0,
-                AttackAspect::Flank => 0.85,
-                AttackAspect::Rear => 0.7,
-            }
+            1.0 - 0.3 * self.bearing(shooter, target).exposure
         };
         let cover = match target
             .board_position()
@@ -586,19 +714,7 @@ impl Combat {
             )
             | None => 1.0,
         };
-        let ambush = match (kind, shooter.kind(), target.kind(), target_aspect) {
-            // Infantry can seriously hurt prepared armor by ambushing its sides or rear.
-            (
-                CombatKind::Ambush,
-                UnitKind::Infantry,
-                UnitKind::Tank,
-                AttackAspect::Flank | AttackAspect::Rear,
-            ) if defensively_ready => 5.0,
-            (CombatKind::Ambush, _, _, _) if self.attack_movers.contains(&target.unit_id()) => {
-                1.125
-            }
-            _ => 1.0,
-        };
+        let ambush = self.ambush_bonus(shooter, target, kind).multiplier();
         let entrenchment = if target.entrenchment() == Entrenchment::Entrenched {
             match shooter.kind() {
                 UnitKind::Infantry => 0.15,
@@ -615,7 +731,7 @@ impl Combat {
                 && Some(building.position) == target.board_position()
         });
         let fortification = if fortified { 0.25 } else { 1.0 };
-        let factors = DamageFactors {
+        DamageFactors {
             base_power: rules(shooter.kind()).damage,
             relative_health: strength.powi(2),
             matchup,
@@ -626,7 +742,15 @@ impl Combat {
             ambush,
             entrenchment,
             fortification,
-        };
+        }
+    }
+
+    fn apply_damage(
+        factors: &DamageFactors,
+        shooter: &Unit,
+        target: &Unit,
+        exchange_multiplier: f64,
+    ) -> i32 {
         let raw_damage = f64::from(factors.base_power)
             * factors.relative_health
             * factors.matchup
@@ -634,7 +758,8 @@ impl Combat {
             * factors.defender_facing
             * factors.attacker_aim
             * factors.cover
-            * factors.ambush;
+            * factors.ambush
+            * exchange_multiplier;
         let maximum_damage = f64::from(target.hit_points().maximum());
         // Tank hits receive trench protection after the cap, so excess weapon
         // power cannot erase the reduction. Other weapons retain their existing balance.
@@ -645,12 +770,11 @@ impl Combat {
         // Fortress cover also protects against hits that exceed the ordinary cap.
         let bounded_damage = entrenched_damage * factors.fortification;
         // Round once, after every factor. A living armed shooter still inflicts a hit.
-        let damage = if shooter.is_alive() && shooter.kind() != UnitKind::Truck {
+        if shooter.is_alive() && shooter.kind() != UnitKind::Truck {
             (bounded_damage.round() as i32).clamp(1, target.hit_points().maximum())
         } else {
             0
-        };
-        DamageCalculation { damage, factors }
+        }
     }
 
     fn engagement(&self, board: &Scenario, shooter: &Unit, target: &Unit) -> Option<Engagement> {
@@ -693,6 +817,7 @@ impl Combat {
                 destination,
                 damage: self.damage(board, shooter, target, CombatKind::Ambush),
                 flank_bonus: self.flank_bonus(shooter, target, CombatKind::Ambush),
+                ambush_bonus: self.ambush_bonus(shooter, target, CombatKind::Ambush),
                 attacker: theater_participant(shooter),
                 target: theater_participant(target),
                 attacker_health: CombatHealth {
@@ -710,6 +835,7 @@ impl Combat {
     /// Spend one shot and face its landing, whether or not a target is present.
     fn fire(&mut self, board: &mut Scenario, launch: ShellLaunch) {
         self.fired.insert(launch.shooter);
+        self.advance_facings.remove(&launch.shooter);
         if let Some(unit) = board
             .units
             .iter_mut()
@@ -840,6 +966,7 @@ impl Combat {
                 destination,
                 damage: self.damage(board, shooter, target, CombatKind::AttackMove),
                 flank_bonus: self.flank_bonus(shooter, target, CombatKind::AttackMove),
+                ambush_bonus: AmbushBonus::None,
                 attacker: theater_participant(shooter),
                 target: theater_participant(target),
                 attacker_health: CombatHealth {
@@ -852,6 +979,43 @@ impl Combat {
                 },
             },
         })
+    }
+
+    /// Apply the reduction before the damage cap and rounding. Only the shots
+    /// actually selected for the same reciprocal attack-move exchange qualify.
+    fn reduce_frontal_exchanges(&self, board: &Scenario, opening: &mut [Engagement]) {
+        if opening.len() < 2 {
+            return;
+        }
+        let targets: BTreeMap<_, _> = opening
+            .iter()
+            .map(|engagement| (engagement.shooter, engagement.target))
+            .collect();
+        for engagement in opening {
+            if targets.get(&engagement.target) != Some(&engagement.shooter) {
+                continue;
+            }
+            let Some(shooter) = board
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == engagement.shooter)
+            else {
+                continue;
+            };
+            let Some(target) = board
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == engagement.target)
+            else {
+                continue;
+            };
+            if self.bearing(shooter, target).aspect == AttackAspect::Front
+                && self.bearing(target, shooter).aspect == AttackAspect::Front
+            {
+                let factors = self.damage_factors(board, shooter, target, CombatKind::AttackMove);
+                engagement.shot.damage = Self::apply_damage(&factors, shooter, target, 0.5);
+            }
+        }
     }
 
     /// An ambushing field gun fires first against an opposing tank ambush.
@@ -909,6 +1073,7 @@ impl Combat {
                 opening.push(engagement);
             }
         }
+        self.reduce_frontal_exchanges(board, &mut opening);
         // Contact fire exposes even a concealed attacker to the same volley.
         for unit in &mut board.units {
             if attacking.contains(&unit.unit_id()) {
@@ -1046,6 +1211,7 @@ impl Combat {
                         destination: *destination,
                         damage: self.damage(board, shooter, target, CombatKind::IndirectFire),
                         flank_bonus: self.flank_bonus(shooter, target, CombatKind::IndirectFire),
+                        ambush_bonus: AmbushBonus::None,
                         attacker: theater_participant(shooter),
                         target: theater_participant(target),
                         attacker_health: CombatHealth {
@@ -2552,9 +2718,14 @@ mod tests {
             .fixture()?
             .shot;
         let mut recorded = serde_json::to_value(&shot)?;
-        assert!(serde_json::from_value::<Shot>(recorded.clone())?.flank_bonus);
+        let decoded = serde_json::from_value::<Shot>(recorded.clone())?;
+        assert!(decoded.flank_bonus);
+        assert_eq!(decoded.ambush_bonus, AmbushBonus::SuperAmbush);
         recorded.as_object_mut().fixture()?.remove("flank_bonus");
-        assert!(!serde_json::from_value::<Shot>(recorded)?.flank_bonus);
+        recorded.as_object_mut().fixture()?.remove("ambush_bonus");
+        let legacy = serde_json::from_value::<Shot>(recorded)?;
+        assert!(!legacy.flank_bonus);
+        assert_eq!(legacy.ambush_bonus, AmbushBonus::None);
         Ok(())
     }
 
@@ -2934,12 +3105,14 @@ mod tests {
             .find(|shot| shot.kind == CombatKind::Ambush)
             .fixture()?;
         assert_eq!(ambush.damage, 1);
+        assert_eq!(ambush.ambush_bonus, AmbushBonus::Ambush);
         assert_eq!(ambush.target_health.after.current(), 15);
         let charge = shots
             .iter()
             .find(|shot| shot.kind == CombatKind::AttackMove)
             .fixture()?;
         assert_eq!(charge.origin, approach);
+        assert_eq!(charge.ambush_bonus, AmbushBonus::None);
         assert_eq!(charge.attacker_health.before.current(), 16);
         assert_eq!(charge.target_health.after.current(), 0);
         assert_eq!(
@@ -2947,6 +3120,54 @@ mod tests {
             Some(&approach)
         );
         assert!(result.stopped.contains(&tank_id));
+        Ok(())
+    }
+
+    #[test]
+    fn staircase_heading_protects_both_forward_edges_from_the_first_arrival() -> TestResult<()> {
+        let arrival = Coordinate::new(4, 4);
+        for route in [
+            [(3, 4), (4, 4), (4, 3), (5, 3)],
+            [(4, 5), (4, 4), (5, 4), (5, 3)],
+        ] {
+            let path: Vec<_> = route
+                .into_iter()
+                .map(|(x, y)| Coordinate::new(x, y))
+                .collect();
+            for (shooter, direction, damage, flank_bonus) in [
+                ((6, 4), Direction::West, 11, false),
+                ((4, 2), Direction::South, 11, false),
+                ((2, 4), Direction::East, 16, true),
+                ((4, 6), Direction::North, 16, true),
+            ] {
+                let (mut scenario, mut orders) =
+                    fixture(UnitKind::Tank, UnitKind::Tank, *path.first().fixture()?)?;
+                let origin = Coordinate::new(shooter.0, shooter.1);
+                scenario.map = Map::new(
+                    9,
+                    9,
+                    Terrain::Plain,
+                    BTreeMap::from([(origin, Terrain::Hills)]),
+                )
+                .fixture()?;
+                scenario.units.first_mut().fixture()?.move_to(origin);
+                let ambush = orders.first_mut().fixture()?;
+                ambush.path = vec![origin];
+                ambush.action = CombatAction::Ambush(direction);
+                let mover = orders.get_mut(1).fixture()?;
+                mover.path = path.clone();
+                mover.action = CombatAction::AttackMove;
+
+                let result = resolve_completed_movement(&scenario, &orders, 1)?;
+                let hits = shots(&result);
+                assert_eq!(hits.len(), 1);
+                let hit = hits.first().fixture()?;
+                assert_eq!(hit.destination, arrival);
+                assert_eq!(hit.damage, damage);
+                assert_eq!(hit.flank_bonus, flank_bonus);
+                assert_eq!(hit.ambush_bonus, AmbushBonus::Ambush);
+            }
+        }
         Ok(())
     }
 
@@ -2965,6 +3186,7 @@ mod tests {
         let hit = hits.first().fixture()?;
         assert_eq!(hit.kind, CombatKind::Ambush);
         assert_eq!(hit.damage, 8);
+        assert_eq!(hit.ambush_bonus, AmbushBonus::SuperAmbush);
         let units = &result.frames.last().fixture()?.units;
         let infantry = units.first().fixture()?;
         let tank = units.get(1).fixture()?;

@@ -12,7 +12,7 @@ import Game.Unit.Supplies exposing (Supplies)
 import Game.UnitKind as UnitKindUtil
 import Game.UnitResources as UnitResources exposing (UnitResources)
 import Game.View.CombatReadiness as CombatReadiness
-import Game.View.InspectionHelp as InspectionHelp exposing (Events, Help(..))
+import Game.View.InspectionHelp as InspectionHelp exposing (Help(..), SupplyHelpSource(..))
 import Game.View.UnitSprite as UnitSprite
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -48,18 +48,18 @@ type Action msg
 
 toHtml :
     Layout
-    -> Events msg
+    -> (Help -> msg)
     -> String
     -> Unit
     -> Maybe (Action msg)
     -> Html msg
-toHtml layout events playerName unit action =
+toHtml layout onHelp playerName unit action =
     case action of
         Just portraitAction ->
             Lazy.lazy5
                 actionableStatusView
                 layout
-                events
+                onHelp
                 playerName
                 unit
                 portraitAction
@@ -68,24 +68,24 @@ toHtml layout events playerName unit action =
             Lazy.lazy4
                 inspectionStatusView
                 layout
-                events
+                onHelp
                 playerName
                 unit
 
 
-inspectionStatusView : Layout -> Events msg -> String -> Unit -> Html msg
-inspectionStatusView layout events playerName unit =
-    statusView layout events playerName unit []
+inspectionStatusView : Layout -> (Help -> msg) -> String -> Unit -> Html msg
+inspectionStatusView layout onHelp playerName unit =
+    statusView layout onHelp playerName unit []
 
 
 actionableStatusView :
     Layout
-    -> Events msg
+    -> (Help -> msg)
     -> String
     -> Unit
     -> Action msg
     -> Html msg
-actionableStatusView layout events playerName unit action =
+actionableStatusView layout onHelp playerName unit action =
     let
         button : Button msg
         button =
@@ -98,7 +98,7 @@ actionableStatusView layout events playerName unit action =
     in
     statusView
         layout
-        events
+        onHelp
         playerName
         unit
         [ button
@@ -109,23 +109,23 @@ actionableStatusView layout events playerName unit action =
 
 statusView :
     Layout
-    -> Events msg
+    -> (Help -> msg)
     -> String
     -> Unit
     -> List (Html msg)
     -> Html msg
-statusView layout events playerName unit actions =
+statusView layout onHelp playerName unit actions =
     let
         identityContent : List (Html msg)
         identityContent =
             case layout of
                 Layout.Desktop ->
-                    [ unitHeader events playerName unit
+                    [ unitHeader onHelp playerName unit
                     , portrait playerName unit
                     ]
 
                 Layout.Mobile ->
-                    [ unitHeader events playerName unit ]
+                    [ unitHeader onHelp playerName unit ]
 
         gap : Css.Style
         gap =
@@ -139,10 +139,10 @@ statusView layout events playerName unit actions =
         resourceContent : List (Html msg)
         resourceContent =
             [ CombatReadiness.toHtml unit.combatState
-            , exhaustionStatus unit
+            , exhaustionStatus onHelp unit
             , resourcesView
                 layout
-                events
+                onHelp
                 unit.kind
                 unit.resources
             ]
@@ -161,8 +161,8 @@ statusView layout events playerName unit actions =
         content
 
 
-exhaustionStatus : Unit -> Html msg
-exhaustionStatus unit =
+exhaustionStatus : (Help -> msg) -> Unit -> Html msg
+exhaustionStatus onHelp unit =
     let
         remaining : Maybe Int
         remaining =
@@ -185,10 +185,19 @@ exhaustionStatus unit =
             in
             H.p
                 [ A.css
-                    [ S.textYellow5
+                    [ S.row
+                    , S.itemsCenter
+                    , S.g2
+                    , S.textYellow5
                     ]
                 ]
-                [ H.text ("exhausted · resupply within " ++ timeLeft)
+                [ H.span
+                    []
+                    [ H.text ("exhausted · resupply within " ++ timeLeft) ]
+                , InspectionHelp.button
+                    onHelp
+                    "about exhaustion"
+                    (SupplyHelp ExhaustionNotice)
                 ]
 
         Nothing ->
@@ -197,11 +206,11 @@ exhaustionStatus unit =
 
 resourcesView :
     Layout
-    -> Events msg
+    -> (Help -> msg)
     -> UnitKind
     -> Maybe UnitResources
     -> Html msg
-resourcesView layout events kind maybeResources =
+resourcesView layout onHelp kind maybeResources =
     let
         gaugeGap : Css.Style
         gaugeGap =
@@ -233,7 +242,7 @@ resourcesView layout events kind maybeResources =
             , gaugeGap
             ]
         ]
-        (List.map (gauge events kind) resources)
+        (List.map (gauge onHelp kind) resources)
 
 
 portrait : String -> Unit -> Html msg
@@ -266,8 +275,8 @@ portrait playerName unit =
         ]
 
 
-unitHeader : Events msg -> String -> Unit -> Html msg
-unitHeader events playerName unit =
+unitHeader : (Help -> msg) -> String -> Unit -> Html msg
+unitHeader onHelp playerName unit =
     H.div
         [ A.css
             [ S.row
@@ -291,7 +300,7 @@ unitHeader events playerName unit =
                 [ H.text (Unit.name unit)
                 ]
             , InspectionHelp.button
-                events
+                onHelp
                 ("about " ++ UnitKindUtil.label unit.kind)
                 (UnitHelp (UnitSprite.appearance unit))
             ]
@@ -306,8 +315,8 @@ unitHeader events playerName unit =
         ]
 
 
-gauge : Events msg -> UnitKind -> Resource -> Html msg
-gauge events kind resource =
+gauge : (Help -> msg) -> UnitKind -> Resource -> Html msg
+gauge onHelp kind resource =
     let
         label : String
         label =
@@ -358,12 +367,15 @@ gauge events kind resource =
 
                 Supply _ ->
                     [ H.text label
-                    , InspectionHelp.button events "about supply" SupplyHelp
+                    , InspectionHelp.button
+                        onHelp
+                        "about supply"
+                        (SupplyHelp SupplyGauge)
                     ]
 
                 Fuel _ ->
                     [ H.text label
-                    , InspectionHelp.button events "about fuel" FuelHelp
+                    , InspectionHelp.button onHelp "about fuel" FuelHelp
                     ]
 
         header : Html msg

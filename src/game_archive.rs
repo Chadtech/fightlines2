@@ -3,17 +3,17 @@ pub mod review;
 use crate::{
     chat::ChatMessage,
     game::{ArchivedView, GameSnapshot},
-    game_log::{Archive, RecordedPlayer},
+    game_log::{Archive, ArchiveSummary, RecordedGame, RecordedPlayer},
     graphql::Context,
     map_id::MapId,
-    player::Controller,
+    player::RecordedController,
     player_number::PlayerNumber,
     server_log,
     turns::GameOutcome,
     visibility::PlayerObservation,
 };
 use actix_web::web;
-use juniper::{FieldResult, GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object};
+use juniper::{FieldError, FieldResult, GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object};
 use std::{fs, io, path::PathBuf, sync::Arc};
 
 pub struct Browser {
@@ -67,9 +67,9 @@ impl ArchiveId {
         Ok(Self(value))
     }
 
-    fn read(&self, browser: &Browser) -> io::Result<Archive> {
+    fn path_in(&self, roots: &[PathBuf]) -> io::Result<PathBuf> {
         let mut candidates = Vec::new();
-        for root in crate::deployment::storage_roots(&browser.directory, "game-logs")? {
+        for root in roots {
             let path = root.join(&self.0);
             if path.exists() {
                 candidates.push(path);
@@ -85,7 +85,12 @@ impl ArchiveId {
                 "logged game directories cannot be symbolic links",
             ));
         }
-        Archive::read(&path)
+        Ok(path)
+    }
+
+    fn read(&self, browser: &Browser) -> io::Result<Archive> {
+        let roots = crate::deployment::storage_roots(&browser.directory, "game-logs")?;
+        Archive::read(&self.path_in(&roots)?)
     }
 }
 
@@ -94,13 +99,13 @@ impl ArchiveId {
 pub struct ArchivePlayer {
     name: String,
     player_number: PlayerNumber,
-    controller: Controller,
+    controller: RecordedController,
 }
 
-impl From<&RecordedPlayer> for ArchivePlayer {
-    fn from(player: &RecordedPlayer) -> Self {
+impl From<RecordedPlayer> for ArchivePlayer {
+    fn from(player: RecordedPlayer) -> Self {
         Self {
-            name: player.name.clone(),
+            name: player.name,
             player_number: player.player_number,
             controller: player.controller,
         }
@@ -139,10 +144,13 @@ impl LoggedGameStatus {
     }
 }
 
-#[derive(GraphQLObject)]
-#[graphql(context = Context)]
+enum ArchiveChat {
+    Loaded(Vec<ChatMessage>),
+    OnDemand(PathBuf),
+}
+
 pub struct LoggedGame {
-    chat: Vec<ChatMessage>,
+    chat: ArchiveChat,
     id: String,
     name: String,
     map_type: MapId,
@@ -153,12 +161,8 @@ pub struct LoggedGame {
 }
 
 impl LoggedGame {
-    fn from_archive(id: ArchiveId, archive: &Archive) -> Self {
-        let status = match archive
-            .submissions
-            .last()
-            .and_then(|submission| submission.outcome)
-        {
+    fn from_summary(id: ArchiveId, summary: ArchiveSummary, chat: ArchiveChat) -> Self {
+        let status = match summary.outcome {
             Some(
                 GameOutcome::Victory(player)
                 | GameOutcome::Resignation(player)
@@ -168,20 +172,58 @@ impl LoggedGame {
             None => LoggedGameStatus::Unfinished,
         };
         Self {
-            chat: archive.chat.clone(),
+            chat,
             id: id.0,
-            name: archive.started.name.clone(),
-            map_type: archive.started.map_type.clone(),
-            started_at: archive.recorded_at_unix_ms.to_string(),
-            players: archive
-                .started
+            name: summary.game.name,
+            map_type: summary.game.map_type,
+            started_at: summary.recorded_at_unix_ms.to_string(),
+            players: summary
+                .game
                 .players
-                .iter()
+                .into_iter()
                 .map(ArchivePlayer::from)
                 .collect(),
-            turn_count: archive.turn_count(),
+            turn_count: summary.turn_count,
             status,
         }
+    }
+}
+
+#[graphql_object(context = Context)]
+impl LoggedGame {
+    fn chat(&self) -> FieldResult<Vec<ChatMessage>> {
+        match &self.chat {
+            ArchiveChat::Loaded(chat) => Ok(chat.clone()),
+            ArchiveChat::OnDemand(path) => Ok(Archive::read(path)?.chat),
+        }
+    }
+
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn map_type(&self) -> &MapId {
+        &self.map_type
+    }
+
+    fn started_at(&self) -> &str {
+        &self.started_at
+    }
+
+    fn players(&self) -> &[ArchivePlayer] {
+        &self.players
+    }
+
+    fn turn_count(&self) -> i32 {
+        self.turn_count
+    }
+
+    fn status(&self) -> LoggedGameStatus {
+        self.status
     }
 }
 
@@ -215,9 +257,9 @@ impl LoggedGameEntry {
     }
 }
 
-fn read_archive_ids(browser: &Browser) -> io::Result<Vec<ArchiveId>> {
+fn read_archive_ids(roots: &[PathBuf]) -> io::Result<Vec<ArchiveId>> {
     let mut ids = Vec::new();
-    for root in crate::deployment::storage_roots(&browser.directory, "game-logs")? {
+    for root in roots {
         for entry in fs::read_dir(root)? {
             let entry = entry?;
             if !entry.file_type()?.is_dir() {
@@ -244,16 +286,19 @@ fn read_archive_ids(browser: &Browser) -> io::Result<Vec<ArchiveId>> {
     Ok(ids)
 }
 
-fn archive_ids(browser: &Browser) -> FieldResult<Vec<ArchiveId>> {
-    read_archive_ids(browser).map_err(|error| {
-        tracing::error!(event = "game_archive_list_failed", error = %error, "could not list recorded games");
-        server_log::internal_error(error)
-    })
+fn archive_list_error(error: io::Error) -> FieldError {
+    tracing::error!(event = "game_archive_list_failed", error = %error, "could not list recorded games");
+    server_log::internal_error(error)
 }
 
-fn read_entry(browser: &Browser, id: ArchiveId) -> LoggedGameEntry {
-    match id.read(browser) {
-        Ok(archive) => LoggedGameEntry::Game(LoggedGame::from_archive(id, &archive)),
+fn read_entry(roots: &[PathBuf], id: ArchiveId) -> LoggedGameEntry {
+    let read = || {
+        let path = id.path_in(roots)?;
+        let summary = ArchiveSummary::read(&path)?;
+        Ok::<_, io::Error>((summary, ArchiveChat::OnDemand(path)))
+    };
+    match read() {
+        Ok((summary, chat)) => LoggedGameEntry::Game(LoggedGame::from_summary(id, summary, chat)),
         Err(error) => {
             tracing::error!(event = "game_archive_unreadable", archive_id = %id.0, error = %error, "could not read recorded game");
             LoggedGameEntry::Unreadable(ArchiveReadError {
@@ -266,9 +311,12 @@ fn read_entry(browser: &Browser, id: ArchiveId) -> LoggedGameEntry {
 
 pub fn games(context: &Context) -> FieldResult<Vec<LoggedGameEntry>> {
     let browser = context.archives.browser(context)?;
-    let mut games: Vec<_> = archive_ids(browser)?
+    let roots = crate::deployment::storage_roots(&browser.directory, "game-logs")
+        .map_err(archive_list_error)?;
+    let mut games: Vec<_> = read_archive_ids(&roots)
+        .map_err(archive_list_error)?
         .into_iter()
-        .map(|id| read_entry(browser, id))
+        .map(|id| read_entry(&roots, id))
         .collect();
     games.sort_by(|left, right| {
         right
@@ -286,25 +334,32 @@ pub struct RecordingsPage {
     entries: Vec<LoggedGameEntry>,
     total: i32,
     next_offset: Option<i32>,
+    previous_offset: Option<i32>,
 }
 
 pub fn recordings(context: &Context, offset: i32) -> FieldResult<RecordingsPage> {
-    context.require_admin()?;
+    const PAGE_SIZE: i32 = 20;
+
+    let browser = context.archives.browser(context)?;
     if offset < 0 {
         return Err("recording offset must be nonnegative.".into());
     }
-    let browser = context.archives.browser(context)?;
-    let ids = archive_ids(browser)?;
+    let roots = crate::deployment::storage_roots(&browser.directory, "game-logs")
+        .map_err(archive_list_error)?;
+    let ids = read_archive_ids(&roots).map_err(archive_list_error)?;
     let total = ids.len() as i32;
+    let next_offset = offset.saturating_add(PAGE_SIZE);
+    let last_page_offset = total.saturating_sub(1).max(0) / PAGE_SIZE * PAGE_SIZE;
     Ok(RecordingsPage {
         entries: ids
             .into_iter()
             .skip(offset as usize)
-            .take(20)
-            .map(|id| read_entry(browser, id))
+            .take(PAGE_SIZE as usize)
+            .map(|id| read_entry(&roots, id))
             .collect(),
         total,
-        next_offset: (offset.saturating_add(20) < total).then_some(offset.saturating_add(20)),
+        next_offset: (next_offset < total).then_some(next_offset),
+        previous_offset: (offset > 0).then_some((offset - PAGE_SIZE).clamp(0, last_page_offset)),
     })
 }
 
@@ -312,7 +367,21 @@ pub fn game(context: &Context, id: String) -> FieldResult<LoggedGame> {
     let browser = context.archives.browser(context)?;
     let id = ArchiveId::parse(id)?;
     let archive = id.read(browser)?;
-    Ok(LoggedGame::from_archive(id, &archive))
+    let summary = ArchiveSummary {
+        turn_count: archive.turn_count(),
+        outcome: archive.submissions.last().and_then(|record| record.outcome),
+        recorded_at_unix_ms: archive.recorded_at_unix_ms,
+        game: RecordedGame {
+            name: archive.started.name,
+            map_type: archive.started.map_type,
+            players: archive.started.players,
+        },
+    };
+    Ok(LoggedGame::from_summary(
+        id,
+        summary,
+        ArchiveChat::Loaded(archive.chat),
+    ))
 }
 
 pub fn turn(
@@ -456,7 +525,7 @@ mod tests {
             .uri("/graphql")
             .peer_addr(SocketAddr::from(([192, 0, 2, 1], 1234)))
             .insert_header(("host", "fightlines.example"))
-            .set_json(json!({"query":"{ loggedGames { __typename } }"}))
+            .set_json(json!({"query":"{ loggedGamesPage { total } }"}))
             .to_request();
         let result: Value = test::call_and_read_body_json(&app, request).await;
         assert!(
@@ -504,12 +573,12 @@ mod tests {
                 RecordedPlayer {
                     player_number: PlayerNumber::Player1,
                     name: "Red".into(),
-                    controller: Controller::Human,
+                    controller: RecordedController::Human,
                 },
                 RecordedPlayer {
                     player_number: PlayerNumber::Player2,
                     name: "Blue".into(),
-                    controller: Controller::Ai,
+                    controller: RecordedController::Ai,
                 },
             ],
             scenario: scenario.clone(),
@@ -553,8 +622,19 @@ mod tests {
                 1
             };
             assert_eq!(archive.turn_count(), expected);
+            let summary = ArchiveSummary::read(&entry.path())?;
+            assert_eq!(summary.turn_count, expected);
         }
-        fs::write(entry.path().join("00000003.pending"), b"{")?;
+        log.chat(&ChatMessage {
+            sequence: 1,
+            sent_at: "0".into(),
+            turn_number: 2,
+            sender: "Red".into(),
+            player_number: Some(PlayerNumber::Player1),
+            text: "good game".into(),
+        })?;
+        let pending = entry.path().join("00000004.pending");
+        fs::write(&pending, b"{")?;
         let broken = root.join(format!("{}-1", "02".repeat(16)));
         fs::create_dir(&broken)?;
         fs::write(broken.join("00000000.json"), b"{")?;
@@ -698,6 +778,66 @@ mod tests {
                 }));
             }
         }
+        fs::remove_file(pending)?;
+        turns.end_by_inactivity(Some(PlayerNumber::Player2));
+        log.submitted(SubmissionResult::new(2, Vec::new(), &scenario, &turns))?;
+
+        for time in 2..=20 {
+            let copy = root.join(format!("{}-{time}", "02".repeat(16)));
+            fs::create_dir(&copy)?;
+            fs::copy(
+                entry.path().join("00000000.json"),
+                copy.join("00000000.json"),
+            )?;
+        }
+        let request = test::TestRequest::post()
+            .uri("/graphql")
+            .set_json(json!({
+                "query": "{
+                    first: loggedGamesPage {
+                        total nextOffset previousOffset
+                        entries {
+                            ... on LoggedGame { id turnCount status { winner } chat { text } }
+                        }
+                    }
+                    second: loggedGamesPage(offset: 20) {
+                        total nextOffset previousOffset
+                        entries { ... on ArchiveReadError { id } }
+                    }
+                }"
+            }))
+            .to_request();
+        let result: Value = test::call_and_read_body_json(&app, request).await;
+        assert!(result.get("errors").is_none(), "{result}");
+        let first = &result["data"]["first"];
+        assert_eq!(first["total"], 21);
+        assert_eq!(first["nextOffset"], 20);
+        assert!(first["previousOffset"].is_null());
+        let entries = first["entries"].as_array().fixture()?;
+        assert_eq!(entries.len(), 20);
+        assert_eq!(
+            entries.first().fixture()?,
+            &json!({
+                "id": id,
+                "turnCount": 1,
+                "status": { "winner": "PLAYER2" },
+                "chat": [{ "text": "good game" }]
+            })
+        );
+        assert_eq!(
+            entries.last().fixture()?["id"],
+            format!("{}-2", "02".repeat(16))
+        );
+        assert_eq!(
+            result["data"]["second"],
+            json!({
+                "total": 21,
+                "nextOffset": null,
+                "previousOffset": 0,
+                "entries": [{ "id": format!("{}-1", "02".repeat(16)) }]
+            })
+        );
+
         let request = test::TestRequest::post()
             .uri("/graphql")
             .peer_addr(SocketAddr::from(([127, 0, 0, 1], 1234)))

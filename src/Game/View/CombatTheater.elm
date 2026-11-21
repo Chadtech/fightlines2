@@ -14,6 +14,7 @@ module Game.View.CombatTheater exposing
     , toHtml
     )
 
+import Api.Enum.AmbushBonus as AmbushBonus exposing (AmbushBonus)
 import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.Entrenchment as Entrenchment
@@ -58,7 +59,7 @@ import Html.Styled.Events as Ev
 import Html.Styled.Lazy as Lazy
 import Json.Decode as Decode
 import Style as S
-import Svg.Styled as Svg
+import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 import Util.Html.Event as HtmlEvent
 import Util.List as ListUtil
@@ -1194,6 +1195,11 @@ portraitArtClass =
     "fightlines-combat-portrait-art"
 
 
+fullscreenSceneWidth : Css.Style
+fullscreenSceneWidth =
+    Css.property "width" "min(100%, 150cqh)"
+
+
 {-| Each grid cell bounds its scene. Portraits give the artwork a smaller
 container so the readiness text below it can use its natural height.
 -}
@@ -1205,7 +1211,7 @@ fullscreenScene artwork =
             , S.containerSize
             , Global.descendants
                 [ Global.selector "[data-combat-backdrop]"
-                    [ Css.property "width" "min(100%, 150cqh)"
+                    [ fullscreenSceneWidth
                     , S.mAuto
                     ]
                 , Global.class portraitClass
@@ -1217,7 +1223,7 @@ fullscreenScene artwork =
                     , S.flex1
                     , S.minH0
                     , S.containerSize
-                    , Css.property "--combat-flank-inset"
+                    , Css.property "--combat-bonus-inset"
                         "max(0.5rem, calc((100% - 150cqh) / 2 + 0.5rem))"
                     ]
                 , Global.selector "[data-building-damage]"
@@ -1467,7 +1473,7 @@ impactTarget visibleTiles scenery panel impact facing =
 impactScene : List Coordinate -> Scenery -> Panel -> Coordinate -> Html Msg
 impactScene visibleTiles scenery panel position =
     let
-        burst : Int -> Float -> Maybe (Svg.Svg Msg)
+        burst : Int -> Float -> Maybe (Svg Msg)
         burst index startsAt =
             let
                 age : Float
@@ -1491,7 +1497,7 @@ impactScene visibleTiles scenery panel position =
             else
                 Nothing
 
-        explosions : List (Svg.Svg Msg)
+        explosions : List (Svg Msg)
         explosions =
             impactStarts panel
                 |> List.indexedMap burst
@@ -1509,7 +1515,7 @@ impactScene visibleTiles scenery panel position =
             else
                 "indirect fire impact; no confirmed target"
 
-        content : List (Svg.Svg Msg)
+        content : List (Svg Msg)
         content =
             if concealed then
                 unconfirmedFog :: explosions
@@ -1531,7 +1537,7 @@ buildingScene scenery panel damage =
         age =
             damage.elapsed - buildingImpactStartsAt
 
-        explosion : List (Svg.Svg Msg)
+        explosion : List (Svg Msg)
         explosion =
             if (age >= 0) && (age < CombatExplosion.durationMs) then
                 [ Svg.g
@@ -1542,7 +1548,7 @@ buildingScene scenery panel damage =
             else
                 []
 
-        artwork : List (Svg.Svg Msg)
+        artwork : List (Svg Msg)
         artwork =
             [ Svg.image
                 [ SA.x "24"
@@ -1572,9 +1578,10 @@ buildingScene scenery panel damage =
                 , S.maxW128
                 ]
             ]
-            [ scene
-                (Just (backdropPath scenery.map.theme (Map.terrainAt scenery.map damage.building.position)))
-                (rumbleTransform panel)
+            [ buildingPortrait
+                scenery
+                panel
+                damage.building
                 description
                 artwork
             ]
@@ -1657,7 +1664,7 @@ sabotageScene scenery panel building =
             else
                 building
 
-        charge : List (Svg.Svg Msg)
+        charge : List (Svg Msg)
         charge =
             if (panel.elapsed >= 1350) && (age < 0) then
                 [ Svg.image
@@ -1673,7 +1680,7 @@ sabotageScene scenery panel building =
             else
                 []
 
-        blast : List (Svg.Svg Msg)
+        blast : List (Svg Msg)
         blast =
             if (age >= 0) && (age < CombatExplosion.durationMs) then
                 [ Svg.g
@@ -1684,7 +1691,7 @@ sabotageScene scenery panel building =
             else
                 []
 
-        artwork : List (Svg.Svg Msg)
+        artwork : List (Svg Msg)
         artwork =
             [ Svg.image
                 [ SA.x "29"
@@ -1698,14 +1705,51 @@ sabotageScene scenery panel building =
                 ++ charge
                 ++ blast
     in
-    scene
-        (Just (backdropPath scenery.map.theme (Map.terrainAt scenery.map building.position)))
-        (rumbleTransform panel)
+    buildingPortrait
+        scenery
+        panel
+        shownBuilding
         (Building.kindLabel building.kind ++ "; destroyed by infantry sabotage")
         artwork
 
 
-unconfirmedFog : Svg.Svg Msg
+buildingPortrait :
+    Scenery
+    -> Panel
+    -> Building
+    -> String
+    -> List (Svg Msg)
+    -> Html Msg
+buildingPortrait scenery panel building description artwork =
+    let
+        terrain : Terrain
+        terrain =
+            Map.terrainAt scenery.map building.position
+    in
+    H.div
+        [ A.css
+            [ S.relative
+            , S.when scenery.mobile
+                [ fullscreenSceneWidth
+                , S.mAuto
+                ]
+            ]
+        ]
+        [ scene
+            (Just (backdropPath scenery.map.theme terrain))
+            (rumbleTransform panel)
+            description
+            artwork
+        , healthBarOverlay
+            (healthBar
+                (Building.kindLabel building.kind ++ " health")
+                Nothing
+                building.hp
+            )
+        ]
+
+
+unconfirmedFog : Svg Msg
 unconfirmedFog =
     Svg.g
         [ Aria.hidden True ]
@@ -1722,7 +1766,7 @@ unconfirmedFog =
         ]
 
 
-questionMark : Svg.Svg msg
+questionMark : Svg msg
 questionMark =
     Svg.text_
         [ SA.x "48"
@@ -1740,30 +1784,34 @@ questionMark =
 portrait : Scenery -> Panel -> CombatHealth -> Unit -> Html Msg
 portrait scenery panel health unit =
     let
-        hasFlankBonus : Bool
-        hasFlankBonus =
+        bonuses : { flank : Bool, ambush : AmbushBonus }
+        bonuses =
             case panel.encounter of
                 Exchange exchange ->
                     if unit.id == exchange.attacker.id then
-                        exchange.attackerFlankBonus
+                        { flank = exchange.attackerFlankBonus
+                        , ambush = exchange.attackerAmbushBonus
+                        }
 
                     else if unit.id == exchange.target.id then
-                        exchange.targetFlankBonus
+                        { flank = exchange.targetFlankBonus
+                        , ambush = exchange.targetAmbushBonus
+                        }
 
                     else
-                        False
+                        { flank = False, ambush = AmbushBonus.None }
 
                 _ ->
-                    False
+                    { flank = False, ambush = AmbushBonus.None }
 
         corner : Css.Style
         corner =
             case unit.spriteFacing of
                 SpriteFacing.Right ->
-                    Css.property "left" "var(--combat-flank-inset, 0.5rem)"
+                    Css.property "left" "var(--combat-bonus-inset, 0.5rem)"
 
                 SpriteFacing.Left ->
-                    Css.property "right" "var(--combat-flank-inset, 0.5rem)"
+                    Css.property "right" "var(--combat-bonus-inset, 0.5rem)"
 
         caption : Html Msg
         caption =
@@ -1785,7 +1833,7 @@ portrait scenery panel health unit =
                     [ A.css
                         [ S.relative
                         , S.mAuto
-                        , Css.property "width" "min(100%, 150cqh)"
+                        , fullscreenSceneWidth
                         ]
                     ]
                     [ artwork
@@ -1805,27 +1853,39 @@ portrait scenery panel health unit =
 
         flankChip : Html Msg
         flankChip =
-            if hasFlankBonus then
-                H.span
-                    [ A.attribute "data-flank-bonus" ""
-                    , A.css
-                        [ S.absolute
-                        , S.top2
-                        , corner
-                        , S.px2
-                        , S.py1
-                        , S.bgYellow1
-                        , S.textYellow6
-                        , S.border
-                        , S.borderGray4
-                        , S.noWrap
-                        , S.pointerEventsNone
-                        ]
-                    ]
-                    [ H.text "flank bonus" ]
+            if bonuses.flank then
+                combatBonusChip "data-flank-bonus" "flank bonus"
 
             else
                 H.text ""
+
+        ambushChip : Html Msg
+        ambushChip =
+            case bonuses.ambush of
+                AmbushBonus.Ambush ->
+                    combatBonusChip "data-ambush-bonus" "ambush"
+
+                AmbushBonus.SuperAmbush ->
+                    combatBonusChip "data-super-ambush-bonus" "ambush"
+
+                AmbushBonus.None ->
+                    H.text ""
+
+        bonusChips : Html Msg
+        bonusChips =
+            H.div
+                [ A.css
+                    [ S.absolute
+                    , S.top2
+                    , corner
+                    , S.col
+                    , S.g1
+                    , S.pointerEventsNone
+                    ]
+                ]
+                [ flankChip
+                , ambushChip
+                ]
     in
     H.div
         [ A.class portraitClass
@@ -1839,11 +1899,28 @@ portrait scenery panel health unit =
             , A.css [ S.relative ]
             ]
             [ sceneWithCaption
-            , flankChip
+            , bonusChips
             ]
         , footerCaption
         , CombatReadiness.toHtml unit.combatState
         ]
+
+
+combatBonusChip : String -> String -> Html Msg
+combatBonusChip attribute label =
+    H.span
+        [ A.attribute attribute ""
+        , A.css
+            [ S.px2
+            , S.py1
+            , S.bgYellow1
+            , S.textYellow6
+            , S.border
+            , S.borderGray4
+            , S.noWrap
+            ]
+        ]
+        [ H.text label ]
 
 
 participantCaption : Bool -> Panel -> CombatHealth -> Unit -> Player -> Html Msg
@@ -1870,20 +1947,11 @@ participantCaption mobile panel health unit player =
         meter =
             healthBar
                 (player.name ++ "'s " ++ unitName ++ " health")
-                unit.playerNumber
+                (Just unit.playerNumber)
                 hitPoints
     in
     if mobile then
-        H.div
-            [ A.css
-                [ S.absolute
-                , S.top0
-                , S.left0
-                , S.right0
-                , S.pointerEventsNone
-                ]
-            ]
-            [ meter ]
+        healthBarOverlay meter
 
     else
         H.div
@@ -1912,17 +1980,34 @@ participantCaption mobile panel health unit player =
             ]
 
 
-healthBar : String -> PlayerNumber -> HitPoints -> Html Msg
-healthBar label player hitPoints =
+healthBarOverlay : Html Msg -> Html Msg
+healthBarOverlay meter =
+    H.div
+        [ A.css
+            [ S.absolute
+            , S.top0
+            , S.left0
+            , S.right0
+            , S.pointerEventsNone
+            ]
+        ]
+        [ meter ]
+
+
+healthBar : String -> Maybe PlayerNumber -> HitPoints -> Html Msg
+healthBar label owner hitPoints =
     let
         fill : Css.Style
         fill =
-            case player of
-                PlayerNumber.Player1 ->
+            case owner of
+                Just PlayerNumber.Player1 ->
                     S.bgRed1
 
-                PlayerNumber.Player2 ->
+                Just PlayerNumber.Player2 ->
                     S.bgBlue1
+
+                Nothing ->
+                    S.bgGray4
 
         percent : Float
         percent =
@@ -2097,10 +2182,10 @@ preview calibration path hitPoints unit =
         )
 
 
-scene : Maybe String -> String -> String -> List (Svg.Svg msg) -> Html msg
+scene : Maybe String -> String -> String -> List (Svg msg) -> Html msg
 scene path transform description figures =
     let
-        background : String -> Svg.Svg msg
+        background : String -> Svg msg
         background imagePath =
             Svg.image
                 [ SA.xlinkHref imagePath
@@ -2113,7 +2198,7 @@ scene path transform description figures =
                 ]
                 []
 
-        content : List (Svg.Svg msg)
+        content : List (Svg msg)
         content =
             case path of
                 Nothing ->

@@ -1,6 +1,6 @@
 module Game.View.InspectionHelp exposing
-    ( Events
-    , Help(..)
+    ( Help(..)
+    , SupplyHelpSource(..)
     , button
     , buttonHtmlId
     , dialog
@@ -35,7 +35,7 @@ import View.InfoMarker as InfoMarker
 
 type Help
     = UnitHelp UnitSprite.Appearance
-    | SupplyHelp
+    | SupplyHelp SupplyHelpSource
     | FuelHelp
     | CargoHelp
     | BuildingHelp Building
@@ -44,26 +44,26 @@ type Help
     | TerrainHelp TerrainLocation
 
 
+type SupplyHelpSource
+    = SupplyGauge
+    | ExhaustionNotice
+
+
 type alias TerrainLocation =
     { map : Map
     , position : Coordinate
     }
 
 
-type alias Events msg =
-    { onHelp : Help -> msg
-    }
-
-
-button : Events msg -> String -> Help -> Html msg
-button events label help =
+button : (Help -> msg) -> String -> Help -> Html msg
+button onHelp label help =
     H.button
         [ A.type_ "button"
         , A.id (buttonHtmlId help)
         , Aria.label label
         , A.title label
         , A.attribute "aria-haspopup" "dialog"
-        , Ev.onClick (events.onHelp help)
+        , Ev.onClick (onHelp help)
         , A.css
             [ S.row
             , S.itemsCenter
@@ -95,8 +95,11 @@ buttonHtmlId help =
         UnitHelp _ ->
             "unit-type-info-button"
 
-        SupplyHelp ->
+        SupplyHelp SupplyGauge ->
             "unit-supply-info-button"
+
+        SupplyHelp ExhaustionNotice ->
+            "unit-exhaustion-info-button"
 
         FuelHelp ->
             "unit-fuel-info-button"
@@ -134,7 +137,7 @@ dialog config help =
                 UnitHelp unit ->
                     "about " ++ UnitKindUtil.label unit.kind
 
-                SupplyHelp ->
+                SupplyHelp _ ->
                     "supply"
 
                 FuelHelp ->
@@ -161,7 +164,7 @@ dialog config help =
                 UnitHelp unit ->
                     unitReference config.mobile config.stats unit
 
-                SupplyHelp ->
+                SupplyHelp _ ->
                     H.p
                         []
                         [ H.text supplyExplanation ]
@@ -237,7 +240,7 @@ dialog config help =
             else
                 standard
 
-        SupplyHelp ->
+        SupplyHelp _ ->
             standard
                 |> Dialog.withCloseButton
 

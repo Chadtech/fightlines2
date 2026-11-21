@@ -4,6 +4,7 @@
 
 module Api.Object.Shot exposing (..)
 
+import Api.Enum.AmbushBonus
 import Api.Enum.CombatKind
 import Api.InputObject
 import Api.Interface
@@ -49,6 +50,11 @@ damage =
 flankBonus : SelectionSet Bool Api.Object.Shot
 flankBonus =
     Object.selectionForField "Bool" "flankBonus" [] Decode.bool
+
+
+ambushBonus : SelectionSet Api.Enum.AmbushBonus.AmbushBonus Api.Object.Shot
+ambushBonus =
+    Object.selectionForField "Enum.AmbushBonus.AmbushBonus" "ambushBonus" [] Api.Enum.AmbushBonus.decoder
 
 
 attacker :

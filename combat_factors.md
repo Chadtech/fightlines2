@@ -4,18 +4,19 @@
 - tanks should devastate field guns at direct contact unless the tank is in the firing area of a ready gun that can still fire
 - infantry should take little damage when dug in; tank hits deal 75% of their otherwise capped damage
 - Units that are not battle ready should pretty much always lose at a great cost. Unready tanks should take big losses to ready infantry
-- Ready tanks should obliterate infantry in frontal mutual combat; infantry should barely damage ready tanks except when ambushing their flank or rear
+- Ready tanks should have a decisive advantage over infantry in frontal combat. Infantry should barely damage ready tanks except when ambushing their flank or rear.
 - Unready units do not establish a front, flank, or rear defense
 - Units with less health than their opponent should be less powerful. This should not scale linearly: half the opponent's health gives one-quarter firepower. Equally wounded units retain full firepower against each other.
 - Flanking. A unit that is attacking or being attacked head on should do better than a unit being attacked adjacent or behind the direction it is facing.
 - Being in hills and forests should give a slight defensive advantage
 - If two units end up in direct combat, and one is attacking and the other is ambushing, the ambushing unit should have a slight bonus.
+- Mutual frontal attack moves should stop an advance and give both sides time to maneuver or bring up indirect fire.
 
 ## Implemented damage model
 
 Damage is deterministic and calculated in Rust for ambushes, attack moves, and indirect fire:
 
-`raw = base power × min(1, attacker HP / target HP)² × matchup × readiness × defender facing × attacker aim × cover × ambush advantage`
+`raw = base power × min(1, attacker HP / target HP)² × matchup × readiness × defender facing × attacker aim × cover × ambush advantage × frontal exchange`
 
 For tanks, cap `raw` at the target's maximum HP, then apply entrenchment (×0.75
 against entrenched infantry). For other weapons, apply entrenchment before the
@@ -44,6 +45,7 @@ chosen to express the expectations above rather than a fixed outcome table.
 | Hills or forest cover | ×0.85 incoming damage |
 | Ambush firing on an attack mover | ×1.125 |
 | Infantry ambushing a ready tank's flank or rear | ×5 instead of the ordinary ambush factor; applies to all forms of tank readiness |
+| Mutual frontal attack move | ×0.5 to both shots when both attack movers fire at each other through both front arcs |
 | Entrenched infantry | incoming infantry damage ×0.15; incoming field-gun damage ×0.06 (direct and indirect); tank damage ×0.75 after the damage cap |
 
 Battle readiness means an ambush or stand-ground order, or an attack-move order with enough
@@ -55,8 +57,14 @@ Field-gun readiness prepares the weapon to fire but gives its exposed crew no
 defensive protection. Guns always take the ×2 exposed-defender multiplier,
 regardless of order or approach direction. Their firing direction, coverage,
 and tank interception still apply normally.
-Facing uses 90-degree front and rear sectors, including diagonal boundaries;
-other bearings are flank hits. Defensive facing applies only to battle-ready
+Cardinal facing uses 90-degree front and rear sectors, including diagonal
+boundaries. Other bearings are flank hits. On an attack-move staircase of at least
+three alternating perpendicular steps, combat uses one diagonal heading for
+the whole stretch. For a northeast advance, shots from north and east count
+as frontal and apply ×1.25 incoming damage. Shots from south and west are
+flanking shots and apply ×1.75. Diagonal headings scale facing and aim with
+the angle to the opponent, from straight ahead to directly behind.
+Defensive facing applies only to battle-ready
 infantry and tanks. An unready tank takes the same damage from every approach direction;
 its stored sprite/facing direction does not create combat flanks. Units without
 facing also use neutral facing factors.
@@ -65,9 +73,9 @@ facing and attacker aim. It never receives a flank bonus. Readiness, relative
 health, matchup, terrain, entrenchment, and fortress protection still apply.
 Cover does not override forest concealment. Ambushes use shared visibility or
 firing reveals and can fire through intervening terrain within their firing area.
-The infantry flank/rear ambush factor replaces, rather than stacks with, the
-ordinary attack-mover ambush factor. Frontal ambushes and attack-move shots retain
-their existing damage. Unready tanks do not receive the special factor.
+The infantry flank/rear ambush factor replaces the ordinary attack-mover ambush
+factor. Unready tanks do not receive the special factor. An exchange with an
+ambusher uses the applicable ambush and facing factors at full strength.
 
 ## Example outcomes
 

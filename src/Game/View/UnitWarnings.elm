@@ -180,7 +180,10 @@ badge index warning =
             case warning of
                 LowHitPoints ->
                     Svg.path
-                        [ SA.d "M20 5.5a5 5 0 0 0-7 0L12 6.5l-1-1a5 5 0 0 0-7 7L12 21l8-8.5a5 5 0 0 0 0-7Z"
+                        [ SA.d
+                            ("M10.4 5.1C5.5 1 0 7.1 3.6 12.5L12 21.5l1.5-1.6-3.8-6.3 2.4-1.8-3-4.4Z"
+                                ++ "M13.2 5.2c4.9-4.4 10.8 1.9 7.2 7.3l-4.9 5.2-2.2-3.7 2.4-1.8-3.4-5Z"
+                            )
                         , SA.fill foreground
                         ]
                         []

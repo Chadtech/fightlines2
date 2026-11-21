@@ -69,8 +69,11 @@ observable indirect-fire guns. Hits and casualties wait until the last firing fi
 recovers, followed by a short travel beat. Units that only receive fire stay
 still. Live games and logged replays share this sequence.
 A `flank bonus` chip in a formation's outer top corner means its shot benefits
-from a direct shot hitting a battle-ready defender from the side (×1.5 damage)
-or rear (×2). Indirect fire ignores both units' facing and never earns this chip.
+from hitting a battle-ready defender outside its front arc. An `ambush` chip
+marks either the ×1.125 bonus for ambushing an attack mover or the ×5 bonus for
+infantry ambushing a ready tank from the side or rear. A shot can earn both a
+flank chip and an ambush chip.
+Indirect fire ignores both units' facing.
 Unready defenders take ×2 damage from every direction, with no additional flank
 bonus. Field guns and trucks always count as exposed defenders. Return fire can
 earn its own chip. Older recordings without this shot metadata omit the indicator.
@@ -104,14 +107,13 @@ swaps assignments with the opponent, including an AI. Hosting permissions stay
 with the host, and sides lock when the game starts.
 For a solo game, select **ai easy**, **ai medium**, **ai hard**, or **ai very hard**
 in the other side’s dropdown, then choose **start game**.
-Medium runs Break Contact, Hard runs Screened Battery, and Very Hard runs
-Find the Blind Side.
+Medium runs Screened Battery, Hard runs Find the Blind Side, and Very Hard runs
+Artillery Spotters.
 The AI controls the other side and responds automatically when you submit a turn.
 It evaluates candidate orders through the normal game engine, coordinating fire,
 considering flanking routes, defending supply points, and balancing advances with
-resupply. Medium tests plans against a stationary defense. Easy, Hard, and Very
-Hard also test an advancing response when enemies are visible, favor safer
-worst-case results, and revisit allied orders to improve coordination.
+resupply. All four difficulties test plans against a stationary defense and an
+advancing response when enemies are visible.
 On Medium, Hard, and Very Hard, infantry and tanks may attack move toward
 unseen ground before an enemy comes into view. Easy uses normal movement to
 scout until it spots an enemy.
@@ -363,8 +365,8 @@ also revokes its infantry orders.
 Enemy resources and passengers are concealed outside combat. Direct-fire
 encounters involving your units appear even when the enemy is concealed and reveal
 both participants’ before/after health; supplies and fuel stay hidden. Crate cargo is separate from the truck's own provisions.
-Living units with visible resources show a red heart on light gray below 75%
-health. At 25% or below, supplies show a dark `ø` on amber with a black border,
+Living units with visible resources show a broken red heart on light gray below
+75% health. At 25% or below, supplies show a dark `ø` on amber with a black border,
 and fuel shows a red `E` on black. Active warnings pack horizontally from
 the tile's upper-left corner,
 blink together every two seconds, remain bright after orders are saved, and leave
@@ -612,8 +614,9 @@ removed for every two HP lost. Partially intact figures remain visible. Other
 unit kinds use four figures at 13–16 HP, three at 9–12, two at 5–8, one at
 1–4, and none at zero; each represents four HP. The scene holds for
 one second after the card's opening animation before impacts begin.
-There are no theater HP bars. Lost figures receive a horizontal projectile strike and violent illustrated
-shockwave over 100ms, disappearing beneath the impact. Each strike kicks both
+Health bars show HP during encounters and building strikes. Lost figures receive
+a horizontal projectile strike and illustrated shockwave over 100ms,
+disappearing beneath the impact. Each strike kicks both
 backdrops and formations into a brief violent shake that settles over 160ms.
 Surviving figures remain; hits within one count band show an impact without
 removing a figure.
@@ -652,7 +655,10 @@ destination: point to preview, and click, press Enter/Space on a focused square,
 or press an arrow/WASD key to save.
 The direction back along the final route segment is unavailable.
 Preview paths are solid red; saved paths are dashed red. The endpoint arrow shows
-the chosen final facing. Interrupted routes keep their last traveled facing.
+the chosen final facing. A staircase of three or more alternating perpendicular
+steps gets a diagonal arrow and uses that combat heading through the stretch.
+For example, a northeast advance takes ×1.25 facing damage from its north and
+east edges and ×1.75 from its south and west edges while ready.
 Allies remain passable, but attack move cannot load or unload passengers.
 Enemy squares may be chosen as destinations.
 
@@ -668,8 +674,12 @@ Following allies stop behind a unit halted by contact, preserving the column's
 order and the leading unit's attack. A leader on a normal move stops without firing.
 If allied traffic forces a participant back to a free square, direct fire occurs
 only if the participants are still cardinally adjacent after that adjustment.
-Opposing attack movers fire simultaneously; other orders do not gain automatic
-return fire. Only successful edges spend movement
+Opposing attack movers fire simultaneously. If both fire into each other's fronts,
+both shots are halved before damage caps and rounding, and both routes stop for
+the turn. The same rule applies to the two forward edges of a diagonal advance.
+Ambushes, indirect fire, and shots outside a mutual frontal attack-move exchange
+use their usual factors.
+Only successful edges spend movement
 resources. Attack move and ambush both spend 4 readiness supplies per turn for
 infantry and 8 for tanks, even without an encounter.
 Planning reserves readiness, the shot cost, and

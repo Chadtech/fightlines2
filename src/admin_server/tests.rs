@@ -186,6 +186,7 @@ async fn endpoints_protect_private_data_and_keep_player_identity_separate() -> T
         "{ adminPlanningErrors(offset:0) { total } }",
         "{ adminAnalytics { records { data } } }",
         "{ loggedGames { __typename } }",
+        "{ loggedGamesPage { total } }",
         "{ loggedGame(id:\"bad\") { id } }",
         "{ loggedTurn(id:\"bad\",turnNumber:0,playerNumber:PLAYER1) { id } }",
     ] {

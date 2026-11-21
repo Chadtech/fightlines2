@@ -49,6 +49,15 @@ route purpose lineAttributes path =
 
     else
         let
+            advances : List (Svg msg)
+            advances =
+                case purpose of
+                    Travel ->
+                        []
+
+                    _ ->
+                        diagonalMarkers path
+
             attributes : List (Svg.Attribute msg)
             attributes =
                 [ A.points (String.join " " (List.map point path))
@@ -76,31 +85,82 @@ route purpose lineAttributes path =
                                     _ ->
                                         previous
                         in
-                        [ marker purpose arrivalFrom destination ]
+                        [ marker purpose (bearing (delta arrivalFrom destination)) destination ]
 
                     _ ->
                         []
         in
-        Svg.polyline attributes [] :: endpoint
+        Svg.polyline attributes [] :: (advances ++ endpoint)
 
 
-marker : Purpose -> Coordinate -> Coordinate -> Svg msg
-marker purpose previous destination =
-    let
-        angle : String
-        angle =
-            if destination.x > previous.x then
-                "0"
+{-| Match the resolver's staircase rule using the submitted route's geometry.
+-}
+diagonalMarkers : List Coordinate -> List (Svg msg)
+diagonalMarkers path =
+    case path of
+        from :: corner :: across :: onward :: _ ->
+            let
+                first : Coordinate
+                first =
+                    delta from corner
 
-            else if destination.x < previous.x then
-                "180"
+                second : Coordinate
+                second =
+                    delta corner across
 
-            else if destination.y > previous.y then
-                "90"
+                perpendicular : Bool
+                perpendicular =
+                    first.x * second.x + first.y * second.y == 0
+            in
+            if perpendicular && first == delta across onward then
+                let
+                    heading : Coordinate
+                    heading =
+                        { x = first.x + second.x, y = first.y + second.y }
+
+                    remaining : List Coordinate
+                    remaining =
+                        afterStaircase first second path
+                in
+                marker Attack (bearing heading) corner :: diagonalMarkers remaining
 
             else
-                "270"
+                diagonalMarkers (List.drop 1 path)
 
+        _ ->
+            []
+
+
+afterStaircase : Coordinate -> Coordinate -> List Coordinate -> List Coordinate
+afterStaircase next following path =
+    case path of
+        from :: to :: tail ->
+            if delta from to == next then
+                afterStaircase following next (to :: tail)
+
+            else
+                path
+
+        _ ->
+            path
+
+
+delta : Coordinate -> Coordinate -> Coordinate
+delta from to =
+    { x = to.x - from.x, y = to.y - from.y }
+
+
+bearing : Coordinate -> String
+bearing direction =
+    atan2 (toFloat direction.y) (toFloat direction.x)
+        * 180
+        / pi
+        |> String.fromFloat
+
+
+marker : Purpose -> String -> Coordinate -> Svg msg
+marker purpose angle destination =
+    let
         transform : String
         transform =
             "translate("

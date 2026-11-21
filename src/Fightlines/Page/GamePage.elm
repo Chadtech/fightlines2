@@ -6104,7 +6104,7 @@ battlefieldSelectionView layout model =
                 content =
                     [ UnitStatus.toHtml
                         layout
-                        { onHelp = InspectionHelpClicked }
+                        InspectionHelpClicked
                         (ownerName model unit |> Maybe.withDefault "")
                         authoritativeUnit
                         portraitAction

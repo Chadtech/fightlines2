@@ -10,7 +10,7 @@ orders against the authoritative board. The prior prototype lives in `old/`.
 | Session identity, lobby setup, and matchmaking | [`store.rs`](src/store.rs), [`lobby.rs`](src/lobby.rs), [`match_making.rs`](src/match_making.rs) |
 | Turn submission, inactivity, and results | [`game.rs`](src/game.rs), [`game_activity.rs`](src/game_activity.rs), [`turns.rs`](src/turns.rs) |
 | Rules and resolution | [`unit_order.rs`](src/unit_order.rs), [`movement.rs`](src/movement.rs), [`movement_resolution.rs`](src/movement_resolution.rs), [`combat.rs`](src/combat.rs), [`supplies.rs`](src/supplies.rs) |
-| AI planning and logistics | [Easy](src/ai/easy.rs), [Medium](src/ai/medium.rs), [Hard](src/ai/hard.rs), [Very Hard](src/ai/very_hard.rs), [`ai.rs`](src/ai.rs), [logistics](src/ai/logistics.rs), [transport](src/ai/transport.rs) |
+| AI planning and logistics | [Easy](src/ai/easy.rs), [Medium](src/ai/hard.rs), [Hard](src/ai/very_hard.rs), [Very Hard](src/ai/artillery_spotters.rs), [`ai.rs`](src/ai.rs), [logistics](src/ai/logistics.rs), [transport](src/ai/transport.rs) |
 | Editable orders and live turn phases | [`GamePage`](src/Fightlines/Page/GamePage.elm), [`CurrentTurn`](src/Game/CurrentTurn.elm), [`TurnLifecycle`](src/Game/TurnLifecycle.elm), [`OrderPlanning`](src/Game/OrderPlanning.elm) |
 | Fog, replay, and presentation | [`visibility.rs`](src/visibility.rs), [`game_archive.rs`](src/game_archive.rs), [`TurnPlayback`](src/Game/TurnPlayback.elm), [`PlaybackPresentation`](src/Game/PlaybackPresentation.elm), [`Replay`](src/Game/Replay.elm) |
 | Runtime maps and authoring | [`map_id.rs`](src/map_id.rs), [`map_definition.rs`](src/map_definition.rs), [`map_editor.rs`](src/map_editor.rs), [`MapEditor`](src/DevTools/Page/MapEditor.elm) |

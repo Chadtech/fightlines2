@@ -1,7 +1,9 @@
-//! Break Contact.
+//! Artillery Spotters, the tournament winner s20261120-g14-c08.
 use super::{
-    RouteSearch, coordinate_input, distance, facing, hold, logistics,
-    memory::{Contact, ContactOrderFacts, ContactPolicy, EnemyMemory},
+    RouteSearch, advancing_orders,
+    board::{self, BoardOrderFacts},
+    coordinate_input, distance, facing, hard, hold, logistics,
+    memory::{Contact, ContactPolicy, EnemyMemory},
     objective, resource_target, tactics,
 };
 use crate::{
@@ -17,25 +19,70 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 
 const CONTACT_POLICY: ContactPolicy = ContactPolicy {
-    horizon: 6,
-    weight: 96,
-    preference: contact_preference,
+    horizon: 5,
+    weight: 64,
+    preference: hard::contact_preference,
 };
 
-fn contact_preference(f: &ContactOrderFacts) -> i64 {
-    let mut bonus = 0;
-    if f.cover_after && f.progress > 0 && f.supported {
-        bonus += 70 + i64::from(f.progress) * 12;
+fn board_preference(f: &BoardOrderFacts) -> i64 {
+    let mut bonus = hard::board_preference(f);
+    if f.field_gun && f.moves && !f.threat_after && f.sight.bonus_after() > f.sight.bonus_before() {
+        bonus += 115;
     }
-    if f.low_supplies && f.distance_before <= 4 {
-        bonus += if f.progress < 0 && f.cover_after {
-            190
+    if f.low_supplies && f.near_supply_after {
+        bonus += if f.threat_after {
+            -120
+        } else if f.screened_after || f.cover_after {
+            155
         } else {
-            -190
+            85
         };
     }
-    if f.age >= 1 && f.moves && !f.cover_after && f.progress > 0 {
-        bonus -= 123;
+    if f.infantry {
+        let elevated = f.sight.bonus_after() > 0;
+        if elevated
+            && f.nearest_enemy_after <= 6
+            && f.moves
+            && f.threat_after
+            && f.allies_near_end == 0
+        {
+            bonus -= 210;
+        }
+        let safe_and_supplied = !f.threat_after && !f.low_supplies;
+        if f.hold && safe_and_supplied && !f.wounded && elevated {
+            bonus += f.sight.artillery_tiles().min(25) as i64 * 4;
+        }
+        if f.moves && safe_and_supplied {
+            bonus += f.sight.new_tiles().min(24) as i64 * 22;
+        }
+    }
+    if f.field_gun {
+        if f.revealed && f.threat_before && f.moves && !f.threat_after {
+            let protected = f.cover_after || f.screened_after;
+            let keeps_elevation = f.sight.bonus_after() >= f.sight.bonus_before();
+            bonus += if protected && keeps_elevation {
+                175
+            } else {
+                55
+            };
+        }
+        if f.indirect_fire {
+            let height = i64::from(f.sight.indirect_target_bonus().unwrap_or_default());
+            if f.target_enemy_visible && !f.low_supplies {
+                bonus += height * 35;
+            }
+            if height > 0 {
+                bonus += if f.target_enemy_visible { 90 } else { -125 };
+            }
+            if f.target_last_seen
+                && !f.target_enemy_visible
+                && f.cover_after
+                && !f.threat_after
+                && !f.low_supplies
+            {
+                bonus += height * 95;
+            }
+        }
     }
     bonus
 }
@@ -57,9 +104,21 @@ impl StrategicGoal {
             .is_none()
             .then(|| tactics::positioning_goal(scenario, unit, origin))
             .flatten();
-        let target = reserve_target
-            .or(positioning_goal)
-            .unwrap_or_else(|| non_supply_target(scenario, unit, origin));
+        let target = reserve_target.or(positioning_goal).unwrap_or_else(|| {
+            let inherited = non_supply_target(scenario, unit, origin);
+            if unit.kind() != UnitKind::FieldGun {
+                return inherited;
+            }
+            scenario
+                .units
+                .iter()
+                .filter(|ally| {
+                    ally.player_number() == unit.player_number() && ally.kind() == UnitKind::Tank
+                })
+                .filter_map(Unit::board_position)
+                .min_by_key(|tank| (distance(origin, *tank), *tank))
+                .unwrap_or(inherited)
+        });
         let rule = movement::rules()
             .into_iter()
             .find(|rule| rule.kind == unit.kind())
@@ -91,7 +150,7 @@ impl StrategicGoal {
         let desired_distance = if positioning_goal.is_some() {
             0
         } else if reserve_target.is_none() && unit.kind() == UnitKind::FieldGun {
-            6
+            8
         } else {
             1
         };
@@ -168,6 +227,7 @@ pub(crate) fn plan(
             depot.stock = ResourceStock::depot(kind);
         }
     }
+    enemy.apply_empty_depots(&mut observed);
     let own: Vec<_> = observed
         .units
         .iter()
@@ -182,97 +242,196 @@ pub(crate) fn plan(
                 .ok_or("the AI unit has no position.")
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let response = defensive_orders(&observed, player)?;
+    let mut responses = vec![defensive_orders(&observed, player)?];
     let counterplay = observed
         .units
         .iter()
         .any(|unit| unit.player_number() != player);
+    if counterplay {
+        // Model an advancing opponent from the fog-limited board.
+        // This board has already discarded hidden units and private resources.
+        responses.push(advancing_orders(&observed, player.opponent())?);
+    }
     // Reuse terrain searches across every candidate simulation in this plan.
     let goals = own
         .iter()
         .filter(|unit| unit.board_position().is_some())
         .map(|unit| Ok((unit.unit_id(), StrategicGoal::new(&observed, unit)?)))
         .collect::<Result<BTreeMap<_, _>, &'static str>>()?;
-    let mut reserved = BTreeSet::new();
-    for (index, unit) in own.iter().enumerate() {
-        if unit.carrier_id().is_some() {
-            continue;
-        }
-        let goal = goals
-            .get(&unit.unit_id())
-            .ok_or("the AI mover has no strategic goal.")?;
-        let origin = unit
-            .board_position()
-            .ok_or("the AI mover is not on the map.")?;
-        let contact = Contact::near(&contacts, unit, origin);
-        let candidates = candidates(&observed, unit, &reserved, goal, contact)?;
-        let mut best = orders
-            .get(index)
-            .ok_or("the AI unit has no order.")?
-            .clone();
-        // Keep tactical preferences on the same scale as the single forecast.
-        let score_scale = 3;
-        let fog_readiness = |order: &UnitOrderInput| {
-            let memory_readiness = contact.map_or(0, |contact| contact.readiness(order));
-            let scouting =
-                order.attack_move == Some(true) && approaches_fog(&observed, &visible, order);
-            let scouting_readiness = i64::from(scouting) * 42;
-            (scouting_readiness + memory_readiness) * score_scale
-        };
-        let allied_destinations = if matches!(unit.kind(), UnitKind::Infantry | UnitKind::Tank) {
-            own.iter()
-                .zip(&orders)
-                .filter(|(ally, _)| {
-                    ally.unit_id() != unit.unit_id()
-                        && ally.kind() != UnitKind::Truck
-                        && ally.board_position().is_some()
-                })
-                .filter_map(|(_, order)| order.path.last())
-                .map(|tile| Coordinate::new(tile.x as u16, tile.y as u16))
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let tactical_preference = |order: &UnitOrderInput| {
-            let positioning = tactics::counterfire(&observed, unit, order)
-                + tactics::crossfire(&observed, unit, order)
-                + tactics::dispersed_screen(order, &allied_destinations);
-            let last_contact = contact.map_or(0, |contact| {
-                contact.order_preference(&observed, unit, origin, order)
-            });
-            (positioning + last_contact) * score_scale
-        };
-        let evaluate = |orders: &[UnitOrderInput]| {
-            forecast(&observed, player, orders, &response, &goals).map(|score| score * score_scale)
-        };
-        let mut best_score = evaluate(&orders)? + fog_readiness(&best) + tactical_preference(&best);
-        for candidate in candidates {
-            let readiness = fog_readiness(&candidate);
-            if !counterplay && candidate.attack_move == Some(true) && readiness == 0 {
+    // Reserve the extra simulations for tactical coordination with observed
+    // enemies; scouting uses a single response and pass.
+    let passes = 1;
+    for pass in 0..passes {
+        let mut reserved = BTreeSet::new();
+        for (index, unit) in own.iter().enumerate() {
+            if unit.carrier_id().is_some() {
                 continue;
             }
-            let preference = tactical_preference(&candidate);
-            *orders.get_mut(index).ok_or("the AI unit has no order.")? = candidate;
-            let score = evaluate(&orders)? + readiness + preference;
-            if score > best_score {
-                best_score = score;
-                best = orders
-                    .get(index)
-                    .ok_or("the AI unit has no order.")?
-                    .clone();
+            if pass > 0 {
+                // On the coordination pass retain every other unit's destination,
+                // including choices made later in the first pass.
+                reserved = orders
+                    .iter()
+                    .enumerate()
+                    .filter(|(other, _)| *other != index)
+                    .filter_map(|(_, order)| order.path.last())
+                    .map(|position| Coordinate::new(position.x as u16, position.y as u16))
+                    .collect();
             }
+            let goal = goals
+                .get(&unit.unit_id())
+                .ok_or("the AI mover has no strategic goal.")?;
+            let origin = unit
+                .board_position()
+                .ok_or("the AI mover is not on the map.")?;
+            let contact = Contact::near(&contacts, unit, origin);
+            let candidates = candidates(&observed, unit, &reserved, goal, contact)?;
+            let mut best = orders
+                .get(index)
+                .ok_or("the AI unit has no order.")?
+                .clone();
+            // Counterplay scoring weights the worst result twice and scales by
+            // response count. Apply the same scale to the order preferences.
+            let score_scale = responses.len() as i64;
+            let fog_readiness = |order: &UnitOrderInput| {
+                let memory_readiness = contact.map_or(0, |contact| contact.readiness(order));
+                let scouting =
+                    order.attack_move == Some(true) && approaches_fog(&observed, &visible, order);
+                let scouting_readiness = i64::from(scouting) * 70;
+                (scouting_readiness + memory_readiness) * score_scale
+            };
+            let allied_destinations = if matches!(unit.kind(), UnitKind::Infantry | UnitKind::Tank)
+            {
+                own.iter()
+                    .zip(&orders)
+                    .filter(|(ally, _)| {
+                        ally.unit_id() != unit.unit_id()
+                            && ally.kind() != UnitKind::Truck
+                            && ally.board_position().is_some()
+                    })
+                    .filter_map(|(_, order)| order.path.last())
+                    .map(|tile| Coordinate::new(tile.x as u16, tile.y as u16))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let tactical_preference = |order: &UnitOrderInput| {
+                let positioning = tactics::counterfire(&observed, unit, order)
+                    + tactics::crossfire(&observed, unit, order)
+                    + tactics::dispersed_screen(order, &allied_destinations);
+                let board_preference = board::preference(
+                    board_preference,
+                    &observed,
+                    &visible,
+                    unit,
+                    order,
+                    contact.map(|contact| contact.position),
+                );
+                let last_contact = contact.map_or(0, |contact| {
+                    contact.order_preference(&observed, unit, origin, order)
+                });
+                let spotting = artillery_spotting(&observed, &visible, unit, order);
+                (positioning + board_preference + last_contact + spotting) * score_scale
+            };
+            let evaluate = |orders: &[UnitOrderInput]| {
+                counterplay_score(&observed, player, orders, &responses, &goals)
+            };
+            let mut best_score =
+                evaluate(&orders)? + fog_readiness(&best) + tactical_preference(&best);
+            for candidate in candidates {
+                let readiness = fog_readiness(&candidate);
+                if !counterplay && candidate.attack_move == Some(true) && readiness == 0 {
+                    continue;
+                }
+                let preference = tactical_preference(&candidate);
+                *orders.get_mut(index).ok_or("the AI unit has no order.")? = candidate;
+                let late_advance = if turn >= 16 && unit.kind() != UnitKind::Truck {
+                    orders
+                        .get(index)
+                        .and_then(|order| order.path.last())
+                        .map_or(Ok(0), |end| {
+                            let end = Coordinate::new(end.x as u16, end.y as u16);
+                            Ok::<_, &'static str>(
+                                i64::from(goal.cost(origin)? - goal.cost(end)?) * 12,
+                            )
+                        })?
+                } else {
+                    0
+                };
+                let score = evaluate(&orders)? + readiness + preference + late_advance;
+                if score > best_score {
+                    best_score = score;
+                    best = orders
+                        .get(index)
+                        .ok_or("the AI unit has no order.")?
+                        .clone();
+                }
+            }
+            *orders.get_mut(index).ok_or("the AI unit has no order.")? = best;
+            let destination = orders
+                .get(index)
+                .ok_or("the AI unit has no order.")?
+                .path
+                .last()
+                .ok_or("the AI order has no destination.")?;
+            reserved.insert(Coordinate::new(destination.x as u16, destination.y as u16));
         }
-        *orders.get_mut(index).ok_or("the AI unit has no order.")? = best;
-        let destination = orders
-            .get(index)
-            .ok_or("the AI unit has no order.")?
-            .path
-            .last()
-            .ok_or("the AI order has no destination.")?;
-        reserved.insert(Coordinate::new(destination.x as u16, destination.y as u16));
     }
-    logistics::support(&observed, player, &mut orders)?;
+    logistics::support_with_freight(&observed, player, &mut orders, true)?;
     Ok(orders)
+}
+
+fn artillery_spotting(
+    scenario: &Scenario,
+    visible: &BTreeSet<Coordinate>,
+    unit: &Unit,
+    order: &UnitOrderInput,
+) -> i64 {
+    if unit.kind() != UnitKind::Infantry
+        || order.path.len() < 2
+        || unit.supplies().current() * 2 < unit.supplies().maximum()
+    {
+        return 0;
+    }
+    let Some(tile) = order.path.last() else {
+        return 0;
+    };
+    let end = Coordinate::new(tile.x as u16, tile.y as u16);
+    let player = unit.player_number();
+    let threatened = scenario.units.iter().any(|other| {
+        other.player_number() != player
+            && other.kind() != UnitKind::Truck
+            && other
+                .board_position()
+                .is_some_and(|enemy| distance(end, enemy) <= 2)
+    });
+    if threatened {
+        return 0;
+    }
+    let rules = combat::rules(UnitKind::FieldGun);
+    let batteries: Vec<_> = scenario
+        .units
+        .iter()
+        .filter(|ally| ally.kind() == UnitKind::FieldGun && ally.player_number() == player)
+        .filter(|ally| {
+            let stock = ally.supplies();
+            stock.current() >= stock.upkeep_per_turn() + rules.readiness_cost + rules.shot_cost
+        })
+        .filter_map(Unit::board_position)
+        .collect();
+    if batteries.is_empty() {
+        return 0;
+    }
+    let shared_sight = visibility::terrain_sight(&scenario.map, end, unit.kind())
+        .filter(|tile| !visible.contains(tile))
+        .filter(|tile| {
+            batteries
+                .iter()
+                .any(|gun| combat::within_indirect_range(*gun, *tile, rules.indirect_range))
+        })
+        .take(12)
+        .count();
+    shared_sight as i64 * 14
 }
 
 fn defensive_orders(
@@ -360,24 +519,37 @@ fn candidates(
         .filter(|other| other.player_number() != unit.player_number())
         .filter_map(Unit::board_position)
         .collect();
-    enemies.sort_by_key(|position| (distance(origin, *position), *position));
+    enemies.sort_by_key(|position| {
+        let gun = scenario.units.iter().any(|enemy| {
+            enemy.board_position() == Some(*position) && enemy.kind() == UnitKind::FieldGun
+        });
+        (distance(origin, *position) - 3 * i32::from(gun), *position)
+    });
     // Bound route generation even on authored maps with large armies.
     let mut targets = BTreeSet::from([goal.target]);
-    if let Some(contact) = contact {
+    if let Some(contact) = contact
+        && unit.kind() == UnitKind::Infantry
+    {
         targets.insert(contact.position);
     }
     if let Some(target) = resource_target(scenario, unit, origin) {
         targets.insert(target);
     }
-    for enemy in enemies.iter().take(3) {
+    for enemy in enemies.iter().take(2) {
         targets.insert(*enemy);
         // Side approaches offer alternatives to a costly frontal attack.
         targets.extend(neighbors(*enemy).filter(|position| scenario.map.contains(*position)));
     }
-    if has_enemies {
-        // Include local escapes even when they make no progress toward the
-        // strategic target; the best approaches can omit all of them.
-        targets.extend(neighbors(origin).filter(|position| scenario.map.contains(*position)));
+    // Include local escapes even when they make no progress toward the
+    // strategic target; the best approaches can omit all of them.
+    targets.extend(neighbors(origin).filter(|position| scenario.map.contains(*position)));
+    for enemy in enemies.iter().take(2) {
+        targets.extend(neighbors(*enemy).flat_map(neighbors).filter(|tile| {
+            scenario
+                .map
+                .tile_at(*tile)
+                .is_some_and(|terrain| terrain != Terrain::Water)
+        }));
     }
     if unit.kind() == UnitKind::FieldGun && ready {
         for target in enemies
@@ -387,6 +559,18 @@ fn candidates(
         {
             let mut order = hold(unit, origin);
             order.indirect_fire = Some(coordinate_input(*target));
+            candidates.push(order);
+        }
+        if let Some(contact) = contact
+            && !enemies.contains(&contact.position)
+            && combat::within_indirect_range(origin, contact.position, rules.indirect_range)
+            && !scenario
+                .units
+                .iter()
+                .any(|ally| ally.board_position() == Some(contact.position))
+        {
+            let mut order = hold(unit, origin);
+            order.indirect_fire = Some(coordinate_input(contact.position));
             candidates.push(order);
         }
     }
@@ -418,12 +602,8 @@ fn candidates(
             })
             .collect::<Result<Vec<_>, &'static str>>()?;
         paths.sort_by_key(|(rank, _)| *rank);
-        let mut selected: Vec<_> = paths
-            .iter()
-            .take(16)
-            .map(|(_, path)| path.clone())
-            .collect();
-        if !attack && has_enemies {
+        let mut selected: Vec<_> = paths.iter().take(5).map(|(_, path)| path.clone()).collect();
+        if !attack {
             selected.extend(
                 paths
                     .into_iter()
@@ -462,7 +642,7 @@ fn candidates(
 
 /// Attack moves can make contact on the route or on the square straight ahead
 /// at the end. Treat unseen land along that approach as a possible contact.
-pub(super) fn approaches_fog(
+fn approaches_fog(
     scenario: &Scenario,
     visible: &BTreeSet<Coordinate>,
     order: &UnitOrderInput,
@@ -491,6 +671,22 @@ fn direction_offset(direction: Direction) -> (i32, i32) {
         Direction::South => (0, 1),
         Direction::West => (-1, 0),
     }
+}
+
+/// Weight the worst response twice as heavily as the mean. Scaling
+/// by response count avoids rounding and keeps order bonuses comparable.
+fn counterplay_score(
+    scenario: &Scenario,
+    player: PlayerNumber,
+    own_orders: &[UnitOrderInput],
+    responses: &[Vec<UnitOrderInput>],
+    goals: &BTreeMap<UnitId, StrategicGoal>,
+) -> Result<i64, &'static str> {
+    let scores = responses
+        .iter()
+        .map(|response| forecast(scenario, player, own_orders, response, goals))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(scores.iter().sum::<i64>())
 }
 
 fn non_supply_target(scenario: &Scenario, unit: &Unit, origin: Coordinate) -> Coordinate {
@@ -552,10 +748,15 @@ fn forecast(
             score += i64::from((before.hit_points().current() - health) * value);
             continue;
         }
-        score -= i64::from((before.hit_points().current() - health) * value * 3 / 2);
+        let risk = if before.kind() == UnitKind::Infantry {
+            2
+        } else {
+            3
+        };
+        score -= i64::from((before.hit_points().current() - health) * value * risk / 2);
         if let Some(unit) = after {
             // Supplies/fuel are known only for our own force.
-            score += i64::from(unit.supplies().current() / 8);
+            score += i64::from(unit.supplies().current() / 5);
             score += i64::from(unit.fuel().map_or(0, |fuel| fuel.current / 32));
             if before.board_position().is_some()
                 && let Some(position) = unit.board_position()
@@ -567,7 +768,7 @@ fn forecast(
                 if unit.entrenchment() == Entrenchment::Entrenched
                     && distance(position, goal.target) <= 2
                 {
-                    score += 24;
+                    score += 10;
                 }
             }
         }

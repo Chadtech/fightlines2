@@ -23,10 +23,6 @@ toHtml onHelp layout building =
 buildingView : (Help -> msg) -> Layout -> Building -> Html msg
 buildingView onHelp layout building =
     let
-        events : InspectionHelp.Events msg
-        events =
-            { onHelp = onHelp }
-
         heading : Html msg
         heading =
             case building.kind of
@@ -41,7 +37,7 @@ buildingView onHelp layout building =
                         [ H.h2
                             []
                             [ H.text (Building.label building) ]
-                        , InspectionHelp.button events
+                        , InspectionHelp.button onHelp
                             ("about " ++ Building.label building)
                             (BuildingHelp building)
                         ]
@@ -119,7 +115,7 @@ buildingView onHelp layout building =
                             { label = label
                             , accessibleLabel = accessibleLabel
                             , help =
-                                InspectionHelp.button events
+                                InspectionHelp.button onHelp
                                     ("about " ++ accessibleLabel)
                                     (DepotStockHelp kind)
                                     |> StockGauge.DialogButton
@@ -147,7 +143,7 @@ buildingView onHelp layout building =
         , StockGauge.hp
             { accessibleLabel = Building.label building ++ " hp"
             , help =
-                InspectionHelp.button events
+                InspectionHelp.button onHelp
                     ("about " ++ Building.label building ++ " hp")
                     BuildingHpHelp
                     |> StockGauge.DialogButton

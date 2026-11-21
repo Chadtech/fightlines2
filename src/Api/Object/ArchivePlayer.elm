@@ -4,8 +4,8 @@
 
 module Api.Object.ArchivePlayer exposing (..)
 
-import Api.Enum.Controller
 import Api.Enum.PlayerNumber
+import Api.Enum.RecordedController
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -31,6 +31,6 @@ playerNumber =
     Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "playerNumber" [] Api.Enum.PlayerNumber.decoder
 
 
-controller : SelectionSet Api.Enum.Controller.Controller Api.Object.ArchivePlayer
+controller : SelectionSet Api.Enum.RecordedController.RecordedController Api.Object.ArchivePlayer
 controller =
-    Object.selectionForField "Enum.Controller.Controller" "controller" [] Api.Enum.Controller.decoder
+    Object.selectionForField "Enum.RecordedController.RecordedController" "controller" [] Api.Enum.RecordedController.decoder

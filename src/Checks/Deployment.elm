@@ -89,7 +89,9 @@ checks =
                 replayRoutesParse =
                     case GameLogId.parse "0123456789abcdef0123456789abcdef-1800000000000000000" of
                         Ok id ->
-                            adminRoundTrips (AdminRoute.Replay id) && devToolsRoundTrips (DevToolsRoute.Replay id)
+                            adminRoundTrips (AdminRoute.Replay id)
+                                && devToolsRoundTrips (DevToolsRoute.Replay id { recordingOffset = 0 })
+                                && devToolsRoundTrips (DevToolsRoute.Replay id { recordingOffset = 20 })
 
                         Err _ ->
                             False
@@ -97,7 +99,16 @@ checks =
             List.concat
                 [ check "stable matchmaking parses" (Route.fromUrl url == Just Route.MatchMaking)
                 , check "admin dashboard and sign-out use stable routes" (List.all adminRoundTrips [ AdminRoute.Dashboard, AdminRoute.SignOut ])
-                , check "dev tools use stable routes" (List.all devToolsRoundTrips [ DevToolsRoute.Home, DevToolsRoute.CombatChart, DevToolsRoute.BackdropReview, DevToolsRoute.MapEditor, DevToolsRoute.LoggedGames ])
+                , check "dev tools use stable routes"
+                    (List.all devToolsRoundTrips
+                        [ DevToolsRoute.Home
+                        , DevToolsRoute.CombatChart
+                        , DevToolsRoute.BackdropReview
+                        , DevToolsRoute.MapEditor
+                        , DevToolsRoute.LoggedGames { recordingOffset = 0 }
+                        , DevToolsRoute.LoggedGames { recordingOffset = 20 }
+                        ]
+                    )
                 , check "replay routes remain stable" replayRoutesParse
                 , check "accepting home remains an SPA navigation" (not (Deployment.requiresDocumentLoad accepting "/"))
                 , check "draining home loads current document" (Deployment.requiresDocumentLoad draining "/")

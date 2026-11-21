@@ -150,6 +150,7 @@ impl Query {
         context: &Context,
         #[graphql(default = 0)] offset: i32,
     ) -> FieldResult<game_archive::RecordingsPage> {
+        context.require_admin()?;
         game_archive::recordings(context, offset)
     }
     fn admin_feedback(
@@ -219,6 +220,12 @@ impl Query {
 
     fn logged_games(context: &Context) -> FieldResult<Vec<game_archive::LoggedGameEntry>> {
         game_archive::games(context)
+    }
+    fn logged_games_page(
+        context: &Context,
+        #[graphql(default = 0)] offset: i32,
+    ) -> FieldResult<game_archive::RecordingsPage> {
+        game_archive::recordings(context, offset)
     }
     fn logged_game(context: &Context, id: String) -> FieldResult<game_archive::LoggedGame> {
         game_archive::game(context, id)
@@ -1673,29 +1680,44 @@ mod tests {
 
     #[actix_web::test]
     async fn ai_easy_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
-        assert_ai_lobby_authorization_and_turns("AI").await
+        assert_ai_lobby_authorization_and_turns("AI", "Ai").await
     }
 
     #[actix_web::test]
     async fn ai_medium_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
-        assert_ai_lobby_authorization_and_turns("AI_MEDIUM").await
+        assert_ai_lobby_authorization_and_turns("AI_MEDIUM", "ScreenedBattery").await
     }
 
     #[actix_web::test]
     async fn ai_hard_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
-        assert_ai_lobby_authorization_and_turns("AI_HARD").await
+        assert_ai_lobby_authorization_and_turns("AI_HARD", "FindTheBlindSide").await
     }
 
     #[actix_web::test]
     async fn ai_very_hard_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
-        assert_ai_lobby_authorization_and_turns("AI_VERY_HARD").await
+        assert_ai_lobby_authorization_and_turns("AI_VERY_HARD", "ArtillerySpotters").await
     }
 
-    async fn assert_ai_lobby_authorization_and_turns(controller: &str) -> TestResult<()> {
+    async fn assert_ai_lobby_authorization_and_turns(
+        controller: &str,
+        recorded_controller: &str,
+    ) -> TestResult<()> {
+        use std::{
+            fs,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+
+        let directory = std::env::temp_dir().join(format!(
+            "fightlines-ai-controller-{}-{controller}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        let store = Store::new(crate::seed::Seed::new([19; 32]))
+            .with_game_logs(crate::game_log::Directory::open(directory.clone())?);
         let endpoint = web::Data::new(endpoint(Environment::Development));
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(Store::new(crate::seed::Seed::new([19; 32]))))
+                .app_data(web::Data::new(store))
                 .app_data(endpoint.clone())
                 .route("/graphql", web::post().to(handle)),
         )
@@ -1768,6 +1790,14 @@ mod tests {
             host.clone()
         );
         assert!(started.get("errors").is_none(), "{started}");
+        let paths = fs::read_dir(&directory)?.collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(paths.len(), 1);
+        let path = paths.first().fixture()?.path().join("00000000.json");
+        let initial: Value = serde_json::from_reader(fs::File::open(path)?)?;
+        assert_eq!(
+            initial["event"]["data"]["players"][1]["controller"],
+            recorded_controller
+        );
         let (late, _) = execute!(&human, host.clone());
         assert!(late["errors"].is_array());
         let game_query = format!(
@@ -1858,6 +1888,7 @@ mod tests {
             let (denied, _) = execute!(&change, cookie);
             assert!(denied["errors"].is_array());
         }
+        fs::remove_dir_all(directory)?;
         Ok(())
     }
 

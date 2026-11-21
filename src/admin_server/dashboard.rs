@@ -5,7 +5,7 @@ use crate::{
     graphql::Context,
     lobby_id::LobbyId,
     map_id::MapId,
-    player::{Controller, Player},
+    player::{Player, RecordedController},
     player_number::PlayerNumber,
     turns::GameOutcome,
 };
@@ -23,18 +23,58 @@ pub enum EntryStatus {
 }
 
 #[derive(Clone, GraphQLObject, Serialize, Deserialize)]
+#[serde(from = "DeploymentPlayer", into = "DeploymentPlayer")]
 pub struct AdminPlayer {
     name: String,
-    controller: Controller,
+    controller: RecordedController,
     player_number: PlayerNumber,
     orders_submitted: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DeploymentPlayer {
+    name: String,
+    controller: RecordedController,
+    recorded_controller: Option<RecordedController>,
+    player_number: PlayerNumber,
+    orders_submitted: bool,
+}
+
+impl From<AdminPlayer> for DeploymentPlayer {
+    fn from(player: AdminPlayer) -> Self {
+        // A draining v31 dashboard can read the generic AI kind from this field.
+        let (controller, recorded_controller) = match player.controller {
+            RecordedController::ArtillerySpotters => {
+                (RecordedController::Ai, Some(player.controller))
+            }
+            controller => (controller, None),
+        };
+        Self {
+            name: player.name,
+            controller,
+            recorded_controller,
+            player_number: player.player_number,
+            orders_submitted: player.orders_submitted,
+        }
+    }
+}
+
+impl From<DeploymentPlayer> for AdminPlayer {
+    fn from(player: DeploymentPlayer) -> Self {
+        Self {
+            name: player.name,
+            controller: player.recorded_controller.unwrap_or(player.controller),
+            player_number: player.player_number,
+            orders_submitted: player.orders_submitted,
+        }
+    }
 }
 
 impl AdminPlayer {
     pub(crate) fn new(player: &Player, orders_submitted: bool) -> Self {
         Self {
             name: player.name.to_string(),
-            controller: player.controller.kind(),
+            controller: player.controller.kind().into(),
             player_number: player.player_number,
             orders_submitted,
         }
@@ -152,5 +192,31 @@ pub fn counts(entries: &[AdminEntry]) -> Counts {
         concurrent_games: entries.len() as i32 - waiting - finished,
         waiting_lobbies: waiting,
         retained_finished_games: finished,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::TestResult;
+    use serde_json::json;
+
+    #[test]
+    fn deployment_players_keep_status_readable_across_releases() -> TestResult<()> {
+        let legacy = json!({
+            "name": "Opponent",
+            "controller": "Ai",
+            "player_number": "Player2",
+            "orders_submitted": false
+        });
+        let mut player: AdminPlayer = serde_json::from_value(legacy)?;
+        assert_eq!(player.controller, RecordedController::Ai);
+
+        player.controller = RecordedController::ArtillerySpotters;
+        let published = serde_json::to_value(player)?;
+        assert_eq!(published["controller"], "Ai");
+        let decoded: AdminPlayer = serde_json::from_value(published)?;
+        assert_eq!(decoded.controller, RecordedController::ArtillerySpotters);
+        Ok(())
     }
 }

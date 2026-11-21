@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    ai::{hard, medium, memory::EnemyMemory, very_hard},
+    ai::{artillery_spotters, hard, memory::EnemyMemory, very_hard},
     map::{Map, RoadShape},
     map_definition::MapDefinition,
     map_id::MapId,
@@ -47,18 +47,18 @@ fn only_higher_difficulties_prepare_for_contact_before_an_enemy_is_visible() -> 
     let mut empty = scenario.clone();
     empty.units.retain(|unit| unit.player_number() == player);
     let memory = EnemyMemory::default();
-    for planner in [medium::plan, hard::plan, very_hard::plan] {
+    for planner in [hard::plan, very_hard::plan, artillery_spotters::plan] {
         let orders = planner(&scenario, player, &memory, 1).fixture()?;
         let attack = orders.first().fixture()?;
         assert_eq!(attack.attack_move, Some(true));
-        assert!(medium::approaches_fog(&scenario, &visible, attack));
+        assert!(hard::approaches_fog(&scenario, &visible, attack));
         assert_eq!(
             serde_json::to_value(&orders)?,
             serde_json::to_value(planner(&empty, player, &memory, 1).fixture()?)?
         );
     }
 
-    let orders = medium::plan(&scenario, player, &memory, 1).fixture()?;
+    let orders = hard::plan(&scenario, player, &memory, 1).fixture()?;
     let initial_health = enemy.hit_points().current();
     let enemy_order = hold(enemy, enemy_position);
     let mut turns = Turns::default();

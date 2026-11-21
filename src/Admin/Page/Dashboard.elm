@@ -19,9 +19,9 @@ import Admin.Page.Dashboard.Analytics.QueryResults as QueryResults exposing (Que
 import Admin.Page.Dashboard.Analytics.RequestId exposing (RequestId)
 import Admin.Page.Dashboard.Analytics.View as AnalyticsView
 import Admin.Route as Route
-import Api.Enum.Controller as Controller exposing (Controller)
 import Api.Enum.EntryStatus as Status exposing (EntryStatus)
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
+import Api.Enum.RecordedController exposing (RecordedController)
 import Api.Mutation
 import Api.Object
 import Api.Object.AdminEntry as EntryApi
@@ -114,7 +114,7 @@ type alias LiveEntry =
 
 type alias Player =
     { name : String
-    , controller : Controller
+    , controller : RecordedController
     , playerNumber : PlayerNumber
     , ordersSubmitted : Bool
     }
@@ -1147,21 +1147,7 @@ entryDetails htmlId entry =
             let
                 controller : String
                 controller =
-                    case value.controller of
-                        Controller.Human ->
-                            "human"
-
-                        Controller.Ai ->
-                            "ai"
-
-                        Controller.AiMedium ->
-                            "ai medium"
-
-                        Controller.AiHard ->
-                            "ai hard"
-
-                        Controller.AiVeryHard ->
-                            "ai very hard"
+                    Archive.controllerLabel value.controller
 
                 readiness : String
                 readiness =

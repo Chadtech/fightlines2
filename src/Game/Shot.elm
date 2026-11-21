@@ -5,6 +5,7 @@ module Game.Shot exposing
     , setTargetHealth
     )
 
+import Api.Enum.AmbushBonus exposing (AmbushBonus)
 import Api.Enum.CombatKind exposing (CombatKind)
 import Api.Object
 import Api.Object.Shot as ShotApi
@@ -22,6 +23,7 @@ type alias Shot =
     , target : Unit
     , damage : Int
     , flankBonus : Bool
+    , ambushBonus : AmbushBonus
     , attackerHealth : CombatHealth
     , targetHealth : CombatHealth
     }
@@ -37,6 +39,7 @@ selection =
         |> SS.with (ShotApi.target Unit.selection)
         |> SS.with ShotApi.damage
         |> SS.with ShotApi.flankBonus
+        |> SS.with ShotApi.ambushBonus
         |> SS.with (ShotApi.attackerHealth CombatHealth.selection)
         |> SS.with (ShotApi.targetHealth CombatHealth.selection)
 

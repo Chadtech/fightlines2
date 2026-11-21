@@ -119,7 +119,10 @@ toHtml config =
                     ]
                 ]
                 [ H.text "cargo"
-                , InspectionHelp.button { onHelp = config.onHelp } "about cargo replenishment" InspectionHelp.CargoHelp
+                , InspectionHelp.button
+                    config.onHelp
+                    "about cargo replenishment"
+                    InspectionHelp.CargoHelp
                 ]
             , H.span
                 [ A.css

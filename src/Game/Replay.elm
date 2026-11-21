@@ -1532,7 +1532,7 @@ selectionView model =
             , content =
                 [ UnitStatus.toHtml
                     Layout.Desktop
-                    { onHelp = InspectionHelpClicked }
+                    InspectionHelpClicked
                     (PlaybackPresentation.ownerName model.battlefield.players unit |> Maybe.withDefault "")
                     unit
                     Nothing
@@ -1784,44 +1784,27 @@ controlsHeader header =
 
 requestFeedback : TurnRequest -> Html Msg
 requestFeedback request =
-    let
-        status : String
-        status =
-            case request of
-                Failed _ message ->
-                    message
+    case request of
+        Failed _ message ->
+            H.div
+                [ A.css
+                    [ S.row
+                    , S.flexWrap
+                    , S.itemsCenter
+                    , S.wrapAnywhere
+                    , S.g2
+                    , S.mt2
+                    ]
+                ]
+                [ H.p
+                    [ Aria.role Aria.Status ]
+                    [ H.text message ]
+                , Button.secondary "retry" RetryClicked
+                    |> Button.toHtml
+                ]
 
-                Loading _ ->
-                    "loading turn…"
-
-                Idle ->
-                    ""
-
-        retryButton : Html Msg
-        retryButton =
-            case request of
-                Failed _ _ ->
-                    Button.secondary "retry" RetryClicked
-                        |> Button.toHtml
-
-                _ ->
-                    H.text ""
-    in
-    H.div
-        [ A.css
-            [ S.row
-            , S.flexWrap
-            , S.itemsCenter
-            , S.wrapAnywhere
-            , S.g2
-            , S.when (request /= Idle) [ S.mt2 ]
-            ]
-        ]
-        [ H.p
-            [ Aria.role Aria.Status ]
-            [ H.text status ]
-        , retryButton
-        ]
+        _ ->
+            H.text ""
 
 
 dialog : Model -> Maybe (Dialog Msg)

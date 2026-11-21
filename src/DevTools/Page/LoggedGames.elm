@@ -1,23 +1,21 @@
 module DevTools.Page.LoggedGames exposing
     ( Flags
-    , Game
     , Model
     , init
     , load
-    , selection
     , setShared
     , view
     )
 
-import Api.Object
+import Api.Object.RecordingsPage as RecordingsApi
 import Api.Query
 import ApiRequest
 import DevTools.Route as Route
-import Game.Archive as Archive exposing (Entry(..))
+import Game.Archive as Archive exposing (Entry(..), Game)
 import Game.LogId as GameLogId
 import Game.MapId as MapId
 import Graphql.Http
-import Graphql.SelectionSet exposing (SelectionSet)
+import Graphql.SelectionSet as SS
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import LocalTime
@@ -35,17 +33,21 @@ import View.CardHeader as CardHeader
 ----------------------------------------------------------------
 
 
-type alias Game =
-    Archive.Game
-
-
 type alias Flags =
-    List Entry
+    { entries : List Entry
+    , total : Int
+    , nextOffset : Maybe Int
+    , previousOffset : Maybe Int
+    }
 
 
 type alias Model =
     { shared : Shared.Model
+    , offset : Int
     , entries : List Entry
+    , total : Int
+    , nextOffset : Maybe Int
+    , previousOffset : Maybe Int
     }
 
 
@@ -55,16 +57,26 @@ type alias Model =
 ----------------------------------------------------------------
 
 
-init : Shared.Model -> Flags -> Model
-init shared entries =
+init : Shared.Model -> Int -> Flags -> Model
+init shared offset flags =
     { shared = shared
-    , entries = entries
+    , offset = offset
+    , entries = flags.entries
+    , total = flags.total
+    , nextOffset = flags.nextOffset
+    , previousOffset = flags.previousOffset
     }
 
 
-load : Graphql.Http.Request Flags
-load =
-    Api.Query.loggedGames Archive.entrySelection |> ApiRequest.queryRequest
+load : Int -> Graphql.Http.Request Flags
+load offset =
+    SS.succeed Flags
+        |> SS.with (RecordingsApi.entries Archive.entrySelection)
+        |> SS.with RecordingsApi.total
+        |> SS.with RecordingsApi.nextOffset
+        |> SS.with RecordingsApi.previousOffset
+        |> Api.Query.loggedGamesPage { offset = offset }
+        |> ApiRequest.queryRequest
 
 
 
@@ -78,9 +90,14 @@ setShared shared model =
     { model | shared = shared }
 
 
-selection : SelectionSet Game Api.Object.LoggedGame
-selection =
-    Archive.selection
+listLink : String -> Int -> Html msg
+listLink label offset =
+    H.a
+        [ A.href
+            (Route.toString (Route.LoggedGames { recordingOffset = offset }))
+        , A.css [ S.link ]
+        ]
+        [ H.text label ]
 
 
 
@@ -94,32 +111,47 @@ view model =
     let
         entries : List (Html msg)
         entries =
-            if List.isEmpty model.entries then
+            if model.total == 0 then
                 [ H.p
                     [ Aria.role Aria.Status ]
                     [ H.text "no logged games yet." ]
                 ]
 
-            else
-                List.map (entryRow model.shared.timeZone) model.entries
+            else if List.isEmpty model.entries then
+                [ H.p
+                    [ Aria.role Aria.Status ]
+                    [ H.text "no logged games on this page." ]
+                ]
 
-        content : List (Html msg)
-        content =
-            [ H.nav
+            else
+                List.map (entryRow model.offset model.shared.timeZone)
+                    model.entries
+
+        links : List (Html msg)
+        links =
+            List.filterMap identity
+                [ Maybe.map (listLink "newer games") model.previousOffset
+                , Maybe.map (listLink "older games") model.nextOffset
+                ]
+
+        refresh : Html msg
+        refresh =
+            listLink "refresh" model.offset
+
+        controls : Html msg
+        controls =
+            H.nav
                 [ A.css
                     [ S.row
                     , S.g3
                     , S.flexWrap
                     ]
                 ]
-                [ H.a
-                    [ A.href (Route.toString Route.LoggedGames)
-                    , A.css [ S.link ]
-                    ]
-                    [ H.text "refresh" ]
-                ]
-            ]
-                ++ entries
+                (refresh :: links)
+
+        content : List (Html msg)
+        content =
+            controls :: entries
     in
     [ Card.toHtml
         (Card.simple
@@ -129,14 +161,14 @@ view model =
     ]
 
 
-entryRow : Time.Zone -> Entry -> Html msg
-entryRow zone entry =
+entryRow : Int -> Time.Zone -> Entry -> Html msg
+entryRow offset zone entry =
     let
         content : List (Html msg)
         content =
             case entry of
                 Readable game ->
-                    gameContent zone game
+                    gameContent offset zone game
 
                 Unreadable error ->
                     [ H.h2
@@ -160,8 +192,8 @@ entryRow zone entry =
         content
 
 
-gameContent : Time.Zone -> Game -> List (Html msg)
-gameContent zone game =
+gameContent : Int -> Time.Zone -> Game -> List (Html msg)
+gameContent offset zone game =
     [ H.h2
         []
         [ H.text game.name ]
@@ -175,7 +207,8 @@ gameContent zone game =
         []
         [ H.text (String.fromInt game.turnCount ++ " completed turns · " ++ Archive.statusLabel game.status) ]
     , H.a
-        [ A.href (Route.toString (Route.Replay game.id))
+        [ A.href
+            (Route.toString (Route.Replay game.id { recordingOffset = offset }))
         , A.css [ S.link ]
         ]
         [ H.text "replay game" ]

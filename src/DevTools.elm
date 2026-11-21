@@ -69,11 +69,11 @@ type Page
     | LoadingMapEditor Shared.Model
     | MapEditorLoadFailed Shared.Model String
     | MapEditor MapEditor.Model
-    | LoadingLoggedGames Shared.Model
-    | LoggedGamesLoadFailed Shared.Model String
+    | LoadingLoggedGames Shared.Model Int
+    | LoggedGamesLoadFailed Shared.Model Int String
     | LoggedGames LoggedGames.Model
-    | LoadingReplay Shared.Model GameLogId
-    | ReplayLoadFailed Shared.Model GameLogId String
+    | LoadingReplay Shared.Model GameLogId Int
+    | ReplayLoadFailed Shared.Model GameLogId Int String
     | Replay GameLogId GameReplay.Model
     | NotFound Shared.Model
 
@@ -95,7 +95,7 @@ type Msg
     | MapEditorResponseReceived (ApiRequest.Response MapEditor.Flags)
     | MapEditorMsg MapEditor.Msg
     | BackdropReviewMsg BackdropReview.Msg
-    | LoggedGamesResponseReceived (Response LoggedGames.Flags)
+    | LoggedGamesResponseReceived Int (Response LoggedGames.Flags)
     | ReplayResponseReceived GameLogId (Response GameReplay.Flags)
     | ReplayMsg GameLogId GameReplay.Msg
     | GotSharedMsg Shared.Msg
@@ -200,19 +200,19 @@ getKey page =
         MapEditor model ->
             model.shared.key
 
-        LoadingLoggedGames shared ->
+        LoadingLoggedGames shared _ ->
             shared.key
 
-        LoggedGamesLoadFailed shared _ ->
+        LoggedGamesLoadFailed shared _ _ ->
             shared.key
 
         LoggedGames model ->
             model.shared.key
 
-        LoadingReplay shared _ ->
+        LoadingReplay shared _ _ ->
             shared.key
 
-        ReplayLoadFailed shared _ _ ->
+        ReplayLoadFailed shared _ _ _ ->
             shared.key
 
         Replay _ model ->
@@ -258,19 +258,19 @@ getShared page =
         MapEditor model ->
             Just model.shared
 
-        LoadingLoggedGames shared ->
+        LoadingLoggedGames shared _ ->
             Just shared
 
-        LoggedGamesLoadFailed shared _ ->
+        LoggedGamesLoadFailed shared _ _ ->
             Just shared
 
         LoggedGames model ->
             Just model.shared
 
-        LoadingReplay shared _ ->
+        LoadingReplay shared _ _ ->
             Just shared
 
-        ReplayLoadFailed shared _ _ ->
+        ReplayLoadFailed shared _ _ _ ->
             Just shared
 
         Replay _ model ->
@@ -316,20 +316,20 @@ setShared shared page =
         MapEditor model ->
             MapEditor (MapEditor.setShared shared model)
 
-        LoadingLoggedGames _ ->
-            LoadingLoggedGames shared
+        LoadingLoggedGames _ offset ->
+            LoadingLoggedGames shared offset
 
-        LoggedGamesLoadFailed _ error ->
-            LoggedGamesLoadFailed shared error
+        LoggedGamesLoadFailed _ offset error ->
+            LoggedGamesLoadFailed shared offset error
 
         LoggedGames model ->
             LoggedGames (LoggedGames.setShared shared model)
 
-        LoadingReplay _ id ->
-            LoadingReplay shared id
+        LoadingReplay _ id offset ->
+            LoadingReplay shared id offset
 
-        ReplayLoadFailed _ id error ->
-            ReplayLoadFailed shared id error
+        ReplayLoadFailed _ id offset error ->
+            ReplayLoadFailed shared id offset error
 
         Replay id model ->
             Replay id (GameReplay.setShared shared model)
@@ -375,11 +375,16 @@ handleRoute shared route =
         Just Route.Home ->
             ( Home shared, E.none )
 
-        Just Route.LoggedGames ->
-            ( LoadingLoggedGames shared, E.request LoggedGamesResponseReceived LoggedGames.load )
+        Just (Route.LoggedGames { recordingOffset }) ->
+            ( LoadingLoggedGames shared recordingOffset
+            , E.request (LoggedGamesResponseReceived recordingOffset)
+                (LoggedGames.load recordingOffset)
+            )
 
-        Just (Route.Replay id) ->
-            ( LoadingReplay shared id, E.request (ReplayResponseReceived id) (GameReplay.load id) )
+        Just (Route.Replay id { recordingOffset }) ->
+            ( LoadingReplay shared id recordingOffset
+            , E.request (ReplayResponseReceived id) (GameReplay.load id)
+            )
 
         Just Route.CombatChart ->
             let
@@ -517,15 +522,23 @@ update msg page =
                 _ ->
                     ( page, E.none )
 
-        LoggedGamesResponseReceived result ->
+        LoggedGamesResponseReceived offset result ->
             case page of
-                LoadingLoggedGames shared ->
-                    case result of
-                        Ok flags ->
-                            ( LoggedGames (LoggedGames.init shared flags), E.none )
+                LoadingLoggedGames shared currentOffset ->
+                    if offset /= currentOffset then
+                        page |> E.withOut
 
-                        Err error ->
-                            ( LoggedGamesLoadFailed shared (ApiRequest.errorMessage error), E.none )
+                    else
+                        case result of
+                            Ok flags ->
+                                LoggedGames (LoggedGames.init shared offset flags)
+                                    |> E.withOut
+
+                            Err error ->
+                                LoggedGamesLoadFailed shared
+                                    offset
+                                    (ApiRequest.errorMessage error)
+                                    |> E.withOut
 
                 _ ->
                     page
@@ -533,7 +546,7 @@ update msg page =
 
         ReplayResponseReceived id result ->
             case page of
-                LoadingReplay shared currentId ->
+                LoadingReplay shared currentId offset ->
                     if id /= currentId then
                         page
                             |> E.withOut
@@ -541,12 +554,22 @@ update msg page =
                     else
                         case result of
                             Ok flags ->
-                                GameReplay.init { returnUrl = "/dev/logged-games" } shared id flags
+                                GameReplay.init
+                                    { returnUrl =
+                                        Route.toString
+                                            (Route.LoggedGames { recordingOffset = offset })
+                                    }
+                                    shared
+                                    id
+                                    flags
                                     |> Tuple.mapFirst (Replay id)
                                     |> Tuple.mapSecond (E.map (ReplayMsg id))
 
                             Err error ->
-                                ReplayLoadFailed shared id (ApiRequest.errorMessage error)
+                                ReplayLoadFailed shared
+                                    id
+                                    offset
+                                    (ApiRequest.errorMessage error)
                                     |> E.withOut
 
                 _ ->
@@ -782,7 +805,7 @@ shell page =
         MapEditor model ->
             List.map (H.map MapEditorMsg) (MapEditor.view model)
 
-        LoadingLoggedGames _ ->
+        LoadingLoggedGames _ _ ->
             [ H.p
                 [ Aria.role Aria.Status
                 ]
@@ -790,13 +813,15 @@ shell page =
                 ]
             ]
 
-        LoggedGamesLoadFailed _ error ->
-            loadFailure Route.LoggedGames error
+        LoggedGamesLoadFailed _ offset error ->
+            loadFailure
+                (Route.LoggedGames { recordingOffset = offset })
+                error
 
         LoggedGames model ->
             LoggedGames.view model
 
-        LoadingReplay _ _ ->
+        LoadingReplay _ _ _ ->
             [ H.p
                 [ Aria.role Aria.Status
                 ]
@@ -804,8 +829,10 @@ shell page =
                 ]
             ]
 
-        ReplayLoadFailed _ id error ->
-            loadFailure (Route.Replay id) error
+        ReplayLoadFailed _ id offset error ->
+            loadFailure
+                (Route.Replay id { recordingOffset = offset })
+                error
 
         Replay id model ->
             List.map (H.map (ReplayMsg id)) (GameReplay.view model)
@@ -840,7 +867,7 @@ homeView =
             [ H.text "development tools"
             ]
         , link Route.MapEditor "map editor"
-        , link Route.LoggedGames "logged games"
+        , link (Route.LoggedGames { recordingOffset = 0 }) "logged games"
         , link Route.BackdropReview "backdrop review"
         , link Route.CombatChart "combat chart"
         ]
@@ -864,7 +891,7 @@ loadFailure route error =
             [ H.text "retry"
             ]
         , H.a
-            [ A.href (Route.toString Route.LoggedGames)
+            [ A.href (Route.toString (Route.LoggedGames { recordingOffset = 0 }))
             , A.css
                 [ S.link
                 ]

@@ -3,34 +3,28 @@
 ## doing now
 
 ## Bugs
-- last game I got two tanks with a mutual flank bonus, how?
-- in last game, Two tanks came to battle, but then the combat theater showed a tank vs an infantry
-- in last game, I seemed to be able to see a tank long after it had drove into the fog
+- Sometimes clicking a square during a move selects the thing at the square rather than selecting the position
 
 ## Immediately
-- the low health indicator, a heart, maybe should look more drained so as to convey low health
-- depot and fortress damage hits in the combat theater should also have a health bar
-- Info button in unit panel about exhaustion
-
+- some kind of board map sound for when you collide with an enemy unit
 - invite match makers to play against ai
 - Frontend AI engine
 - Tutorial missions
 - Key commands section in settings
 
-
 ## Soon
+- crt view
+- tilt battlefield
 - Shadows under units in combat theater
 - Manufacturing and cities
 - Air planes and boats
 - Day Night Cycle
-
 
 ## Later
 - Horse logistics unit
 - Spectators
 - Name units
 - Non-taxi cab distance?
-
 
 ### Future units
 - Horses, carry 1 cargo

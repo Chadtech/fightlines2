@@ -144,6 +144,9 @@ decodeFeature value =
         "ai-difficulty" ->
             Decode.succeed Nothing
 
+        "tournament-very-hard" ->
+            Decode.succeed Nothing
+
         _ ->
             case ListUtil.find (\feature -> toString feature == value) all of
                 Just feature ->

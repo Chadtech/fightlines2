@@ -34,3 +34,8 @@ total =
 nextOffset : SelectionSet (Maybe Int) Api.Object.RecordingsPage
 nextOffset =
     Object.selectionForField "(Maybe Int)" "nextOffset" [] (Decode.int |> Decode.nullable)
+
+
+previousOffset : SelectionSet (Maybe Int) Api.Object.RecordingsPage
+previousOffset =
+    Object.selectionForField "(Maybe Int)" "previousOffset" [] (Decode.int |> Decode.nullable)

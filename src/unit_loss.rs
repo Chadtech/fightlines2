@@ -267,6 +267,7 @@ mod tests {
             destination: truck.board_position().fixture()?,
             damage: 16,
             flank_bonus: false,
+            ambush_bonus: Default::default(),
             attacker: attacker.clone(),
             target: truck.clone(),
             attacker_health: CombatHealth {

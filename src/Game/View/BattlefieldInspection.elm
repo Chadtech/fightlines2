@@ -179,13 +179,13 @@ terrainView layout model coordinate =
             case layout of
                 Layout.Desktop ->
                     TerrainInfo.toHtml
-                        { onHelp = model.onHelp }
+                        model.onHelp
                         model.map
                         coordinate
 
                 Layout.Mobile ->
                     TerrainInfo.helpButton
-                        { onHelp = model.onHelp }
+                        model.onHelp
                         model.map
                         coordinate
     in

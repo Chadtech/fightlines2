@@ -1,5 +1,6 @@
 port module Game.Checks.Turn exposing (main)
 
+import Api.Enum.AmbushBonus as AmbushBonus
 import Api.Enum.AmbushShape as AmbushShape
 import Api.Enum.BuildingKind as BuildingKind
 import Api.Enum.CombatKind as CombatKind
@@ -1427,6 +1428,7 @@ combatPlaybackChecks first second =
             , target = target
             , damage = 8
             , flankBonus = False
+            , ambushBonus = AmbushBonus.None
             , attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
             , targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 8, maximum = 16 } }
             }
@@ -1476,6 +1478,8 @@ combatPlaybackChecks first second =
                     , targetFired = False
                     , attackerFlankBonus = False
                     , targetFlankBonus = False
+                    , attackerAmbushBonus = AmbushBonus.None
+                    , targetAmbushBonus = AmbushBonus.None
                     }
             , elapsed = 0
             , mapView = TurnPlayback.CardVisible
@@ -1509,6 +1513,8 @@ combatPlaybackChecks first second =
                     , targetFired = False
                     , attackerFlankBonus = False
                     , targetFlankBonus = False
+                    , attackerAmbushBonus = AmbushBonus.None
+                    , targetAmbushBonus = AmbushBonus.None
                     }
             in
             CombatTheater.readyToAutomaticallyClose
@@ -2225,6 +2231,16 @@ combatPlaybackChecks first second =
                         ]
                         |> Maybe.andThen TurnPlayback.combat
                         |> Maybe.map exchangeFlankBonuses
+
+                ambushBonuses : List Shot -> Maybe ( AmbushBonus.AmbushBonus, AmbushBonus.AmbushBonus )
+                ambushBonuses shots =
+                    focused
+                        [ before
+                        , opening |> TurnPlayback.setFrameShots shots
+                        , waiting
+                        ]
+                        |> Maybe.andThen TurnPlayback.combat
+                        |> Maybe.map (\pair -> ( pair.attackerAmbushBonus, pair.targetAmbushBonus ))
             in
             expect "stationary return fire shares one card with both health transitions"
                 (Maybe.map (.attackerHealth >> .after >> .current) exchange
@@ -2253,6 +2269,12 @@ combatPlaybackChecks first second =
                         == Just ( False, True )
                         && flankBonuses [ shot ]
                         == Just ( False, False )
+                    )
+                ++ expect "ambush bonuses stay with the shot that earned them"
+                    (ambushBonuses [ shot, { returnShot | ambushBonus = AmbushBonus.Ambush } ]
+                        == Just ( AmbushBonus.None, AmbushBonus.Ambush )
+                        && ambushBonuses [ { flankingShot | ambushBonus = AmbushBonus.SuperAmbush } ]
+                        == Just ( AmbushBonus.SuperAmbush, AmbushBonus.None )
                     )
                 ++ expect "combining a later return volley retains its flank bonus"
                     (focused
@@ -2656,9 +2678,7 @@ combatPlaybackChecks first second =
                                                 |> TurnPlayback.setFrameShots
                                                     [ shot
                                                     , shot
-                                                        |> setShotOrigin
-                                                            { x = 4, y = 2 }
-                                                        |> setShotAttacker anotherTarget
+                                                        |> setShotAttacker (Unit.setOnMap shot.origin anotherTarget)
                                                         |> Shot.setTargetHealth
                                                             { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } }
                                                     ]
@@ -2676,13 +2696,15 @@ combatPlaybackChecks first second =
                                     in
                                     expect "each distinct combat pair is shown before a shared volley is revealed"
                                         (Maybe.andThen TurnPlayback.combat secondPause |> Maybe.map (.target >> .id) |> (==) (Just third))
-                                        ++ expect "overlapping ambush cards preserve successive health losses"
+                                        ++ expect "attackers sharing a tile get separate cards and preserve successive health losses"
                                             ((Maybe.andThen TurnPlayback.combat overlapFirst |> Maybe.map (.targetHealth >> .after >> .current))
                                                 == Just 8
                                                 && (Maybe.andThen TurnPlayback.combat overlapSecond |> Maybe.map (.targetHealth >> .before >> .current))
                                                 == Just 8
                                                 && (Maybe.andThen TurnPlayback.combat overlapSecond |> Maybe.map (.targetHealth >> .after >> .current))
                                                 == Just 0
+                                                && (Maybe.andThen TurnPlayback.combat overlapSecond |> Maybe.map (.attacker >> .id))
+                                                == Just third
                                             )
                                         ++ expect "multiple pair displays return to one battlefield volley"
                                             (Maybe.andThen TurnPlayback.combat afterPairs == Nothing && revealed == multiple)
@@ -3057,6 +3079,7 @@ mergedImpactChecks fixture =
                     , target = fixture.target
                     , damage = 4
                     , flankBonus = False
+                    , ambushBonus = AmbushBonus.None
                     , attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
                     , targetHealth = lastHealth
                     }
@@ -3208,7 +3231,7 @@ combatDeathChecks first second =
 
                 lethalShot : Unit -> Shot
                 lethalShot victim =
-                    { kind = CombatKind.Ambush, origin = { x = 2, y = 2 }, destination = Unit.mapPosition victim |> Maybe.withDefault { x = 3, y = 2 }, attacker = attacker, target = victim, damage = 8, flankBonus = False, attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }, targetHealth = { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } } }
+                    { kind = CombatKind.Ambush, origin = { x = 2, y = 2 }, destination = Unit.mapPosition victim |> Maybe.withDefault { x = 3, y = 2 }, attacker = attacker, target = victim, damage = 8, flankBonus = False, ambushBonus = AmbushBonus.None, attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }, targetHealth = { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } } }
 
                 volley : TurnPlayback.Frame
                 volley =
@@ -3288,7 +3311,7 @@ combatDeathChecks first second =
 
                 reciprocal : Shot
                 reciprocal =
-                    { kind = CombatKind.Ambush, origin = { x = 3, y = 2 }, destination = { x = 2, y = 2 }, attacker = target, target = attacker, damage = 16, flankBonus = False, attackerHealth = { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } }, targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } }
+                    { kind = CombatKind.Ambush, origin = { x = 3, y = 2 }, destination = { x = 2, y = 2 }, attacker = target, target = attacker, damage = 16, flankBonus = False, ambushBonus = AmbushBonus.None, attackerHealth = { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } }, targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } }
 
                 mutual : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
                 mutual =
@@ -4545,6 +4568,7 @@ carrierLossEventChecks first second =
                     , target = truck
                     , damage = 16
                     , flankBonus = False
+                    , ambushBonus = AmbushBonus.None
                     , attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
                     , targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } }
                     }

@@ -78,13 +78,12 @@ responses. Playback and camera framing use those filtered observations.
 ### Tactical AI that uses the game engine
 
 Each difficulty searches for orders using its own planner and the shared turn
-validator and resolver. Easy, Hard, and Very Hard compare stationary and
-advancing responses when they see an enemy. Medium models a stationary
-response. Planning uses observed enemies and assumed resources, while truck
-coordination weighs transport, supply, and fuel needs.
+validator and resolver. All four compare stationary and advancing responses
+when they see an enemy. Planning uses observed enemies and assumed resources,
+while truck coordination weighs transport, supply, and fuel needs.
 
-[Easy](src/ai/easy.rs) · [Medium](src/ai/medium.rs) · [Hard](src/ai/hard.rs) ·
-[Very Hard](src/ai/very_hard.rs) · [Logistics](src/ai/logistics.rs)
+[Easy](src/ai/easy.rs) · [Medium](src/ai/hard.rs) · [Hard](src/ai/very_hard.rs) ·
+[Very Hard](src/ai/artillery_spotters.rs) · [Logistics](src/ai/logistics.rs)
 
 ### Recorded games as a debugging tool
 

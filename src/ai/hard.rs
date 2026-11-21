@@ -537,7 +537,7 @@ fn candidates(
 
 /// Attack moves can make contact on the route or on the square straight ahead
 /// at the end. Treat unseen land along that approach as a possible contact.
-fn approaches_fog(
+pub(super) fn approaches_fog(
     scenario: &Scenario,
     visible: &BTreeSet<Coordinate>,
     order: &UnitOrderInput,

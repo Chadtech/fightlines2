@@ -4494,18 +4494,19 @@ mod tests {
     }
 
     #[test]
-    fn blocked_movement_reveals_the_forest_enemy_for_one_turn() -> TestResult<()> {
+    fn truck_blocked_by_stationary_forest_enemy_reveals_it_for_one_turn() -> TestResult<()> {
         let mut scenario = MapDefinition::parse(
             r#"{
-                "width": 3, "height": 1, "theme": "GreenForest", "depots": [],
+                "width": 4, "height": 2, "theme": "GreenForest", "depots": [],
                 "features": [
-                    {"position": {"x": 1, "y": 0}, "terrain": "Forest"},
-                    {"position": {"x": 2, "y": 0}, "terrain": "Forest"}
+                    {"position": {"x": 2, "y": 0}, "terrain": "Forest"},
+                    {"position": {"x": 3, "y": 0}, "terrain": "Forest"}
                 ],
                 "units": [
-                    {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
-                    {"id": 2, "position": {"x": 1, "y": 0}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"},
-                    {"id": 3, "position": {"x": 2, "y": 0}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+                    {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Truck"},
+                    {"id": 2, "position": {"x": 2, "y": 0}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"},
+                    {"id": 3, "position": {"x": 3, "y": 0}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"},
+                    {"id": 4, "position": {"x": 0, "y": 1}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"}
                 ]
             }"#,
         )
@@ -4513,8 +4514,9 @@ mod tests {
         .scenario()
         .fixture()?;
         let origin = Coordinate::new(0, 0);
-        let blocked = Coordinate::new(1, 0);
-        let hidden = Coordinate::new(2, 0);
+        let last_free = Coordinate::new(1, 0);
+        let blocked = Coordinate::new(2, 0);
+        let hidden = Coordinate::new(3, 0);
         let enemy_id = UnitId::parse("2").fixture()?;
         let mut p1 = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut p1, "1", &[(0, 0), (1, 0), (2, 0)])?;
@@ -4526,8 +4528,9 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player2, 1, p2)
             .fixture()?;
-        assert_eq!(vehicle(&mut scenario, "1")?.board_position(), Some(origin));
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 188);
+        let truck = vehicle(&mut scenario, "1")?;
+        assert_eq!(truck.board_position(), Some(last_free));
+        assert_eq!(truck.fuel().fixture()?.current, 504);
         let player = PlayerNumber::Player1;
         let visible = visibility::visible_tiles(&scenario, player);
         assert!(visible.contains(&blocked));
@@ -4549,14 +4552,19 @@ mod tests {
         let sees_enemy =
             |frame: &TurnFrame| frame.units.iter().any(|unit| unit.unit_id() == enemy_id);
         assert!(!sees_enemy(observed.frames.first().fixture()?));
-        let arrival = observed.frames.get(1).fixture()?;
-        assert!(sees_enemy(arrival));
-        assert!(arrival.visible_tiles.contains(&blocked));
+        let approach = observed.frames.get(1).fixture()?;
+        assert!(!sees_enemy(approach));
+        assert!(!approach.visible_tiles.contains(&blocked));
+        let contact = observed.frames.get(2).fixture()?;
+        assert!(sees_enemy(contact));
+        assert!(contact.visible_tiles.contains(&blocked));
         assert!(observed.frames.iter().all(|frame| frame.shots.is_empty()));
-        let event = observed.events.first().fixture()?;
-        assert_eq!(observed.events.len(), 1);
-        assert_eq!(event.kind, TurnEventKind::MovementStopped);
-        assert_eq!(event.path, vec![origin]);
+        let event = observed
+            .events
+            .iter()
+            .find(|event| event.kind == TurnEventKind::MovementStopped)
+            .fixture()?;
+        assert_eq!(event.path, vec![origin, last_free]);
 
         resolve_holds(&mut scenario, &mut turns)?;
         let visible = visibility::visible_tiles(&scenario, player);

@@ -14,7 +14,7 @@ use crate::{
     map::Coordinate,
     map_id::MapId,
     movement::{self, MovementRule},
-    player::{AiOpponent, Controller, Player, PlayerController},
+    player::{AiOpponent, Controller, Player, PlayerController, RecordedController},
     player_number::PlayerNumber,
     scenario::Scenario,
     server_limits::{Limits, Rejection},
@@ -92,7 +92,8 @@ struct GamePlayerView {
     is_you: bool,
     player_number: PlayerNumber,
     is_ai: bool,
-    controller: Controller,
+    /// The current lobby choice, when available. Replays also have a recorded roster.
+    controller: Option<Controller>,
 }
 
 impl Game {
@@ -243,7 +244,7 @@ impl Game {
                         .map(|player| RecordedPlayer {
                             player_number: player.player_number,
                             name: player.name.to_string(),
-                            controller: player.controller.kind(),
+                            controller: player.controller.kind().into(),
                         })
                         .collect(),
                     scenario: self.scenario.clone(),
@@ -349,7 +350,7 @@ impl Game {
                     is_host: player.controller.session() == Some(&self.host),
                     is_you: player.controller.session() == Some(session),
                     is_ai: player.controller.session().is_none(),
-                    controller: player.controller.kind(),
+                    controller: Some(player.controller.kind()),
                     player_number: player.player_number,
                 })
                 .collect(),
@@ -539,15 +540,18 @@ impl Game {
             // receives the human's draft or submitted orders.
             let ai_orders = match opponent {
                 AiOpponent::Easy => ai::easy::plan(&self.scenario, ai_player),
-                AiOpponent::BreakContact => {
-                    ai::medium::plan(&self.scenario, ai_player, &self.ai_memory, turn_number)
-                }
                 AiOpponent::ScreenedBattery => {
                     ai::hard::plan(&self.scenario, ai_player, &self.ai_memory, turn_number)
                 }
                 AiOpponent::FindTheBlindSide => {
                     ai::very_hard::plan(&self.scenario, ai_player, &self.ai_memory, turn_number)
                 }
+                AiOpponent::ArtillerySpotters => ai::artillery_spotters::plan(
+                    &self.scenario,
+                    ai_player,
+                    &self.ai_memory,
+                    turn_number,
+                ),
             }
             .map_err(|error| {
                 tracing::error!(
@@ -752,8 +756,8 @@ impl GameSnapshot {
                     is_host: false,
                     is_you: entry.player_number == player,
                     player_number: entry.player_number,
-                    is_ai: entry.controller != Controller::Human,
-                    controller: entry.controller,
+                    is_ai: entry.controller != RecordedController::Human,
+                    controller: entry.controller.current_controller(),
                 })
                 .collect(),
             is_host: false,

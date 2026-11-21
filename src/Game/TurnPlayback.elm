@@ -37,6 +37,7 @@ module Game.TurnPlayback exposing
     , visibleShots
     )
 
+import Api.Enum.AmbushBonus as AmbushBonus exposing (AmbushBonus)
 import Api.Enum.CombatKind as CombatKind exposing (CombatKind)
 import Api.Enum.Direction exposing (Direction)
 import Api.Enum.Entrenchment as Entrenchment
@@ -202,6 +203,8 @@ type alias CombatExchange =
     , targetFired : Bool
     , attackerFlankBonus : Bool
     , targetFlankBonus : Bool
+    , attackerAmbushBonus : AmbushBonus
+    , targetAmbushBonus : AmbushBonus
     }
 
 
@@ -472,23 +475,25 @@ exchanges frame =
 
                 shot :: rest ->
                     let
-                        differentPair : Shot -> Bool
-                        differentPair other =
-                            not
-                                ((other.origin == shot.origin && other.destination == shot.destination)
-                                    || (other.origin == shot.destination && other.destination == shot.origin)
-                                )
+                        partitioned : ( List Shot, List Shot )
+                        partitioned =
+                            List.partition
+                                (sameCombatPair shot.attacker.id shot.target.id)
+                                rest
+
+                        ( pairShots, otherShots ) =
+                            partitioned
 
                         includesAttackMove : Shot -> Bool
                         includesAttackMove other =
-                            not (differentPair other) && other.kind == CombatKind.AttackMove
+                            other.kind == CombatKind.AttackMove
 
                         kind : CombatKind
                         kind =
                             if shot.kind == CombatKind.IndirectFire then
                                 CombatKind.IndirectFire
 
-                            else if List.any includesAttackMove (shot :: rest) then
+                            else if List.any includesAttackMove (shot :: pairShots) then
                                 CombatKind.AttackMove
 
                             else
@@ -496,27 +501,37 @@ exchanges frame =
 
                         remaining : List CombatExchange
                         remaining =
-                            collect (List.filter differentPair rest)
+                            collect otherShots
 
-                        flankingReturn : Shot -> Bool
-                        flankingReturn other =
-                            not (differentPair other)
-                                && (other.attacker.id == shot.target.id)
-                                && other.flankBonus
+                        isReturn : Shot -> Bool
+                        isReturn other =
+                            (other.attacker.id == shot.target.id)
+                                && (other.target.id == shot.attacker.id)
+
+                        returnShot : Maybe Shot
+                        returnShot =
+                            ListUtil.find isReturn pairShots
                     in
                     { kind = kind
                     , attacker = shot.attacker
                     , target = shot.target
                     , attackerHealth = shot.attackerHealth
                     , targetHealth = shot.targetHealth
-                    , targetFired =
-                        List.any (\other -> not (differentPair other) && other.attacker.id == shot.target.id) rest
+                    , targetFired = returnShot /= Nothing
                     , attackerFlankBonus = shot.flankBonus
-                    , targetFlankBonus = List.any flankingReturn rest
+                    , targetFlankBonus = Maybe.map .flankBonus returnShot |> Maybe.withDefault False
+                    , attackerAmbushBonus = shot.ambushBonus
+                    , targetAmbushBonus = Maybe.map .ambushBonus returnShot |> Maybe.withDefault AmbushBonus.None
                     }
                         :: remaining
     in
     collect frame.shots |> List.filter displayExchange
+
+
+sameCombatPair : UnitId -> UnitId -> Shot -> Bool
+sameCombatPair attacker target shot =
+    ((shot.attacker.id == attacker) && (shot.target.id == target))
+        || ((shot.attacker.id == target) && (shot.target.id == attacker))
 
 
 {-| Simultaneous shots can overkill a target already lost in an earlier pair.
@@ -670,17 +685,9 @@ orderEncounters frame pending =
         attackers encounter =
             case encounter of
                 Exchange exchange ->
-                    let
-                        samePair : Shot -> Bool
-                        samePair shot =
-                            ((shot.attacker.id == exchange.attacker.id)
-                                && (shot.target.id == exchange.target.id)
-                            )
-                                || ((shot.attacker.id == exchange.target.id)
-                                        && (shot.target.id == exchange.attacker.id)
-                                   )
-                    in
-                    frame.shots |> List.filter samePair |> List.map (.attacker >> .id)
+                    frame.shots
+                        |> List.filter (sameCombatPair exchange.attacker.id exchange.target.id)
+                        |> List.map (.attacker >> .id)
 
                 Impact impact ->
                     List.map (.unit >> .id) impact.attackers

@@ -4,8 +4,8 @@
 
 module Api.Object.AdminPlayer exposing (..)
 
-import Api.Enum.Controller
 import Api.Enum.PlayerNumber
+import Api.Enum.RecordedController
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -26,9 +26,9 @@ name =
     Object.selectionForField "String" "name" [] Decode.string
 
 
-controller : SelectionSet Api.Enum.Controller.Controller Api.Object.AdminPlayer
+controller : SelectionSet Api.Enum.RecordedController.RecordedController Api.Object.AdminPlayer
 controller =
-    Object.selectionForField "Enum.Controller.Controller" "controller" [] Api.Enum.Controller.decoder
+    Object.selectionForField "Enum.RecordedController.RecordedController" "controller" [] Api.Enum.RecordedController.decoder
 
 
 playerNumber : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.AdminPlayer

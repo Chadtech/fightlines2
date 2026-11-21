@@ -152,6 +152,18 @@ loggedGames object____ =
     Object.selectionForCompositeField "loggedGames" [] object____ (Basics.identity >> Decode.list)
 
 
+type alias LoggedGamesPageRequiredArguments =
+    { offset : Int }
+
+
+loggedGamesPage :
+    LoggedGamesPageRequiredArguments
+    -> SelectionSet decodesTo Api.Object.RecordingsPage
+    -> SelectionSet decodesTo RootQuery
+loggedGamesPage requiredArgs____ object____ =
+    Object.selectionForCompositeField "loggedGamesPage" [ Argument.required "offset" requiredArgs____.offset Encode.int ] object____ Basics.identity
+
+
 type alias LoggedGameRequiredArguments =
     { id : String }
 
