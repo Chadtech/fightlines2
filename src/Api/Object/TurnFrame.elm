@@ -46,6 +46,15 @@ departures object____ =
     Object.selectionForCompositeField "departures" [] object____ (Basics.identity >> Decode.list)
 
 
+{-| Opposing pairs involved in blocked movement at this arrival.
+-}
+collisions :
+    SelectionSet decodesTo Api.Object.MovementCollision
+    -> SelectionSet (List decodesTo) Api.Object.TurnFrame
+collisions object____ =
+    Object.selectionForCompositeField "collisions" [] object____ (Basics.identity >> Decode.list)
+
+
 indirectImpacts :
     SelectionSet decodesTo Api.Object.IndirectImpact
     -> SelectionSet (List decodesTo) Api.Object.TurnFrame

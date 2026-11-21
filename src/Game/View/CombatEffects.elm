@@ -1,5 +1,7 @@
 module Game.View.CombatEffects exposing
-    ( impacts
+    ( collisionImagePath
+    , collisions
+    , impacts
     , mapPeek
     , spotlight
     , styles
@@ -164,6 +166,76 @@ spotlightView className map positions =
         , SA.class className
         ]
         content
+
+
+collisionImagePath : String
+collisionImagePath =
+    "assets/collision-burst-anime-v1.png"
+
+
+collisions : List { first : Coordinate, second : Coordinate } -> Svg msg
+collisions contacts =
+    let
+        burst : { first : Coordinate, second : Coordinate } -> Svg msg
+        burst { first, second } =
+            let
+                centerX : String
+                centerX =
+                    String.fromInt ((first.x + second.x) * 8 + 8)
+
+                centerY : String
+                centerY =
+                    String.fromInt ((first.y + second.y) * 8 + 8)
+
+                angle : String
+                angle =
+                    collisionAngle first second
+                        |> String.fromFloat
+            in
+            Svg.image
+                [ SA.transform ("translate(" ++ centerX ++ " " ++ centerY ++ ") rotate(" ++ angle ++ ")")
+                , SA.xlinkHref collisionImagePath
+                , SA.x "-16"
+                , SA.y "-9.5" -- The painted flash is below the center of the canvas.
+                , SA.width "32"
+                , SA.height "16"
+                ]
+                []
+    in
+    if List.isEmpty contacts then
+        Svg.text ""
+
+    else
+        Svg.g
+            [ SA.pointerEvents "none"
+            , Aria.svgRole Aria.Group
+            , Aria.svgLabel "movement collision"
+            ]
+            (List.map burst contacts)
+
+
+{-| Use the line of contact without letting participant ID order flip the dust.
+-}
+collisionAngle : Coordinate -> Coordinate -> Float
+collisionAngle first second =
+    let
+        rise : Int
+        rise =
+            if first.x <= second.x then
+                second.y - first.y
+
+            else
+                first.y - second.y
+
+        run : Int
+        run =
+            abs (second.x - first.x)
+    in
+    if run == 0 && rise /= 0 then
+        90
+
+    else
+        atan2 (toFloat rise) (toFloat run) * 180 / pi
 
 
 impacts : List Coordinate -> List Unit -> List Shot -> Svg msg

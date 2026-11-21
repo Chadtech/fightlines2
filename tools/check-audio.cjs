@@ -158,6 +158,8 @@ async function main() {
   assert.equal(movementBus.gain.value, 0.3);
   assert.equal(ambienceBus.gain.value, 0.2);
   assert.equal(mixer.voices[4].destination.destination, combatBus, 'infantry fire uses combat volume');
+  await mixer.audio.handleEvent({ play: 'movementCollision' });
+  assert.equal(mixer.voices.at(-1).destination, movementBus, 'collisions use movement volume');
   await mixer.audio.handleEvent({ volumes: { ...mix, combat: 0, movement: 55 } });
   assert.equal(combatBus.gain.value, 0, 'changing volume affects voices already playing');
   assert.equal(movementBus.gain.value, 0.55);
@@ -242,12 +244,13 @@ async function main() {
     'audio/combat/impact-03.ogg',
     'audio/combat/impact-04.ogg',
     'audio/combat/impact-05.ogg',
+    'audio/movement/collision-thud-v1.ogg',
     'audio/movement/truck-volvo-6s.ogg',
     'audio/movement/tank-monosfera-6s.ogg',
     'audio/movement/infantry-stib-2x.ogg',
     'audio/combat/infantry-fire-heavy-v1.ogg',
   ]);
-  assert.equal(app.contexts[0].decodes, 27);
+  assert.equal(app.contexts[0].decodes, 28);
 
   const stalledAudio = boot({ firstLoadHangs: true });
   await stalledAudio.gesture();
@@ -263,7 +266,7 @@ async function main() {
   }
   assert.equal(app.voices.length, 5);
   assert.equal(app.voices[0].stopped, true, 'voice limit replaces the oldest voice');
-  assert.equal(app.contexts[0].decodes, 27, 'decoded buffers are reused');
+  assert.equal(app.contexts[0].decodes, 28, 'decoded buffers are reused');
   app.voices[1].finish();
   assert.equal(app.voices[1].disconnected, true);
   app.audio.setVolume(0);
@@ -381,7 +384,7 @@ async function main() {
   await ambience.audio.handleEvent({ ambience: [plains] });
   assert.equal(ambience.contexts.length, 0, 'ambience cannot unlock the context');
   await ambience.gesture();
-  assert.equal(ambience.requests.length, 27, 'ambience loads only when the theater needs it');
+  assert.equal(ambience.requests.length, 28, 'ambience loads only when the theater needs it');
   await ambience.audio.handleEvent({ ambience: [plains, forest] });
   assert.equal(ambience.voices.length, 2);
   assert.ok(ambience.voices.every(voice => voice.loop && voice.started));

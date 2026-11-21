@@ -3,10 +3,8 @@
 ## doing now
 
 ## Bugs
-- Sometimes clicking a square during a move selects the thing at the square rather than selecting the position
 
 ## Immediately
-- some kind of board map sound for when you collide with an enemy unit
 - invite match makers to play against ai
 - Frontend AI engine
 - Tutorial missions

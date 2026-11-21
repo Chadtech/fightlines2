@@ -416,10 +416,12 @@ receive observation model =
 ----------------------------------------------------------------
 
 
-subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions : Bool -> Model -> Sub Msg
+subscriptions cameraReady model =
     Sub.batch
         [ Time.every 500 (\_ -> PollTimerElapsed)
-        , PlaybackPresentation.subscriptions (TurnLifecycle.playback model.phase)
+        , PlaybackPresentation.subscriptions
+            cameraReady
+            (TurnLifecycle.playback model.phase)
             |> Sub.map GotPlaybackPresentationMsg
         ]

@@ -19,10 +19,16 @@ Rust owns the authoritative rules; this guide explains the intended behavior.
 
 Start an invite game, queue for a human opponent, or play against the AI.
 Both sides plan and submit orders before the turn resolves. The camera
-holds its view while visible action remains on screen, panning only to bring
-offscreen movement, combat, or indirect-fire impacts into view. Necessary pans
-ease over 1.2 seconds while playback pauses for the camera to settle. It
-restores your saved view when playback finishes.
+holds its view while visible action fits. When it needs to pan or zoom, unit
+movement continues and the camera keeps the visible action in frame. If an
+action starts outside the view, the camera brings it on screen immediately
+and eases into its framing from there. Your saved view returns when playback
+finishes.
+
+When opposing units visibly collide during movement, the battlefield holds for
+350ms. A painted burst flashes between them as a short thud plays at the
+movement volume. If combat follows, the hold comes before the combat theater.
+
 Fuel, finite supply stocks, replenishment, and directional ambush combat are
 authoritative. Active games remain in memory, while private game archives on disk
 retain starting boards, accepted orders, and turn results for debugging. See
@@ -433,7 +439,7 @@ The low-supplies badge remains at 25% or less. At zero supplies it changes to a
 burgundy badge with an ivory skull; selecting the unit shows how many turns remain
 to resupply. Enemy resource warnings and countdowns remain concealed.
 
-Depots start with 1024 finite supplies. Ground supply crates hold up to 256.
+Supply depots start with 768 supplies, enough to fill three 256-supply crates.
 At the end of each turn, after movement, transport, and combat, depots and ground
 crates automatically replenish living units on their square or one cardinally
 adjacent square, regardless of player. Crates remain neutral when carried and supply either player,

@@ -88,6 +88,7 @@ combatEnterChecks =
             { depots = [ building 1, building 2 ]
             , supplyCrates = []
             , departures = []
+            , collisions = []
             , losses = []
             , sabotages = []
             , indirectImpacts = []
@@ -298,6 +299,7 @@ checks =
                     [ { depots = []
                       , supplyCrates = []
                       , departures = []
+                      , collisions = []
                       , losses = []
                       , sabotages = []
                       , indirectImpacts = []
@@ -309,6 +311,7 @@ checks =
                     , { depots = []
                       , supplyCrates = []
                       , departures = []
+                      , collisions = []
                       , losses = []
                       , sabotages = []
                       , indirectImpacts = []
@@ -331,7 +334,7 @@ checks =
                 framedPlayback =
                     case playing of
                         Playing state ->
-                            Playing { state | camera = Just { camera = { offset = { x = 48, y = 24 }, zoom = 1.25 }, remainingPanMs = 0 } }
+                            Playing { state | camera = Just { camera = { offset = { x = 48, y = 24 }, zoom = 1.25 }, target = { offset = { x = 48, y = 24 }, zoom = 1.25 }, pan = Nothing } }
 
                         _ ->
                             playing
@@ -450,6 +453,7 @@ checks =
                                 { depots = []
                                 , supplyCrates = []
                                 , departures = []
+                                , collisions = []
                                 , losses = []
                                 , sabotages = []
                                 , indirectImpacts = []
@@ -476,6 +480,7 @@ checks =
                                 { depots = []
                                 , supplyCrates = []
                                 , departures = []
+                                , collisions = []
                                 , losses = []
                                 , sabotages = []
                                 , indirectImpacts = []
@@ -502,6 +507,7 @@ checks =
                                 { depots = []
                                 , supplyCrates = []
                                 , departures = []
+                                , collisions = []
                                 , losses = []
                                 , sabotages = []
                                 , indirectImpacts = []
@@ -854,6 +860,7 @@ currentTurnChecks =
             [ { depots = []
               , supplyCrates = []
               , departures = []
+              , collisions = []
               , losses = []
               , sabotages = []
               , indirectImpacts = []
@@ -865,6 +872,7 @@ currentTurnChecks =
             , { depots = []
               , supplyCrates = []
               , departures = []
+              , collisions = []
               , losses = []
               , sabotages = []
               , indirectImpacts = []

@@ -178,6 +178,11 @@ reloads and synchronize across tabs.
 
 ## Combat and playback
 
+- Hold the board for 350ms at a recorded collision when both units are visible.
+  Show a short lunge for a blocked step toward an already visible opponent.
+  Settle the sprites onto their resolved squares as the painted burst and
+  movement thud begin. Center the burst between the units, spanning two tiles
+  along the contact axis.
 - Let the camera hold while projected action fits. Frame visible movement and
   encounters with breathing room and measured panel overlap. Ease back to the
   saved pan and zoom after playback. Keep unseen origins, positions, and future

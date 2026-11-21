@@ -8,12 +8,14 @@ module Game.TurnPlayback exposing
     , LossCause(..)
     , LossEvent
     , MapView(..)
+    , MovementCollision
     , Panel
     , Playback
     , Presentation(..)
     , acknowledgeLoss
     , activeEncounter
     , cameraPositions
+    , collisionInProgress
     , combat
     , continueCombat
     , focusPositions
@@ -33,6 +35,7 @@ module Game.TurnPlayback exposing
     , tick
     , tickUntilLoss
     , unitOpacity
+    , visibleCollisions
     , visibleIndirectImpacts
     , visibleShots
     )
@@ -47,6 +50,7 @@ import Api.Object.CombatUnitLoss as CombatLossApi
 import Api.Object.ConcealedIndirectFireUnitLoss as ConcealedLossApi
 import Api.Object.ExhaustedUnitLoss as ExhaustionLossApi
 import Api.Object.GameSnapshot as GameApi
+import Api.Object.MovementCollision as CollisionApi
 import Api.Object.TurnFrame as FrameApi
 import Api.Object.TurnResolution as ResolutionApi
 import Api.Object.UnitDeparture as DepartureApi
@@ -75,6 +79,7 @@ type alias Frame =
     , durationMs : Int
     , units : List Unit
     , departures : List Departure
+    , collisions : List MovementCollision
     , indirectImpacts : List IndirectImpact
     , sabotages : List Coordinate
     , shots : List Shot
@@ -91,6 +96,20 @@ type InvariantViolation
 type alias Departure =
     { unitId : UnitId
     , direction : Direction
+    }
+
+
+type alias MovementCollision =
+    { firstUnitId : UnitId
+    , secondUnitId : UnitId
+    , firstApproach : Maybe Direction
+    , secondApproach : Maybe Direction
+    }
+
+
+type alias CollisionPositions =
+    { first : Coordinate
+    , second : Coordinate
     }
 
 
@@ -166,6 +185,7 @@ type alias MovementElapsed =
 
 type Presentation
     = Battlefield
+    | CollisionHold { elapsedMs : Float }
     | Combat CombatFocus
     | Deaths { focus : CombatFocus, frame : Frame, elapsed : Float }
 
@@ -340,11 +360,11 @@ lossFrame playback =
         Deaths deaths ->
             deaths.frame
 
-        Battlefield ->
-            playback.current
-
         Combat focus ->
             focus.before
+
+        _ ->
+            playback.current
 
 
 acknowledgeLoss : UnitId -> Playback -> Playback
@@ -400,10 +420,7 @@ activeEncounter playback =
         Combat focus ->
             Just (focusEncounter focus)
 
-        Deaths _ ->
-            Nothing
-
-        Battlefield ->
+        _ ->
             Nothing
 
 
@@ -423,10 +440,7 @@ spotlight playback =
                         CardVisible ->
                             Nothing
 
-        Deaths _ ->
-            Nothing
-
-        Battlefield ->
+        _ ->
             Nothing
 
 
@@ -441,24 +455,49 @@ panels playback =
                 Spotlighting _ ->
                     Nothing
 
-        Deaths _ ->
-            Nothing
-
-        Battlefield ->
+        _ ->
             Nothing
 
 
 visibleShots : Playback -> List Shot
 visibleShots playback =
     case playback.presentation of
-        Combat _ ->
-            []
-
-        Deaths _ ->
-            []
-
         Battlefield ->
             playback.current.shots
+
+        _ ->
+            []
+
+
+collisionInProgress : Playback -> Bool
+collisionInProgress playback =
+    case playback.presentation of
+        CollisionHold _ ->
+            True
+
+        _ ->
+            False
+
+
+visibleCollisions : Playback -> List CollisionPositions
+visibleCollisions playback =
+    let
+        position : UnitId -> Maybe Coordinate
+        position id =
+            ListUtil.find (\unit -> unit.id == id) playback.current.units
+                |> Maybe.andThen Unit.mapPosition
+
+        positions : MovementCollision -> Maybe CollisionPositions
+        positions collision =
+            Maybe.map2 CollisionPositions
+                (position collision.firstUnitId)
+                (position collision.secondUnitId)
+    in
+    if collisionInProgress playback then
+        List.filterMap positions playback.current.collisions
+
+    else
+        []
 
 
 {-| Encounter participants remain available even when concealed on the board.
@@ -819,7 +858,11 @@ beginFrame before prepared =
                         }
 
                 [] ->
-                    Battlefield
+                    if List.isEmpty frames.next.collisions then
+                        Battlefield
+
+                    else
+                        CollisionHold { elapsedMs = 0 }
     in
     { current = frames.next
     , remaining = prepared.remaining
@@ -914,6 +957,7 @@ combineReturnFire opening pending =
                 frame :: rest ->
                     if
                         not (sameBattlefield frame || combatantsStay shot frame)
+                            || not (List.isEmpty frame.collisions)
                             || not (List.isEmpty frame.indirectImpacts)
                             || not (List.isEmpty frame.sabotages)
                     then
@@ -1043,8 +1087,14 @@ type alias FrameTransition =
 type alias MovementEdge =
     { origin : Coordinate
     , destination : Coordinate
-    , portion : Float -- One tile between sightings; half a tile to the fog boundary.
+    , extent : MovementExtent
     }
+
+
+type MovementExtent
+    = WholeTile
+    | FogBoundary
+    | BlockedApproach
 
 
 selection :
@@ -1063,6 +1113,15 @@ selection unit coordinate =
                         (SS.succeed Departure
                             |> SS.with (DepartureApi.unitId |> SS.mapOrFail UnitId.parse)
                             |> SS.with DepartureApi.direction
+                        )
+                    )
+                |> SS.with
+                    (FrameApi.collisions
+                        (SS.succeed MovementCollision
+                            |> SS.with (CollisionApi.firstUnitId |> SS.mapOrFail UnitId.parse)
+                            |> SS.with (CollisionApi.secondUnitId |> SS.mapOrFail UnitId.parse)
+                            |> SS.with CollisionApi.firstApproach
+                            |> SS.with CollisionApi.secondApproach
                         )
                     )
                 |> SS.with (FrameApi.indirectImpacts IndirectImpact.selection)
@@ -1276,6 +1335,24 @@ tickWithLossPause lossPolicy delta playback =
 tickPresentation : LossPolicy -> Float -> Playback -> ( Maybe Playback, Frame )
 tickPresentation lossPolicy delta playback =
     case playback.presentation of
+        CollisionHold hold ->
+            let
+                elapsedMs : Float
+                elapsedMs =
+                    hold.elapsedMs + delta
+
+                presentation : Presentation
+                presentation =
+                    if elapsedMs >= 350 then
+                        Battlefield
+
+                    else
+                        CollisionHold { elapsedMs = elapsedMs }
+            in
+            ( Just (setPresentation presentation playback)
+            , presentationFrame playback
+            )
+
         Combat focus ->
             tickCombat delta focus playback
 
@@ -1399,10 +1476,7 @@ setMapView mapView playback =
                 Spotlighting _ ->
                     playback
 
-        Deaths _ ->
-            playback
-
-        Battlefield ->
+        _ ->
             playback
 
 
@@ -1431,10 +1505,7 @@ continueCombat playback =
                     else
                         Just (advanceCombat focus playback)
 
-        Deaths _ ->
-            Nothing
-
-        Battlefield ->
+        _ ->
             Nothing
 
 
@@ -1543,6 +1614,9 @@ tickBattlefield lossPolicy delta playback =
                     Deaths deaths ->
                         ( Just advanced, deaths.frame )
 
+                    CollisionHold _ ->
+                        ( Just advanced, presentationFrame advanced )
+
                     Battlefield ->
                         if hasPendingLoss lossPolicy advanced then
                             ( Just advanced, advanced.current )
@@ -1592,6 +1666,7 @@ presentationFrame playing =
                     unit
     in
     { departures = playing.current.departures
+    , collisions = playing.current.collisions
     , losses = playing.current.losses
     , sabotages = playing.current.sabotages
     , indirectImpacts = playing.current.indirectImpacts
@@ -1631,7 +1706,7 @@ observedMovement frames unit =
                 Just
                     { origin = from
                     , destination = to
-                    , portion = 1
+                    , extent = WholeTile
                     }
 
             else
@@ -1643,7 +1718,7 @@ observedMovement frames unit =
                 exit departure =
                     { origin = from
                     , destination = Direction.step from departure.direction
-                    , portion = 0.5
+                    , extent = FogBoundary
                     }
             in
             ListUtil.find (\departure -> departure.unitId == unit.id) frames.current.departures
@@ -1651,6 +1726,44 @@ observedMovement frames unit =
 
         _ ->
             Nothing
+
+
+{-| Show the failed step only if its opponent has already been seen. Require
+the sighting at both ends of movement lookahead, so the approach cannot give
+away an enemy that first appears at contact.
+-}
+collisionApproach : Frame -> FrameTransition -> Unit -> Maybe MovementEdge
+collisionApproach opening frames unit =
+    let
+        onMap : UnitId -> Frame -> Bool
+        onMap id frame =
+            List.any (\other -> other.id == id && Unit.onMap other) frame.units
+
+        alreadySeen : UnitId -> Bool
+        alreadySeen enemy =
+            onMap enemy opening && onMap enemy frames.current
+
+        approach : MovementCollision -> Maybe Direction
+        approach collision =
+            if collision.firstUnitId == unit.id && alreadySeen collision.secondUnitId then
+                collision.firstApproach
+
+            else if collision.secondUnitId == unit.id && alreadySeen collision.firstUnitId then
+                collision.secondApproach
+
+            else
+                Nothing
+
+        edge : Coordinate -> Direction -> MovementEdge
+        edge origin direction =
+            { origin = origin
+            , destination = Direction.step origin direction
+            , extent = BlockedApproach
+            }
+    in
+    Maybe.map2 edge
+        (Unit.mapPosition unit)
+        (frames.next.collisions |> List.filterMap approach |> List.head)
 
 
 frameHasFeedback : Frame -> Bool
@@ -1730,7 +1843,11 @@ carryMovementElapsed elapsed frames =
                     (other.id == unit.id)
                         && (Unit.mapPosition other == Unit.mapPosition unit)
             in
-            if Unit.onMap unit && List.any unchangedPosition frames.next.units then
+            if
+                Unit.onMap unit
+                    && List.any unchangedPosition frames.next.units
+                    && (collisionApproach frames.current frames unit == Nothing)
+            then
                 Just
                     { unitId = unit.id
                     , elapsedMs = elapsedMovement unit.id elapsed + toFloat frames.next.durationMs
@@ -1749,6 +1866,15 @@ carryMovementElapsed elapsed frames =
 prepareMovementSegment : List Frame -> List MovementElapsed -> Frame -> Unit -> Maybe MovementSegment
 prepareMovementSegment frames elapsed frame unit =
     let
+        movementEdge : FrameTransition -> Maybe MovementEdge
+        movementEdge transition =
+            case observedMovement transition unit of
+                Just edge ->
+                    Just edge
+
+                Nothing ->
+                    collisionApproach frame transition unit
+
         findArrival : Frame -> List Frame -> Float -> Maybe MovementSegment
         findArrival current remaining durationMs =
             case remaining of
@@ -1768,7 +1894,7 @@ prepareMovementSegment frames elapsed frame unit =
                                 && Unit.onMap other
                                 && (Unit.mapPosition other == Unit.mapPosition unit)
                     in
-                    case observedMovement transition unit of
+                    case movementEdge transition of
                         Just edge ->
                             Just
                                 { unitId = unit.id
@@ -1812,29 +1938,43 @@ movingPositions playback =
 
                         progress : Float
                         progress =
-                            movementProgress playing.elapsed segment
+                            let
+                                time : Float
+                                time =
+                                    movementProgress playing.elapsed segment
+                            in
+                            case edge.extent of
+                                WholeTile ->
+                                    time
+
+                                FogBoundary ->
+                                    time / 2
+
+                                BlockedApproach ->
+                                    time * time / 4
                     in
                     { unitId = segment.unitId
                     , position =
                         { x =
                             toFloat edge.origin.x
                                 + toFloat (edge.destination.x - edge.origin.x)
-                                * edge.portion
                                 * progress
                         , y =
                             toFloat edge.origin.y
                                 + toFloat (edge.destination.y - edge.origin.y)
-                                * edge.portion
                                 * progress
                         }
                     }
             in
             case playing.presentation of
-                Battlefield ->
-                    List.map moving playing.movement.segments
+                Combat _ ->
+                    []
+
+                Deaths _ ->
+                    []
 
                 _ ->
-                    []
+                    List.map moving playing.movement.segments
     in
     Maybe.map positions playback |> Maybe.withDefault []
 
@@ -1849,14 +1989,17 @@ unitOpacity playback unitId =
     case playback of
         Just playing ->
             case playing.presentation of
-                Battlefield ->
-                    playing.movement.segments
-                        |> ListUtil.find (\segment -> (segment.unitId == unitId) && (segment.edge.portion < 1))
-                        |> Maybe.map (\segment -> 1 - movementProgress playing.elapsed segment)
-                        |> Maybe.withDefault 1
+                Combat _ ->
+                    1
+
+                Deaths _ ->
+                    1
 
                 _ ->
-                    1
+                    playing.movement.segments
+                        |> ListUtil.find (\segment -> (segment.unitId == unitId) && (segment.edge.extent == FogBoundary))
+                        |> Maybe.map (\segment -> 1 - movementProgress playing.elapsed segment)
+                        |> Maybe.withDefault 1
 
         Nothing ->
             1
@@ -1929,6 +2072,10 @@ focusPositions playback =
         Deaths { focus } ->
             encounterPositions focus.before (focusEncounter focus) |> List.map point
 
+        CollisionHold _ ->
+            visibleCollisions playback
+                |> List.concatMap (\collision -> [ point collision.first, point collision.second ])
+
         Battlefield ->
             let
                 combatantIds : List UnitId
@@ -1950,11 +2097,7 @@ focusPositions playback =
                         ++ List.map point playback.current.sabotages
                         ++ casualtyPositions
             in
-            if List.isEmpty feedback then
-                movingPositions (Just playback) |> List.map .position
-
-            else
-                feedback
+            feedback ++ List.map .position (movingPositions (Just playback))
 
 
 {-| Frame the upcoming visible travel before it starts. Stop at feedback,

@@ -326,6 +326,39 @@ for (const order of ['move', 'attack move']) {
   });
 }
 
+test('touch follows the visible tiles on a tilted board', interaction, async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('fightlines.localStorage', JSON.stringify({
+    audioMuted: true, welcomeBriefingDismissed: true,
+    skipTurnIntroduction: true, features: ['board-tilt'],
+  })));
+  await openGame(page);
+  const battlefield = page.getByRole('group', { name: 'battlefield', exact: true });
+  const tank = battlefield.getByRole('button', { name: /tank 11$/ });
+  await tank.tap();
+  const orders = page.getByRole('region', { name: 'unit orders', exact: true });
+  await orders.getByRole('button', { name: 'move', exact: true }).tap();
+
+  const tilePoint = async (x, y, fraction = 0.5) => {
+    const tile = await battlefield.locator(`g[transform="translate(${x * 16} ${y * 16})"] > rect[stroke-width="0.25"]`).boundingBox();
+    return { x: tile.x + fraction * tile.width, y: tile.y + tile.height / 2 };
+  };
+  const session = await page.context().newCDPSession(page);
+  const touch = (type, touchPoints = []) =>
+    session.send('Input.dispatchTouchEvent', { type, touchPoints });
+
+  try {
+    await touch('touchStart', [await tilePoint(4, 8)]);
+    await touch('touchMove', [await tilePoint(4, 7)]);
+    await touch('touchMove', [await tilePoint(5, 7, 0.96)]);
+    await expect(battlefield.locator('polyline[stroke-width="1.5"]')).toHaveAttribute('points', '72,136 72,120 88,120');
+    await touch('touchEnd');
+  } finally {
+    await session.detach();
+  }
+
+  await expect(battlefield.locator('polyline[stroke-dasharray="2 1"]')).toHaveAttribute('points', '72,136 72,120 88,120');
+});
+
 test('details rail', async ({ page }) => {
   await openMobileDetails(page);
   await snapshot(page, 'details-rail');

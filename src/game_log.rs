@@ -674,11 +674,12 @@ pub fn replay(directory: &Path) -> io::Result<String> {
                         }
                     }
                 }
-                // Older records omit combat labels. Compare the damage and health
-                // without requiring presentation cues to match.
+                // Older records omit presentation cues. Verify the underlying
+                // movement, damage, and health independently of those cues.
                 for result in [&mut actual, &mut submitted] {
                     if let Some(resolution) = &mut result.resolution {
                         for frame in &mut resolution.frames {
+                            frame.collisions.clear();
                             for shot in &mut frame.shots {
                                 shot.flank_bonus = false;
                                 shot.ambush_bonus = Default::default();

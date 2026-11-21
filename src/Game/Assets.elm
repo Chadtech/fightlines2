@@ -11,6 +11,7 @@ import Game.Supply as Supply
 import Game.UnitOrder as Order
 import Game.View.CombatAttack as CombatAttack
 import Game.View.CombatBazooka as CombatBazooka
+import Game.View.CombatEffects as CombatEffects
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatFormation as CombatFormation
 import Game.View.CombatInfantry as CombatInfantry
@@ -37,6 +38,7 @@ imagePaths theme =
            , UnitDeath.imagePath
            , UnitFacing.imagePath
            , TargetSight.imagePath
+           , CombatEffects.collisionImagePath
            ]
         ++ List.map Order.image Order.all
         ++ combatImagePaths

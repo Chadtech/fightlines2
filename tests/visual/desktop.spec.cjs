@@ -96,6 +96,33 @@ test('units without orders excludes units with a saved order', async ({ page }) 
   await expect(dialog).toBeVisible();
 });
 
+test('a depot stock bar selects its square during movement planning', async ({ page }) => {
+  await openGame(page);
+  const battlefield = page.getByRole('group', { name: 'battlefield', exact: true });
+  const stock = battlefield.getByRole('button', { name: /^supply depot · / }).first();
+  const tank = battlefield.getByRole('button', { name: /tank 11$/ });
+  const panel = page.getByRole('complementary', { name: 'game panel' });
+  const supplyDepot = panel.getByRole('region', { name: 'supply depot', exact: true });
+
+  await stock.click();
+  await expect(supplyDepot).toBeVisible();
+
+  await tank.click();
+  await page.keyboard.press('m');
+  await expect(battlefield.getByRole('button', { name: 'move to (2, 8)', exact: true })).toBeVisible();
+  await stock.click();
+
+  const saved = battlefield.locator('polyline[stroke-dasharray="2 1"]');
+  await expect(saved).toHaveAttribute('points', / 40,136$/);
+
+  await page.getByRole('button', { name: 'revoke order', exact: true }).click();
+  await tank.click();
+  await page.keyboard.press('a');
+  await expect(battlefield.getByRole('button', { name: 'attack move to (2, 8)', exact: true })).toBeVisible();
+  await stock.press('Enter');
+  await expect(battlefield.getByLabel('choose attack move final direction')).toBeVisible();
+});
+
 test('first-game briefing and turn introduction', async ({ page }) => {
   const url = await createGame(page);
   await page.addInitScript(() => localStorage.setItem('fightlines.localStorage', JSON.stringify({
@@ -118,6 +145,103 @@ test('placeholder flag leaves desktop battlefield unchanged', async ({ page }) =
   })));
   await openGame(page);
   await snapshot(page, 'battlefield');
+});
+
+test('the CRT battlefield flag affects only the board and persists', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await openGame(page);
+  const viewport = page.getByLabel('battlefield navigation', { exact: true });
+  const battlefield = page.getByRole('group', { name: 'battlefield', exact: true });
+  const turnLabel = page.getByLabel('game header', { exact: true }).getByRole('status');
+  const menuButton = page.getByRole('button', { name: 'menu', exact: true });
+  const devPanel = page.getByRole('dialog', { name: 'dev panel', exact: true });
+  const crtFlag = devPanel.getByRole('checkbox', { name: 'crt battlefield', exact: true });
+  const crtBackground = () =>
+    viewport.evaluate(element => getComputedStyle(element, '::after').backgroundImage);
+  const openFeatures = async () => {
+    await page.keyboard.press('Backquote');
+    await devPanel.getByRole('tab', { name: 'features', exact: true }).click();
+  };
+  const closeFeatures = async () => {
+    await devPanel.getByRole('button', { name: 'done', exact: true }).click();
+    await expect(devPanel).toHaveCount(0);
+  };
+
+  await expect.poll(crtBackground).toBe('none');
+  await expect(turnLabel).toHaveCSS('text-shadow', 'none');
+  const bounds = await battlefield.boundingBox();
+  await openFeatures();
+  await expect(crtFlag).not.toBeChecked();
+  await crtFlag.check();
+  await expect.poll(crtBackground).toContain('repeating-linear-gradient');
+  await closeFeatures();
+  await expect(turnLabel).toHaveCSS('text-shadow', 'none');
+  await expect(menuButton).toHaveCSS('text-shadow', 'none');
+  expect(await viewport.evaluate(element => getComputedStyle(element, '::after').animationName)).toBe('none');
+  expect(await battlefield.boundingBox()).toEqual(bounds);
+  await battlefield.getByRole('button', { name: /tank 11$/ }).click();
+  await expect(page.getByRole('button', { name: /^move \(m\)$/ })).toBeVisible();
+
+  await page.reload();
+  await expect.poll(crtBackground).toContain('repeating-linear-gradient');
+  await page.setViewportSize({ width: 852, height: 393 });
+  await expect(page.getByLabel('mobile battlefield', { exact: true })).toBeVisible();
+  await expect.poll(crtBackground).toContain('repeating-linear-gradient');
+  await expect(turnLabel).toHaveCSS('text-shadow', 'none');
+  await expect(menuButton).toHaveCSS('text-shadow', 'none');
+
+  await openFeatures();
+  await expect(crtFlag).toBeChecked();
+  await crtFlag.uncheck();
+  await closeFeatures();
+  await expect.poll(crtBackground).toBe('none');
+});
+
+test('board tilt changes the battlefield and persists across reload', async ({ page }) => {
+  await openGame(page);
+  const battlefield = page.getByRole('group', { name: 'battlefield', exact: true });
+  const devPanel = page.getByRole('dialog', { name: 'dev panel', exact: true });
+  const tilt = devPanel.getByRole('checkbox', { name: 'board tilt', exact: true });
+  const transform = () => battlefield.evaluate(element => getComputedStyle(element.parentElement).transform);
+  const openFeatures = async () => {
+    await page.keyboard.press('Backquote');
+    await devPanel.getByRole('tab', { name: 'features', exact: true }).click();
+  };
+
+  await expect.poll(transform).toBe('none');
+  await openFeatures();
+  await expect(tilt).not.toBeChecked();
+  await tilt.check();
+  await expect.poll(transform).toMatch(/^matrix3d\(/);
+  await devPanel.getByRole('button', { name: 'done', exact: true }).click();
+
+  const tank = battlefield.getByRole('button', { name: /tank 11$/ });
+  const beforeZoom = await tank.boundingBox();
+  const anchor = {
+    x: beforeZoom.x + beforeZoom.width / 2,
+    y: beforeZoom.y + beforeZoom.height / 2,
+  };
+  await page.mouse.move(anchor.x, anchor.y);
+  await page.mouse.wheel(0, -100);
+  await expect.poll(async () => (await tank.boundingBox()).width).toBeGreaterThan(beforeZoom.width);
+  const afterZoom = await tank.boundingBox();
+  expect(Math.abs(afterZoom.x + afterZoom.width / 2 - anchor.x)).toBeLessThan(1);
+  expect(Math.abs(afterZoom.y + afterZoom.height / 2 - anchor.y)).toBeLessThan(1);
+
+  await tank.click();
+  const orders = page.getByRole('region', { name: 'unit orders', exact: true });
+  await expect(orders).toBeVisible();
+  expect((await orders.boundingBox()).x).toBeGreaterThan((await tank.boundingBox()).x);
+  await orders.getByRole('button', { name: /^move \(m\)$/ }).click();
+  await battlefield.getByRole('button', { name: 'move to (5, 8)', exact: true }).click();
+  await expect(battlefield.locator('polyline[stroke-dasharray="2 1"]')).toHaveAttribute('points', '72,136 88,136');
+
+  await page.reload();
+  await expect.poll(transform).toMatch(/^matrix3d\(/);
+  await openFeatures();
+  await expect(tilt).toBeChecked();
+  await tilt.uncheck();
+  await expect.poll(transform).toBe('none');
 });
 
 test('order unloaded infantry, hold, and cancel the truck order', checkUnloadedInfantry);

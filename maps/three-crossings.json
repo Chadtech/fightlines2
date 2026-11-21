@@ -1,5 +1,5 @@
 {
-  "description": "a river divides the battlefield, with northern and southern causeways and a central island linking the banks. each crossing holds a supply depot, with woods and hills covering the approaches and home depots supporting transport and armor.",
+  "description": "red starts in the northwest and blue in the southeast, each with a home fuel depot. northern and southern causeways and a central island link the riverbanks. each crossing holds a supply depot, with woods and hills covering the approaches.",
   "releaseStatus": "Released",
   "matchMaking": true,
   "width": 21,
@@ -8,6 +8,118 @@
   "features": [
     {
       "position": {
+        "x": 15,
+        "y": 7
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 9
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 9
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 7
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 1
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 0
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 0
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 16
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 16
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 15
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 12
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 3
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 12
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 13
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
         "x": 13,
         "y": 11
       },
@@ -128,21 +240,21 @@
     {
       "position": {
         "x": 16,
-        "y": 1
+        "y": 15
       },
       "terrain": "Forest"
     },
     {
       "position": {
         "x": 17,
-        "y": 1
+        "y": 15
       },
       "terrain": "Forest"
     },
     {
       "position": {
         "x": 18,
-        "y": 1
+        "y": 15
       },
       "terrain": "Forest"
     },
@@ -198,14 +310,14 @@
     {
       "position": {
         "x": 14,
-        "y": 2
+        "y": 14
       },
       "terrain": "Hills"
     },
     {
       "position": {
         "x": 15,
-        "y": 2
+        "y": 14
       },
       "terrain": "Forest"
     },
@@ -268,21 +380,21 @@
     {
       "position": {
         "x": 14,
-        "y": 4
+        "y": 12
       },
       "terrain": "Hills"
     },
     {
       "position": {
         "x": 16,
-        "y": 4
+        "y": 12
       },
       "terrain": "Forest"
     },
     {
       "position": {
         "x": 18,
-        "y": 4
+        "y": 12
       },
       "terrain": "Forest"
     },
@@ -352,14 +464,14 @@
     {
       "position": {
         "x": 15,
-        "y": 5
+        "y": 11
       },
       "terrain": "Forest"
     },
     {
       "position": {
         "x": 16,
-        "y": 5
+        "y": 11
       },
       "terrain": "Hills"
     },
@@ -443,14 +555,14 @@
     {
       "position": {
         "x": 16,
-        "y": 6
+        "y": 10
       },
       "terrain": "Forest"
     },
     {
       "position": {
         "x": 19,
-        "y": 6
+        "y": 10
       },
       "terrain": "Forest"
     },
@@ -506,7 +618,7 @@
     {
       "position": {
         "x": 17,
-        "y": 7
+        "y": 9
       },
       "terrain": "Hills"
     },
@@ -569,14 +681,14 @@
     {
       "position": {
         "x": 16,
-        "y": 9
+        "y": 7
       },
       "terrain": "Hills"
     },
     {
       "position": {
         "x": 17,
-        "y": 9
+        "y": 7
       },
       "terrain": "Forest"
     },
@@ -639,7 +751,7 @@
     {
       "position": {
         "x": 19,
-        "y": 10
+        "y": 6
       },
       "terrain": "Forest"
     },
@@ -695,14 +807,14 @@
     {
       "position": {
         "x": 15,
-        "y": 11
+        "y": 5
       },
       "terrain": "Forest"
     },
     {
       "position": {
         "x": 16,
-        "y": 11
+        "y": 5
       },
       "terrain": "Forest"
     },
@@ -751,7 +863,7 @@
     {
       "position": {
         "x": 14,
-        "y": 12
+        "y": 4
       },
       "terrain": "Hills"
     },
@@ -814,21 +926,21 @@
     {
       "position": {
         "x": 14,
-        "y": 14
+        "y": 2
       },
       "terrain": "Hills"
     },
     {
       "position": {
         "x": 15,
-        "y": 14
+        "y": 2
       },
       "terrain": "Forest"
     },
     {
       "position": {
         "x": 16,
-        "y": 14
+        "y": 2
       },
       "terrain": "Forest"
     },
@@ -891,21 +1003,21 @@
     {
       "position": {
         "x": 16,
-        "y": 15
+        "y": 1
       },
       "terrain": "Hills"
     },
     {
       "position": {
         "x": 17,
-        "y": 15
+        "y": 1
       },
       "terrain": "Forest"
     },
     {
       "position": {
         "x": 18,
-        "y": 15
+        "y": 1
       },
       "terrain": "Forest"
     },
@@ -949,14 +1061,14 @@
     {
       "position": {
         "x": 19,
-        "y": 8
+        "y": 13
       },
       "kind": "Fuel"
     },
     {
       "position": {
         "x": 1,
-        "y": 8
+        "y": 3
       },
       "kind": "Fuel"
     },
@@ -984,10 +1096,30 @@
   ],
   "units": [
     {
+      "id": 18,
+      "position": {
+        "x": 17,
+        "y": 13
+      },
+      "playerNumber": "Player2",
+      "kind": "Truck",
+      "direction": null
+    },
+    {
+      "id": 17,
+      "position": {
+        "x": 3,
+        "y": 3
+      },
+      "playerNumber": "Player1",
+      "kind": "Truck",
+      "direction": null
+    },
+    {
       "id": 1,
       "position": {
-        "x": 4,
-        "y": 3
+        "x": 5,
+        "y": 2
       },
       "playerNumber": "Player1",
       "kind": "Infantry",
@@ -996,8 +1128,8 @@
     {
       "id": 2,
       "position": {
-        "x": 4,
-        "y": 8
+        "x": 5,
+        "y": 3
       },
       "playerNumber": "Player1",
       "kind": "Infantry",
@@ -1006,8 +1138,8 @@
     {
       "id": 3,
       "position": {
-        "x": 4,
-        "y": 13
+        "x": 5,
+        "y": 4
       },
       "playerNumber": "Player1",
       "kind": "Infantry",
@@ -1017,7 +1149,7 @@
       "id": 4,
       "position": {
         "x": 3,
-        "y": 6
+        "y": 2
       },
       "playerNumber": "Player1",
       "kind": "Tank",
@@ -1027,7 +1159,7 @@
       "id": 5,
       "position": {
         "x": 3,
-        "y": 10
+        "y": 4
       },
       "playerNumber": "Player1",
       "kind": "Tank",
@@ -1037,7 +1169,7 @@
       "id": 6,
       "position": {
         "x": 2,
-        "y": 8
+        "y": 3
       },
       "playerNumber": "Player1",
       "kind": "FieldGun",
@@ -1047,17 +1179,7 @@
       "id": 7,
       "position": {
         "x": 2,
-        "y": 5
-      },
-      "playerNumber": "Player1",
-      "kind": "Truck",
-      "direction": null
-    },
-    {
-      "id": 8,
-      "position": {
-        "x": 2,
-        "y": 11
+        "y": 2
       },
       "playerNumber": "Player1",
       "kind": "Truck",
@@ -1066,8 +1188,8 @@
     {
       "id": 9,
       "position": {
-        "x": 16,
-        "y": 3
+        "x": 15,
+        "y": 14
       },
       "playerNumber": "Player2",
       "kind": "Infantry",
@@ -1076,8 +1198,8 @@
     {
       "id": 10,
       "position": {
-        "x": 16,
-        "y": 8
+        "x": 15,
+        "y": 13
       },
       "playerNumber": "Player2",
       "kind": "Infantry",
@@ -1086,8 +1208,8 @@
     {
       "id": 11,
       "position": {
-        "x": 16,
-        "y": 13
+        "x": 15,
+        "y": 12
       },
       "playerNumber": "Player2",
       "kind": "Infantry",
@@ -1097,7 +1219,7 @@
       "id": 12,
       "position": {
         "x": 17,
-        "y": 6
+        "y": 14
       },
       "playerNumber": "Player2",
       "kind": "Tank",
@@ -1107,7 +1229,7 @@
       "id": 13,
       "position": {
         "x": 17,
-        "y": 10
+        "y": 12
       },
       "playerNumber": "Player2",
       "kind": "Tank",
@@ -1117,7 +1239,7 @@
       "id": 14,
       "position": {
         "x": 18,
-        "y": 8
+        "y": 13
       },
       "playerNumber": "Player2",
       "kind": "FieldGun",
@@ -1127,17 +1249,7 @@
       "id": 15,
       "position": {
         "x": 18,
-        "y": 5
-      },
-      "playerNumber": "Player2",
-      "kind": "Truck",
-      "direction": null
-    },
-    {
-      "id": 16,
-      "position": {
-        "x": 18,
-        "y": 11
+        "y": 14
       },
       "playerNumber": "Player2",
       "kind": "Truck",

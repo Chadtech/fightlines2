@@ -272,6 +272,16 @@ The manager preloads and cycles all five independently of tank variants, sharing
 the eight combat voices. Each cue starts at its crew's muzzle flash, after
 320ms of preparation, for direct fire, return fire, and visible indirect fire.
 
+## Movement collisions
+
+`movement/collision-thud-v1.ogg` is the approved 350ms thud from
+[Car Accident with Squeal and Crash by HoBoTrails](https://freesound.org/people/HoBoTrails/sounds/426021/),
+listed as CC0 1.0. The edit uses 1.402–1.752s of the public high-quality MP3
+preview, at −1.2dB with a 2ms fade in and a quadratic fade from 85ms to 350ms.
+The approved stereo 44.1kHz WAV was encoded as Vorbis quality 6 without another
+gain change. Live games and replays play one thud at the start of each visible
+collision hold through the movement volume channel.
+
 ## Combat impacts
 
 `combat/impact-01.ogg` through `combat/impact-05.ogg` reuse the five original

@@ -554,22 +554,11 @@ mapShared change model =
 
 limitPlaybackZoom : Float -> Phase -> Phase
 limitPlaybackZoom maxZoom phase =
-    let
-        limit : PlaybackPresentation.PlaybackCamera -> PlaybackPresentation.PlaybackCamera
-        limit held =
-            if held.camera.zoom > maxZoom then
-                { held
-                    | camera =
-                        Camera.zoomAt { x = 0, y = 0 } maxZoom held.camera
-                }
-
-            else
-                held
-    in
     case phase of
         TurnLifecycle.Playing playing ->
             playing
-                |> TurnLifecycle.setPlaybackCamera (Maybe.map limit playing.camera)
+                |> TurnLifecycle.setPlaybackCamera
+                    (Maybe.map (PlaybackPresentation.limitZoom maxZoom) playing.camera)
                 |> TurnLifecycle.Playing
 
         _ ->
@@ -1321,6 +1310,7 @@ centerDismountOrder previousUnitId model =
                     camera : Camera.Camera
                     camera =
                         Camera.centerOn
+                            (Battlefield.projection model.shared.features)
                             viewport.camera
                             model.map
                             position
@@ -1466,6 +1456,7 @@ reconcileTurnSnapshot snapshot previousTurn model =
             , frames = snapshot.playbackFrames
             }
             { departures = []
+            , collisions = []
             , losses = []
             , sabotages = []
             , indirectImpacts = []
@@ -1689,9 +1680,16 @@ selectTile position model =
             |> centerDismountOrder (selectedUnitId model)
 
 
-inspectDepot : Coordinate -> Model -> Model
-inspectDepot position model =
-    if choosingIndirectFire model then
+selectDepotStock : Coordinate -> Model -> Model
+selectDepotStock position model =
+    let
+        choosingTargetTile : Bool
+        choosingTargetTile =
+            (pathPreview model /= Nothing)
+                || isChoosingUnload model
+                || choosingIndirectFire model
+    in
+    if choosingTargetTile then
         selectTile position model
 
     else
@@ -1818,7 +1816,7 @@ navigateBattlefield :
 navigateBattlefield change model =
     model
         |> mapNavigation (change >> BattlefieldNavigation.finishReturn)
-        |> updatePlaybackCamera
+        |> updatePlaybackCamera 0
 
 
 groundPickupDialogHtmlId : String
@@ -1971,17 +1969,20 @@ recordFocusResult result model =
 {-| Retain playback framing across subject changes. Only projected positions
 can request a pan, and the saved planning navigation remains independent.
 -}
-updatePlaybackCamera : Model -> Model
-updatePlaybackCamera model =
+updatePlaybackCamera : Float -> Model -> Model
+updatePlaybackCamera deltaMs model =
     case ( model.currentTurn.phase, model.battlefieldViewport ) of
         ( TurnLifecycle.Playing playing, Just viewport ) ->
             let
                 held : PlaybackPresentation.PlaybackCamera
                 held =
                     PlaybackPresentation.frameCamera
-                        viewport.camera
-                        model.map
-                        (BattlefieldNavigation.camera model.navigation)
+                        { viewport = viewport.camera
+                        , map = model.map
+                        , projection = Battlefield.projection model.shared.features
+                        , saved = BattlefieldNavigation.camera model.navigation
+                        , deltaMs = deltaMs
+                        }
                         playing.animation
                         playing.camera
 
@@ -2125,55 +2126,18 @@ finishPlayback previousCamera next =
         |> E.with cameraEffect
 
 
-presentPlaybackTransition : Phase -> Model -> ( Model, Eff Msg )
-presentPlaybackTransition previous next =
+presentPlaybackTransition : Float -> Phase -> Model -> ( Model, Eff Msg )
+presentPlaybackTransition deltaMs previous next =
     case ( TurnLifecycle.playback previous, playback next ) of
         ( Just _, Nothing ) ->
             finishPlayback (phasePlaybackCamera previous) next
 
         _ ->
             next
-                |> updatePlaybackCamera
+                |> updatePlaybackCamera deltaMs
                 |> E.withOut
 
 
-advanceCurrentPlayback : Float -> Model -> ( Model, Eff Msg )
-advanceCurrentPlayback delta model =
-    case model.currentTurn.phase of
-        TurnLifecycle.Playing playing ->
-            case playing.camera of
-                Just held ->
-                    if held.remainingPanMs > 0 then
-                        let
-                            camera : TurnLifecycle.PlaybackCamera
-                            camera =
-                                held
-                                    |> PlaybackPresentation.setRemainingPanMs
-                                        (max 0 (held.remainingPanMs - delta))
-
-                            phase : Phase
-                            phase =
-                                playing
-                                    |> TurnLifecycle.setPlaybackCamera (Just camera)
-                                    |> TurnLifecycle.Playing
-                        in
-                        model
-                            |> mapCurrentTurn (CurrentTurn.setPhase phase)
-                            |> E.withOut
-
-                    else
-                        advancePlayback delta model
-
-                Nothing ->
-                    advancePlayback delta model
-
-        _ ->
-            model
-                |> E.withOut
-
-
-{-| Keep the action at its current frame while the camera settles.
--}
 advancePlayback : Float -> Model -> ( Model, Eff Msg )
 advancePlayback delta model =
     let
@@ -2191,7 +2155,7 @@ advancePlayback delta model =
                 ( advanced, effect ) =
                     applyPlaybackFrame next model
                         |> automaticallyContinueCombat
-                        |> presentPlaybackTransition model.currentTurn.phase
+                        |> presentPlaybackTransition delta model.currentTurn.phase
 
                 sounds : List (Eff Msg)
                 sounds =
@@ -2243,7 +2207,7 @@ setCombatMapView mapView model =
             (CurrentTurn.mapPhase
                 (TurnLifecycle.setCombatMapView mapView)
             )
-        |> updatePlaybackCamera
+        |> updatePlaybackCamera 0
 
 
 applyPlaybackFrame :
@@ -2818,7 +2782,7 @@ update lobbyId msg model =
         CameraReturnFinished ->
             model
                 |> mapNavigation BattlefieldNavigation.finishReturn
-                |> updatePlaybackCamera
+                |> updatePlaybackCamera 0
                 |> E.withOut
 
         WindowResized screenSize ->
@@ -2852,7 +2816,7 @@ update lobbyId msg model =
                                     , camera = viewport
                                     }
                                 )
-                            |> updatePlaybackCamera
+                            |> updatePlaybackCamera 0
                             |> E.withOut
 
                     else
@@ -2905,7 +2869,7 @@ update lobbyId msg model =
                                 , camera = viewport
                                 }
                             )
-                        |> updatePlaybackCamera
+                        |> updatePlaybackCamera 0
                         |> E.withOut
 
                 Err error ->
@@ -3359,7 +3323,14 @@ update lobbyId msg model =
                         |> E.withOut
 
         AnimationTimerElapsed _ ->
-            if deathInFocus model || combatEncounter model /= Nothing then
+            let
+                collisionHeld : Bool
+                collisionHeld =
+                    playback model
+                        |> Maybe.map TurnPlayback.collisionInProgress
+                        |> Maybe.withDefault False
+            in
+            if deathInFocus model || combatEncounter model /= Nothing || collisionHeld then
                 model
                     |> E.withOut
 
@@ -3497,13 +3468,13 @@ handleBattlefieldMsg msg model =
                 model
 
             else
-                inspectDepot position model
+                selectDepotStock position model
 
         Battlefield.PressedEnterOnDepotStock position ->
-            inspectDepot position model
+            selectDepotStock position model
 
         Battlefield.PressedSpaceOnDepotStock position ->
-            inspectDepot position model
+            selectDepotStock position model
 
         Battlefield.ClickedTile position click ->
             if suppressesBattlefieldClick click model then
@@ -3589,6 +3560,7 @@ handleBattlefieldTouch input model =
             case ( pathPreview state, state.battlefieldViewport ) of
                 ( Just _, Just viewport ) ->
                     Camera.coordinateAt
+                        (Battlefield.projection state.shared.features)
                         viewport.camera.size
                         state.map
                         (BattlefieldNavigation.camera state.navigation)
@@ -3736,7 +3708,7 @@ handleUnitDeathMsg lossMsg model =
                     (CurrentTurn.mapPhase
                         (TurnLifecycle.acknowledgeLoss unitId)
                     )
-                |> presentPlaybackTransition model.currentTurn.phase
+                |> presentPlaybackTransition 0 model.currentTurn.phase
 
         UnitDeath.SkipDialogsChanged skip ->
             ( { model | skipUnitLossDialogs = skip }
@@ -3754,7 +3726,7 @@ handleCombatTheaterMsg panelMsg model =
 
         CombatTheater.ContinueClicked ->
             continueCombat model
-                |> presentPlaybackTransition model.currentTurn.phase
+                |> presentPlaybackTransition 0 model.currentTurn.phase
 
         CombatTheater.SeeMapPressed ->
             setCombatMapView TurnPlayback.SeeingMap model
@@ -4062,14 +4034,14 @@ handleCurrentTurnMsg lobbyId msg model =
         CurrentTurn.GotPlaybackPresentationMsg playbackMsg ->
             case playbackMsg of
                 PlaybackPresentation.FrameElapsed delta ->
-                    advanceCurrentPlayback delta model
+                    advancePlayback delta model
 
                 PlaybackPresentation.CombatEnterReleased ->
                     if canContinueCombatWithEnter model then
                         model
                             |> setCombatEnterHeld False
                             |> continueCombat
-                            |> presentPlaybackTransition currentTurn.phase
+                            |> presentPlaybackTransition 0 currentTurn.phase
 
                     else
                         model
@@ -5009,16 +4981,11 @@ playbackAudio model =
         animation : Maybe TurnPlayback.Playback
         animation =
             playback model
-
-        camera : Maybe TurnLifecycle.PlaybackCamera
-        camera =
-            playbackCamera model
     in
     { movement =
         PlaybackPresentation.movingUnits
             { playback = animation
-            , paused = False
-            , camera = camera
+            , paused = model.battlefieldViewport == Nothing
             , skipLossDialogs = model.skipUnitLossDialogs
             }
     , ambience =
@@ -5031,7 +4998,6 @@ playbackAudio model =
         PlaybackPresentation.firingInfantry
             { playback = animation
             , paused = False
-            , camera = camera
             }
     }
 
@@ -5402,23 +5368,27 @@ battlefieldView model =
             , presentation = presentation
             }
 
-        heldCamera : Maybe Camera.Camera
+        heldCamera : Maybe TurnLifecycle.PlaybackCamera
         heldCamera =
-            playbackCamera model |> Maybe.map .camera
+            playbackCamera model
 
         viewportAttributes : List (H.Attribute Msg)
         viewportAttributes =
             Battlefield.viewportAttributes
                 { dragging = BattlefieldNavigation.active model.navigation
                 , interaction = Battlefield.interaction presentation
+                , crtEffect = Features.enabled Features.CrtBattlefield model.shared.features
                 }
                 |> List.map (A.map BattlefieldMsg)
     in
     H.div
         viewportAttributes
         [ Battlefield.camera
-            { camera = Maybe.withDefault (BattlefieldNavigation.camera model.navigation) heldCamera
-            , transitioning = (heldCamera /= Nothing) || BattlefieldNavigation.returning model.navigation
+            { camera = Maybe.withDefault (BattlefieldNavigation.camera model.navigation) (Maybe.map .camera heldCamera)
+            , map = model.map
+            , projection = Battlefield.projection model.shared.features
+            , reducedMotionCamera = Maybe.map .target heldCamera
+            , transitioning = (heldCamera == Nothing) && BattlefieldNavigation.returning model.navigation
             }
             [ Battlefield.toSvg args
                 |> H.fromUnstyled
@@ -5988,6 +5958,7 @@ orderMenu model =
             case Unit.physicalPosition model.units unit of
                 Just position ->
                     OrderMenu.toHtml
+                        (Battlefield.projection model.shared.features)
                         model.buildings
                         model.map
                         (BattlefieldNavigation.camera model.navigation)
@@ -7826,7 +7797,9 @@ subscriptions model =
         , reportTicks
         , Time.every 1000 ChatPollElapsed
         , Time.every 400 AnimationTimerElapsed
-        , CurrentTurn.subscriptions model.currentTurn
+        , CurrentTurn.subscriptions
+            (model.battlefieldViewport /= Nothing)
+            model.currentTurn
             |> Sub.map CurrentTurnMsg
         , BattlefieldNavigation.subscriptions model.navigation
             |> Sub.map BattlefieldNavigationMsg

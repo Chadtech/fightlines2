@@ -365,6 +365,7 @@ mod tests {
             losses: vec![event],
             sabotages: Vec::new(),
             departures: Vec::new(),
+            collisions: Vec::new(),
             indirect_impacts: Vec::new(),
             shots: Vec::new(),
             units: board.units.clone(),

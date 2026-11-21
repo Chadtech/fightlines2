@@ -6,7 +6,7 @@ use crate::{
     movement,
     player_number::PlayerNumber,
     scenario::{Direction, Scenario, Unit, UnitId},
-    turns::{self, PlannedLoad, TurnFrame},
+    turns::{self, MovementCollision, PlannedLoad, TurnFrame},
     unit_order::{UnitOrder, UnitOrderKind},
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -61,6 +61,7 @@ fn frame(board: &Scenario, duration_ms: i32) -> TurnFrame {
         losses: Vec::new(),
         sabotages: Vec::new(),
         departures: Vec::new(),
+        collisions: Vec::new(),
         indirect_impacts: Vec::new(),
         buildings: board.buildings.clone(),
         supply_crates: board.supply_crates.clone(),
@@ -391,6 +392,8 @@ fn resolve_arrivals(
             .collect();
         let mut blocked = BTreeSet::new();
         let mut stop_after_arrival = BTreeSet::new();
+        let mut collisions = BTreeSet::new();
+        let collision_pair = |first: UnitId, second: UnitId| [first.min(second), first.max(second)];
         // Opposing claims on an empty square admit one team, then stop every claimant.
         for (id, destination) in &intents {
             let unit = board
@@ -398,13 +401,14 @@ fn resolve_arrivals(
                 .iter()
                 .find(|unit| unit.unit_id() == *id)
                 .ok_or(ResolutionError::MissingUnit)?;
-            if intents.iter().any(|(other_id, other_destination)| {
-                other_destination == destination
+            for (other_id, _) in intents.iter().filter(|(other_id, other_destination)| {
+                *other_destination == destination
                     && board.units.iter().any(|other| {
-                        other.unit_id() == *other_id
+                        other.unit_id() == **other_id
                             && other.player_number() != unit.player_number()
                     })
             }) {
+                collisions.insert(collision_pair(*id, *other_id));
                 stop_after_arrival.insert(*id);
                 if unit.player_number() != priority {
                     blocked.insert(*id);
@@ -439,6 +443,7 @@ fn resolve_arrivals(
                     let swaps =
                         departure.is_some_and(|target| Some(*target) == unit.board_position());
                     if departure.is_none() || blocked.contains(&resident.unit_id()) || swaps {
+                        collisions.insert(collision_pair(*id, resident.unit_id()));
                         blocked.insert(*id);
                         stop_after_arrival.insert(resident.unit_id());
                         if swaps {
@@ -513,7 +518,7 @@ fn resolve_arrivals(
             .collect();
         let mut blocked_forest_entries = Vec::new();
         let mut arrived = BTreeSet::new();
-        for (id, destination) in intents {
+        for (&id, &destination) in &intents {
             let unit = board
                 .units
                 .iter_mut()
@@ -541,7 +546,7 @@ fn resolve_arrivals(
             path.push(destination);
             arrived.insert(id);
         }
-        stopped.extend(blocked);
+        stopped.extend(&blocked);
         stopped.extend(stop_after_arrival);
         // Check the final facing after every simultaneous arrival has been applied.
         // Adjacent contact is physical, just like attempting to enter an enemy tile.
@@ -655,10 +660,37 @@ fn resolve_arrivals(
             }
         }
         // Retain waiting time even after a route ends; timing is independent of its length.
-        frames.push(frame(
+        let mut arrival = frame(
             &board,
             (tick - previous_tick) * MOVEMENT_DURATION_MS / ticks,
-        ));
+        );
+        let position = |id| {
+            board
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == id)?
+                .board_position()
+        };
+        // Only describe a failed edge toward the other participant's settled
+        // square. The viewer already receives that square with the collision.
+        let approach = |mover, opponent| {
+            let destination = *intents.get(&mover)?;
+            if blocked.contains(&mover) && position(opponent) == Some(destination) {
+                Direction::between(position(mover)?, destination)
+            } else {
+                None
+            }
+        };
+        arrival.collisions = collisions
+            .into_iter()
+            .map(|[first, second]| {
+                let mut collision = MovementCollision::between(first, second);
+                collision.first_approach = approach(first, second);
+                collision.second_approach = approach(second, first);
+                collision
+            })
+            .collect();
+        frames.push(arrival);
         let next_attack_step = |id| {
             let order = orders
                 .iter()
@@ -924,6 +956,12 @@ mod tests {
         ])?;
         let result = resolve(&scenario, &orders, 1)?;
         assert!(result.stopped.is_empty());
+        assert!(
+            result
+                .frames
+                .iter()
+                .all(|frame| frame.collisions.is_empty())
+        );
         assert_eq!(path(&result, "11")?, orders[0].path());
         assert_eq!(path(&result, "6")?, orders[1].path());
         let (scenario, mut orders) = setup(&[
@@ -933,6 +971,20 @@ mod tests {
         for turn in [1, 2] {
             let result = resolve(&scenario, &orders, turn)?;
             assert_eq!(result.stopped.len(), 2);
+            let mut collision = MovementCollision::between(orders[0].unit_id, orders[1].unit_id);
+            if turn == 1 {
+                collision.second_approach = Some(Direction::South);
+            } else {
+                collision.first_approach = Some(Direction::East);
+            }
+            assert_eq!(
+                result
+                    .frames
+                    .iter()
+                    .flat_map(|frame| frame.collisions.iter().copied())
+                    .collect::<Vec<_>>(),
+                vec![collision]
+            );
             let winner = if turn == 1 { "1" } else { "6" };
             let loser = if turn == 1 { "6" } else { "1" };
             assert_eq!(path(&result, winner)?.last(), Some(&Coordinate::new(1, 1)));
@@ -954,6 +1006,16 @@ mod tests {
         ])?;
         let result = resolve(&scenario, &orders, 1)?;
         assert_eq!(result.stopped.len(), 3);
+        let collisions: Vec<_> = result
+            .frames
+            .iter()
+            .flat_map(|frame| frame.collisions.iter().copied())
+            .collect();
+        assert_eq!(collisions.len(), 2);
+        let enemy = UnitId::parse("6").fixture()?;
+        assert!(collisions.iter().all(|collision| {
+            [collision.first_unit_id, collision.second_unit_id].contains(&enemy)
+        }));
         for order in orders {
             assert_eq!(result.paths[&order.unit_id], vec![order.path()[0]]);
         }

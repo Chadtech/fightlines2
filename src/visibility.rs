@@ -405,6 +405,20 @@ fn observed_frames(
                     .copied()
                     .collect(),
                 departures: Vec::new(),
+                collisions: frame
+                    .collisions
+                    .iter()
+                    .filter(|collision| {
+                        [collision.first_unit_id, collision.second_unit_id]
+                            .into_iter()
+                            .all(|id| {
+                                observed.units.iter().any(|unit| {
+                                    unit.unit_id() == id && unit.board_position().is_some()
+                                })
+                            })
+                    })
+                    .copied()
+                    .collect(),
                 indirect_impacts: frame
                     .indirect_impacts
                     .iter()
@@ -525,7 +539,7 @@ mod tests {
     use crate::scenario::{BuildingKind, ResourceKind};
     use crate::supplies::CargoStock;
     use crate::test_support::{FixtureValue, TestResult};
-    use crate::turns::{TurnEvent, TurnEventKind};
+    use crate::turns::{MovementCollision, TurnEvent, TurnEventKind};
     use crate::unit_loss;
 
     fn scenario(kind: UnitKind, sketch: &str) -> TestResult<Scenario> {
@@ -546,6 +560,7 @@ mod tests {
             losses: Vec::new(),
             sabotages: Vec::new(),
             departures: Vec::new(),
+            collisions: Vec::new(),
             indirect_impacts: Vec::new(),
             shots: Vec::new(),
             buildings: board.buildings.clone(),
@@ -554,6 +569,36 @@ mod tests {
             visible_tiles: Vec::new(),
             duration_ms: 180,
         }
+    }
+
+    #[test]
+    fn movement_collisions_require_both_projected_units() -> TestResult<()> {
+        let mut board = scenario(UnitKind::Infantry, ".#...")?;
+        let ally = board.units.first().fixture()?.unit_id();
+        let mut enemy = Scenario::supply_point()
+            .fixture()?
+            .units
+            .into_iter()
+            .find(|unit| unit.player_number() == PlayerNumber::Player2)
+            .fixture()?;
+        enemy.move_to(Coordinate::new(1, 0));
+        let collision = MovementCollision::between(ally, enemy.unit_id());
+        board.units.push(enemy);
+        let mut hidden = recorded_frame(&board);
+        hidden.collisions.push(collision);
+        board.units.get_mut(1).fixture()?.reveal_position();
+        let mut revealed = recorded_frame(&board);
+        revealed.collisions.push(collision);
+        let resolution = TurnResolution {
+            turn_number: 1,
+            reports: Vec::new(),
+            events: Vec::new(),
+            frames: vec![hidden, revealed],
+        };
+        let frames = observed_frames(&board, PlayerNumber::Player1, &resolution);
+        assert!(frames.first().fixture()?.collisions.is_empty());
+        assert_eq!(frames.get(1).fixture()?.collisions, vec![collision]);
+        Ok(())
     }
 
     #[test]
@@ -583,6 +628,7 @@ mod tests {
                 losses: Vec::new(),
                 sabotages: vec![position],
                 departures: Vec::new(),
+                collisions: Vec::new(),
                 indirect_impacts: Vec::new(),
                 shots: Vec::new(),
                 buildings: board.buildings.clone(),
@@ -661,6 +707,7 @@ mod tests {
                 losses: Vec::new(),
                 sabotages: Vec::new(),
                 departures: Vec::new(),
+                collisions: Vec::new(),
                 units: board.units.clone(),
                 buildings: board.buildings.clone(),
                 supply_crates: board.supply_crates.clone(),
@@ -743,6 +790,7 @@ mod tests {
                 losses: Vec::new(),
                 sabotages: Vec::new(),
                 departures: Vec::new(),
+                collisions: Vec::new(),
                 indirect_impacts: Vec::new(),
                 units: board.units.clone(),
                 buildings: board.buildings.clone(),
@@ -859,6 +907,7 @@ mod tests {
                 losses: Vec::new(),
                 sabotages: Vec::new(),
                 departures: Vec::new(),
+                collisions: Vec::new(),
                 indirect_impacts: Vec::new(),
                 buildings: board.buildings.clone(),
                 supply_crates: board.supply_crates.clone(),
@@ -1332,6 +1381,7 @@ mod tests {
             losses: Vec::new(),
             sabotages: Vec::new(),
             departures: Vec::new(),
+            collisions: Vec::new(),
             indirect_impacts: Vec::new(),
             shots: Vec::new(),
             buildings: board.buildings.clone(),

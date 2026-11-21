@@ -167,6 +167,46 @@ impl UnitDeparture {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MovementCollision {
+    pub first_unit_id: UnitId,
+    pub second_unit_id: UnitId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_approach: Option<Direction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_approach: Option<Direction>,
+}
+
+impl MovementCollision {
+    pub fn between(first: UnitId, second: UnitId) -> Self {
+        Self {
+            first_unit_id: first.min(second),
+            second_unit_id: first.max(second),
+            first_approach: None,
+            second_approach: None,
+        }
+    }
+}
+
+#[graphql_object]
+impl MovementCollision {
+    fn first_unit_id(&self) -> String {
+        self.first_unit_id.to_string()
+    }
+
+    fn second_unit_id(&self) -> String {
+        self.second_unit_id.to_string()
+    }
+
+    fn first_approach(&self) -> Option<Direction> {
+        self.first_approach
+    }
+
+    fn second_approach(&self) -> Option<Direction> {
+        self.second_approach
+    }
+}
+
 #[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
 pub struct TurnFrame {
     /// Losses emitted at this step, never repeated in the following pause.
@@ -177,6 +217,9 @@ pub struct TurnFrame {
     pub sabotages: Vec<Coordinate>,
     /// Observed exits toward fog; never contains a hidden destination or route.
     pub departures: Vec<UnitDeparture>,
+    /// Opposing pairs involved in blocked movement at this arrival.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collisions: Vec<MovementCollision>,
     pub indirect_impacts: Vec<IndirectImpact>,
     pub shots: Vec<Shot>,
     #[serde(rename = "depots")]
@@ -1299,6 +1342,7 @@ impl Turns {
                     losses: Vec::new(),
                     sabotages: Vec::new(),
                     departures: Vec::new(),
+                    collisions: Vec::new(),
                     indirect_impacts: Vec::new(),
                     buildings: scenario.buildings.clone(),
                     supply_crates: scenario.supply_crates.clone(),
@@ -1364,6 +1408,7 @@ impl Turns {
                         losses: Vec::new(),
                         sabotages: Vec::new(),
                         departures: Vec::new(),
+                        collisions: Vec::new(),
                         indirect_impacts: Vec::new(),
                         buildings: scenario.buildings.clone(),
                         supply_crates: scenario.supply_crates.clone(),
@@ -1473,6 +1518,7 @@ impl Turns {
                     losses: Vec::new(),
                     sabotages,
                     departures: Vec::new(),
+                    collisions: Vec::new(),
                     indirect_impacts: Vec::new(),
                     buildings: scenario.buildings.clone(),
                     supply_crates: scenario.supply_crates.clone(),
@@ -1538,6 +1584,7 @@ impl Turns {
                 frames.push(TurnFrame {
                     sabotages: Vec::new(),
                     departures: Vec::new(),
+                    collisions: Vec::new(),
                     indirect_impacts: Vec::new(),
                     buildings: scenario.buildings.clone(),
                     supply_crates: scenario.supply_crates.clone(),
@@ -1552,6 +1599,7 @@ impl Turns {
                 losses: Vec::new(),
                 sabotages: Vec::new(),
                 departures: Vec::new(),
+                collisions: Vec::new(),
                 indirect_impacts: Vec::new(),
                 buildings: scenario.buildings.clone(),
                 supply_crates: scenario.supply_crates.clone(),
@@ -5547,7 +5595,7 @@ mod tests {
                 .current,
             256
         );
-        assert_eq!(scenario.buildings.first().fixture()?.stock.current, 768);
+        assert_eq!(scenario.buildings.first().fixture()?.stock.current, 512);
         let mut first = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut first, "4", &[(2, 8), (3, 8)])?;
         first
@@ -5960,7 +6008,9 @@ mod tests {
                     .last_mut()
                     .fixture()?
                     .move_to(Coordinate::new(19, 1));
-                scenario.buildings.push(Building::new(kind, position));
+                let depot = Building::new(kind, position);
+                let starting_stock = depot.stock.current;
+                scenario.buildings.push(depot);
                 let freight = GroundSupplyCrate {
                     position,
                     stock: supplies::CargoStock::new(freight_kind, 128),
@@ -5980,11 +6030,7 @@ mod tests {
                     let depot = scenario.buildings.first().fixture()?;
                     assert_eq!(depot.hit_points().current, hits - hit);
                     assert_eq!(depot.is_destroyed(), hit == hits);
-                    let expected_stock = if hit == hits || kind.resource_kind().is_none() {
-                        0
-                    } else {
-                        1024
-                    };
+                    let expected_stock = if hit == hits { 0 } else { starting_stock };
                     assert_eq!(depot.stock.current, expected_stock);
                     assert_eq!(scenario.supply_crates, vec![freight.clone()]);
                     let impact = turns

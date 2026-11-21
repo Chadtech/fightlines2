@@ -177,10 +177,16 @@ and other open tabs. The **placeholder** flag exercises the switch and storage
 flow. The retired `"mobileLandscape"`, `"ai-difficulty"`, and
 `"tournament-very-hard"` values are ignored when reading preferences.
 
+The **crt battlefield** flag adds stationary scanlines, RGB phosphor stripes,
+and a vignette to the battlefield viewport in live games and archive replays.
+
 Army style switches change the current player's tank and unentrenched infantry
 sprites on the live board, including turn playback. If several army styles are
 checked, the first one listed in the Features tab wins. Turning off every army
 style restores the standard sprites.
+
+The **board tilt** switch pitches the battlefield by 10 degrees in live games
+and replays. It starts off.
 
 The minimal battlefield layout is automatic. See
 [touch navigation and narrow layouts](../ARCHITECTURE.md#touch-navigation-and-narrow-layouts)
@@ -324,7 +330,7 @@ input, automatic playback controls, and other server responses remain silent.
 Combat playback emits `Audio.tankFire` at tank muzzle flashes and bazooka
 launches, and `Audio.fieldGunFire` at field-gun muzzle flashes. Cues follow
 the same clock and stagger as the sprites in live games and logged replays.
-Pauses and camera holds do not repeat shots. The manager preloads and cycles
+Resuming playback preserves the shot sequence. The manager preloads and cycles
 five procedural firing variants per cue, with up to eight overlapping combat
 voices independent of UI feedback.
 `Audio.combatImpact` uses five original procedural small-explosion variants at
@@ -334,21 +340,19 @@ clock-crossing behavior; supply exhaustion stays silent.
 Infantry small-arms fire synchronizes the approved heavy 1.920-second recording
 with the full firing animation, including its overlap with target impacts.
 Each recorded firing formation has one voice and its own return-fire phase.
-Snapshots carry the elapsed clip position and remaining firing time, so pause,
-camera holds, map peeks, mute, leaving combat and hidden tabs stop it, and resume
+Snapshots carry the elapsed clip position and remaining firing time. Replay
+pause, map peeks, mute, leaving combat and hidden tabs stop the voice. Resuming
 seeks to the current animation position. Static trench artwork stays silent.
 The source manifest and credits are in `public/audio/README.md` and
 `public/audio/combat/infantry-fire-sources.json`.
 During battlefield playback, each visibly moving infantry, field gun, truck or
 tank plays its approved movement loop: 12.909-second marching for infantry and
 field guns, six-second engines for vehicles. Each starts from an independent
-random offset. Consecutive
-movement tiles and other units' intermediate arrivals keep the same voice. Camera adjustments
-during travel preserve movement and its sound. Stopping fades it out over 20ms.
-Initial camera holds, casualty dialogs, replay pause, navigation, and hidden tabs
-silence movement. Live games
-and logged replays share this behavior. Source and license status are documented
-in `public/audio/README.md`.
+random offset. Consecutive movement tiles, other units' intermediate arrivals,
+and camera adjustments keep the same voice. Stopping fades it out over 20ms.
+Casualty dialogs, replay pause, navigation, and hidden tabs silence movement.
+Live games and logged replays share this behavior. Source and license status
+are documented in `public/audio/README.md`.
 
 Combat theaters also synchronize `Audio.syncAmbience` snapshots from their displayed
 scenes. Five approved CC0 field recordings cover plains (Oklahoma prairie choice C),

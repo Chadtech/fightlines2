@@ -217,6 +217,10 @@ type MatchMakingWaiting
     = MatchMakingWaiting
 
 
+type MovementCollision
+    = MovementCollision
+
+
 type MovementRule
     = MovementRule
 

@@ -27,6 +27,8 @@ import Util.List as ListUtil
 
 type Feature
     = Placeholder
+    | BoardTilt
+    | CrtBattlefield
     | Army ArmyStyle
 
 
@@ -65,7 +67,7 @@ init storage =
 
 all : List Feature
 all =
-    Placeholder :: List.map Army ArmyStyle.priority
+    Placeholder :: BoardTilt :: CrtBattlefield :: List.map Army ArmyStyle.priority
 
 
 armyStyle : Model -> Maybe ArmyStyle
@@ -103,6 +105,12 @@ label feature =
         Placeholder ->
             "placeholder"
 
+        BoardTilt ->
+            "board tilt"
+
+        CrtBattlefield ->
+            "crt battlefield"
+
         Army style ->
             ArmyStyle.label style ++ " army style"
 
@@ -125,6 +133,12 @@ toString feature =
     case feature of
         Placeholder ->
             "placeholder"
+
+        BoardTilt ->
+            "board-tilt"
+
+        CrtBattlefield ->
+            "crt-battlefield"
 
         Army style ->
             "army-" ++ ArmyStyle.slug style

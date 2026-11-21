@@ -251,6 +251,7 @@ mod tests {
             losses,
             sabotages: Vec::new(),
             departures: Vec::new(),
+            collisions: Vec::new(),
             indirect_impacts: Vec::new(),
             shots: Vec::new(),
             buildings: Vec::new(),
@@ -311,7 +312,7 @@ mod tests {
         assert!(depot.stock_visible);
         assert_eq!(depot.stock.current, 0);
         assert_eq!(fogged.buildings.get(1).fixture()?.stock.current, 4096);
-        assert_eq!(fogged.buildings.last().fixture()?.stock.current, 1024);
+        assert_eq!(fogged.buildings.last().fixture()?.stock.current, 768);
         assert_eq!(
             resource_target(&fogged, &hungry, origin),
             Some(Coordinate::new(7, 1))

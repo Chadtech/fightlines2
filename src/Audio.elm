@@ -26,6 +26,7 @@ module Audio exposing
     , lobbyPlayerJoined
     , lobbyPlayerLeft
     , matchMakingReady
+    , movementCollision
     , none
     , setChannelVolume
     , syncAmbience
@@ -291,6 +292,7 @@ type Audio
     | TankFire
     | FieldGunFire
     | CombatImpact
+    | MovementCollision
 
 
 none : Event
@@ -353,6 +355,11 @@ combatImpact =
     e CombatImpact
 
 
+movementCollision : Event
+movementCollision =
+    e MovementCollision
+
+
 e : Audio -> Event
 e audio =
     Play audio
@@ -393,6 +400,9 @@ audioToName audio =
 
         CombatImpact ->
             "combatImpact"
+
+        MovementCollision ->
+            "movementCollision"
 
 
 encodeEvent : Event -> Je.Value

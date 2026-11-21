@@ -366,6 +366,7 @@ playbackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , collisions = []
             , losses = []
             , sabotages = []
             , indirectImpacts = []
@@ -384,6 +385,7 @@ playbackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , collisions = []
             , losses = []
             , sabotages = []
             , indirectImpacts = []
@@ -410,6 +412,7 @@ playbackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , collisions = []
             , losses = []
             , sabotages = []
             , indirectImpacts = []
@@ -515,6 +518,7 @@ playbackChecks first second =
     in
     List.concat
         [ continuousMovementChecks firstFrame
+        , collisionPlaybackChecks firstFrame { firstUnitId = first, secondUnitId = second }
         , movementAudioChecks firstFrame lastFrame
         , expect "camera subjects follow interpolated visible movers"
             (Maybe.map TurnPlayback.focusPositions timedHalfway == Just [ { x = 0.5, y = 0 }, { x = 1.5, y = 1 } ])
@@ -582,6 +586,105 @@ playbackChecks first second =
         ]
 
 
+collisionPlaybackChecks :
+    TurnPlayback.Frame
+    -> { firstUnitId : UnitId, secondUnitId : UnitId }
+    -> List String
+collisionPlaybackChecks template opponents =
+    let
+        opening : TurnPlayback.Frame
+        opening =
+            template
+                |> TurnPlayback.setFrameUnits
+                    (List.map
+                        (\unit ->
+                            if unit.id == opponents.secondUnitId then
+                                Unit.setOnMap { x = 1, y = 0 } unit
+
+                            else
+                                unit
+                        )
+                        template.units
+                    )
+
+        collision : TurnPlayback.MovementCollision
+        collision =
+            { firstUnitId = opponents.firstUnitId
+            , secondUnitId = opponents.secondUnitId
+            , firstApproach = Just Direction.East
+            , secondApproach = Nothing
+            }
+
+        contact : TurnPlayback.Frame
+        contact =
+            { opening | durationMs = 180, collisions = [ collision ] }
+
+        before : Maybe TurnPlayback.Playback
+        before =
+            TurnPlayback.start [ opening, contact, opening ]
+
+        advance : Float -> Maybe TurnPlayback.Playback -> Maybe TurnPlayback.Playback
+        advance delta =
+            Maybe.andThen (TurnPlayback.tick delta >> Tuple.first)
+
+        approaching : Maybe TurnPlayback.Playback
+        approaching =
+            advance 90 before
+
+        concealedApproach : Maybe TurnPlayback.Playback
+        concealedApproach =
+            let
+                hidden : TurnPlayback.Frame
+                hidden =
+                    opening
+                        |> TurnPlayback.setFrameUnits
+                            (List.filter (\unit -> unit.id /= opponents.secondUnitId) opening.units)
+            in
+            TurnPlayback.start [ hidden, contact, opening ]
+                |> advance 90
+
+        arrived : Maybe TurnPlayback.Playback
+        arrived =
+            advance 5000 before
+
+        holding : Maybe TurnPlayback.Playback
+        holding =
+            advance 349 arrived
+
+        resumed : Maybe TurnPlayback.Playback
+        resumed =
+            advance 1 holding
+
+        shown : Maybe TurnPlayback.Playback -> Bool
+        shown =
+            Maybe.map (TurnPlayback.visibleCollisions >> List.isEmpty >> not)
+                >> Maybe.withDefault False
+
+        audio : Maybe TurnPlayback.Playback -> Maybe TurnPlayback.Playback -> List Audio.Event
+        audio from to =
+            PlaybackPresentation.audioBetween { before = from, after = to }
+    in
+    if
+        not (shown before)
+            && TurnPlayback.movingPositions approaching
+            == [ { unitId = opponents.firstUnitId, position = { x = 0.0625, y = 0 } } ]
+            && List.isEmpty (TurnPlayback.movingPositions concealedApproach)
+            && List.isEmpty (TurnPlayback.movingPositions arrived)
+            && List.isEmpty (audio before approaching)
+            && shown arrived
+            && shown holding
+            && not (shown resumed)
+            && audio before arrived
+            == [ Audio.movementCollision ]
+            && List.isEmpty (audio arrived holding)
+            && List.isEmpty (audio holding resumed)
+    then
+        []
+
+    else
+        [ "collision holds at the arrival for 350ms and plays the thud once" ]
+
+
 continuousMovementChecks : TurnPlayback.Frame -> List String
 continuousMovementChecks template =
     let
@@ -646,33 +749,62 @@ continuousMovementChecks template =
 
         voices : Maybe TurnPlayback.Playback -> List Audio.MovementSound
         voices playback =
-            PlaybackPresentation.movingUnits { playback = playback, paused = False, camera = Nothing, skipLossDialogs = True }
+            PlaybackPresentation.movingUnits { playback = playback, paused = False, skipLossDialogs = True }
                 |> List.map .sound
 
         incremental : Maybe TurnPlayback.Playback
         incremental =
             animation |> advance 210 |> advance 420 |> advance 420
 
-        held : Camera.Camera
-        held =
+        saved : Camera.Camera
+        saved =
             { zoom = 5, offset = { x = 800, y = 800 } }
 
-        camera : Maybe PlaybackPresentation.PlaybackCamera -> TurnPlayback.Playback -> PlaybackPresentation.PlaybackCamera
-        camera previous playback =
+        viewport : Camera.Viewport
+        viewport =
+            { size = { x = 800, y = 600 }, bottomInset = 96, rightInset = 200 }
+
+        map : Map.Map
+        map =
+            Map.fromFeatures { width = 20, height = 20, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [] }
+
+        camera : Float -> Maybe PlaybackPresentation.PlaybackCamera -> TurnPlayback.Playback -> PlaybackPresentation.PlaybackCamera
+        camera delta previous playback =
             PlaybackPresentation.frameCamera
-                { size = { x = 800, y = 600 }, bottomInset = 0, rightInset = 200 }
-                (Map.fromFeatures { width = 20, height = 20, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [] })
-                held
+                { viewport = viewport
+                , map = map
+                , projection = Camera.Overhead
+                , saved = saved
+                , deltaMs = delta
+                }
                 playback
                 previous
 
         initialCamera : Maybe PlaybackPresentation.PlaybackCamera
         initialCamera =
-            animation |> Maybe.map (camera Nothing)
+            animation |> Maybe.map (camera 0 Nothing)
 
         travelingCamera : Maybe PlaybackPresentation.PlaybackCamera
         travelingCamera =
-            advance 630 animation |> Maybe.map (camera (Just { camera = held, remainingPanMs = 0 }))
+            advance 630 animation |> Maybe.map (camera 630 initialCamera)
+
+        fitsSubjects : Float -> Bool
+        fitsSubjects elapsed =
+            case advance elapsed animation of
+                Just playback ->
+                    let
+                        framed : PlaybackPresentation.PlaybackCamera
+                        framed =
+                            camera elapsed initialCamera playback
+
+                        subjects : List Point
+                        subjects =
+                            TurnPlayback.focusPositions playback
+                    in
+                    List.all (tilesClearPanels viewport map subjects) [ framed.camera, framed.target ]
+
+                Nothing ->
+                    False
 
         barrier : TurnPlayback.Frame
         barrier =
@@ -760,10 +892,20 @@ continuousMovementChecks template =
             ((List.map voices samples == [ [ Audio.Truck, Audio.Tank ], [ Audio.Truck, Audio.Tank ], [ Audio.Tank ] ]) && List.isEmpty (voices (advance 1260 animation)))
         , expect "camera anticipates the full currently visible route"
             (animation |> Maybe.map (TurnPlayback.cameraPositions >> List.member { x = 2, y = 0 }) |> Maybe.withDefault False)
-        , expect "initial camera positioning settles before starting movement"
-            (Maybe.map .remainingPanMs initialCamera == Just PlaybackPresentation.cameraPanDurationMs)
-        , expect "camera adjustments during travel preserve the movement clock"
-            ((Maybe.map .remainingPanMs travelingCamera == Just 0) && (Maybe.map .camera travelingCamera /= Just held))
+        , expect "movement starts while the camera still has room to pan and zoom"
+            (case ( initialCamera, travelingCamera ) of
+                ( Just initial, Just traveling ) ->
+                    (initial.camera /= initial.target)
+                        && (traveling.camera /= initial.camera)
+                        && (traveling.camera /= traveling.target)
+                        && (traveling.camera.zoom < initial.camera.zoom)
+                        && (voices (advance 630 animation) == [ Audio.Truck, Audio.Tank ])
+
+                _ ->
+                    False
+            )
+        , expect "every sampled camera frame keeps moving tiles clear of screen edges and panels"
+            (List.all (toFloat >> fitsSubjects) (List.range 0 1259))
         , expect "future movement across a feedback pause does not start early"
             (not (List.member Audio.Tank (voices beforeBarrier)))
         , expect "a unit disappearing and reappearing does not interpolate through fog"
@@ -809,9 +951,9 @@ movementAudioChecks before after =
             in
             { prepared | elapsed = 90 }
 
-        state : { playback : Maybe TurnPlayback.Playback, paused : Bool, camera : Maybe PlaybackPresentation.PlaybackCamera, skipLossDialogs : Bool }
+        state : { playback : Maybe TurnPlayback.Playback, paused : Bool, skipLossDialogs : Bool }
         state =
-            { playback = Just animation, paused = False, camera = Nothing, skipLossDialogs = False }
+            { playback = Just animation, paused = False, skipLossDialogs = False }
 
         infantryFrame : TurnPlayback.Frame -> TurnPlayback.Frame
         infantryFrame frame =
@@ -823,7 +965,7 @@ movementAudioChecks before after =
                 |> setPlaybackCurrent (infantryFrame current)
                 |> setPlaybackRemaining [ infantryFrame next ]
 
-        infantryState : { playback : Maybe TurnPlayback.Playback, paused : Bool, camera : Maybe PlaybackPresentation.PlaybackCamera, skipLossDialogs : Bool }
+        infantryState : { playback : Maybe TurnPlayback.Playback, paused : Bool, skipLossDialogs : Bool }
         infantryState =
             { state | playback = Just infantryAnimation }
 
@@ -857,7 +999,6 @@ movementAudioChecks before after =
             (List.length (PlaybackPresentation.movingUnits { infantryState | playback = Just (infantryAnimation |> setPlaybackCurrent (infantryFrame hidden.current)) }) == 1)
         , expect "movement voices retain unit identity" (List.map .unitId vehicles == List.map .id current.units)
         , expect "replay pause silences movement" (List.isEmpty (PlaybackPresentation.movingUnits { state | paused = True }))
-        , expect "camera pan silences movement" (List.isEmpty (PlaybackPresentation.movingUnits { state | camera = Just { camera = { offset = { x = 0, y = 0 }, zoom = 1 }, remainingPanMs = 10 } }))
         , expect "finished playback silences movement" (List.isEmpty (PlaybackPresentation.movingUnits { state | playback = Nothing }))
         , expect "stationary vehicles stay silent" (List.isEmpty (PlaybackPresentation.movingUnits { state | playback = Just (animation |> setPlaybackRemaining [ current ]) }))
         , expect "units entering sight have no sound before their visible movement" (List.map .sound (PlaybackPresentation.movingUnits { state | playback = Just hidden }) == [ Audio.Truck ])
@@ -1139,6 +1280,7 @@ transportPlaybackChecks passengerId truckId =
                     { depots = []
                     , supplyCrates = []
                     , departures = []
+                    , collisions = []
                     , losses = []
                     , sabotages = []
                     , indirectImpacts = []
@@ -1150,6 +1292,7 @@ transportPlaybackChecks passengerId truckId =
                     [ { depots = []
                       , supplyCrates = []
                       , departures = []
+                      , collisions = []
                       , losses = []
                       , sabotages = []
                       , indirectImpacts = []
@@ -1263,6 +1406,7 @@ spriteFacingChecks id =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , collisions = []
             , losses = []
             , sabotages = []
             , indirectImpacts = []
@@ -1403,6 +1547,7 @@ combatPlaybackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , collisions = []
             , losses = []
             , sabotages = []
             , indirectImpacts = []
@@ -2203,7 +2348,6 @@ combatPlaybackChecks first second =
                 firingState :
                     { playback : Maybe TurnPlayback.Playback
                     , paused : Bool
-                    , camera : Maybe PlaybackPresentation.PlaybackCamera
                     }
                 firingState =
                     { playback =
@@ -2211,7 +2355,6 @@ combatPlaybackChecks first second =
                             |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
                             |> Maybe.andThen (TurnPlayback.tick 1300 >> Tuple.first)
                     , paused = False
-                    , camera = Nothing
                     }
 
                 flankingReturn : Shot
@@ -2365,13 +2508,9 @@ combatPlaybackChecks first second =
                         && List.map .unitId (firingAt 3075 [ lethalInfantryShot, infantryReturnShot ])
                         == [ first ]
                     )
-                ++ expect "map peeks, playback pause, camera holds and leaving combat silence infantry"
+                ++ expect "map peeks, playback pause and leaving combat silence infantry"
                     (not (List.isEmpty (PlaybackPresentation.firingInfantry firingState))
                         && List.isEmpty (PlaybackPresentation.firingInfantry { firingState | paused = True })
-                        && List.isEmpty
-                            (PlaybackPresentation.firingInfantry
-                                { firingState | camera = Just { camera = { offset = { x = 0, y = 0 }, zoom = 1 }, remainingPanMs = 10 } }
-                            )
                         && List.isEmpty (PlaybackPresentation.firingInfantry { firingState | playback = Nothing })
                         && (panelForShots [ infantryShot ]
                                 |> Maybe.map peekFiring
@@ -2756,7 +2895,7 @@ combatPlaybackChecks first second =
                                 )
                             , expect "combat retains visible participants without requiring enemy resources"
                                 (Maybe.map (.attacker >> .id) (TurnPlayback.combat focus) == Just first && Maybe.map (.target >> .id) (TurnPlayback.combat focus) == Just second)
-                            , expect "automatic closing waits for two impacts, camera settling, and a half-second pause"
+                            , expect "automatic closing waits for two impacts and a half-second pause"
                                 (not (readyAt Kind.Tank 3419 TurnPlayback.CardVisible 8) && readyAt Kind.Tank 3420 TurnPlayback.CardVisible 8)
                             , expect "automatic closing lets all four casualty animations finish"
                                 (not (readyAt Kind.Tank 3659 TurnPlayback.CardVisible 0) && readyAt Kind.Tank 3660 TurnPlayback.CardVisible 0)
@@ -3219,6 +3358,7 @@ combatDeathChecks first second =
                 before =
                     { units = [ attacker, target, other ]
                     , departures = []
+                    , collisions = []
                     , losses = []
                     , sabotages = []
                     , indirectImpacts = []
@@ -3818,6 +3958,7 @@ deathPlaybackChecks id =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , collisions = []
             , losses = [ { unit = alive, cause = TurnPlayback.SuppliesExhausted } ]
             , sabotages = []
             , indirectImpacts = []
@@ -3836,6 +3977,7 @@ deathPlaybackChecks id =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , collisions = []
             , losses = []
             , sabotages = []
             , indirectImpacts = []
@@ -4067,6 +4209,7 @@ deathFocusChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , collisions = []
             , losses = [ { unit = Unit.setDestroyed False dead, cause = TurnPlayback.SuppliesExhausted } ]
             , sabotages = []
             , indirectImpacts = []
@@ -4534,6 +4677,7 @@ carrierLossEventChecks first second =
                     { units = [ passenger, independent, truck, otherPassenger ]
                     , durationMs = 1400
                     , departures = []
+                    , collisions = []
                     , losses =
                         [ { unit = Unit.setDestroyed False passenger, cause = TurnPlayback.CarrierLost truck TurnPlayback.SuppliesExhausted }
                         , { unit = Unit.setDestroyed False independent, cause = TurnPlayback.SuppliesExhausted }
@@ -4655,6 +4799,32 @@ carrierLossEventChecks first second =
             [ "could not construct carrier loss fixture IDs" ]
 
 
+tilesClearPanels : Camera.Viewport -> Map.Map -> List Point -> Camera.Camera -> Bool
+tilesClearPanels view map positions camera =
+    let
+        tilePixels : Float
+        tilePixels =
+            min (0.92 * view.size.x) (0.98 * view.size.y) * camera.zoom / toFloat map.width
+
+        tileIsClear : Point -> Bool
+        tileIsClear position =
+            let
+                left : Float
+                left =
+                    view.size.x / 2 + camera.offset.x + (position.x - toFloat map.width / 2) * tilePixels
+
+                top : Float
+                top =
+                    view.size.y / 2 + camera.offset.y + (position.y - toFloat map.height / 2) * tilePixels
+            in
+            (left >= -0.001)
+                && (left + tilePixels <= view.size.x - view.rightInset + 0.001)
+                && (top >= -0.001)
+                && (top + tilePixels <= view.size.y - view.bottomInset + 0.001)
+    in
+    List.all tileIsClear positions
+
+
 cameraChecks : List String
 cameraChecks =
     let
@@ -4696,7 +4866,7 @@ cameraChecks =
 
         panned : Camera.Camera
         panned =
-            Camera.frame viewport map offscreen zoomed
+            Camera.frame Camera.Overhead viewport map offscreen zoomed
 
         group : List Point
         group =
@@ -4704,7 +4874,7 @@ cameraChecks =
 
         fitted : Camera.Camera
         fitted =
-            Camera.frame viewport map group zoomed
+            Camera.frame Camera.Overhead viewport map group zoomed
 
         southernUnit : List Point
         southernUnit =
@@ -4712,19 +4882,19 @@ cameraChecks =
 
         aboveControls : Camera.Camera
         aboveControls =
-            Camera.frame withControls map southernUnit overview
+            Camera.frame Camera.Overhead withControls map southernUnit overview
 
         fittedAboveControls : Camera.Camera
         fittedAboveControls =
-            Camera.frame withControls map group zoomed
+            Camera.frame Camera.Overhead withControls map group zoomed
 
         besideInspector : Camera.Camera
         besideInspector =
-            Camera.frame withInspector map offscreen zoomed
+            Camera.frame Camera.Overhead withInspector map offscreen zoomed
 
         fittedBesideInspector : Camera.Camera
         fittedBesideInspector =
-            Camera.frame withInspector map group zoomed
+            Camera.frame Camera.Overhead withInspector map group zoomed
 
         narrowViewport : Camera.Viewport
         narrowViewport =
@@ -4738,32 +4908,7 @@ cameraChecks =
 
         narrowFit : Camera.Camera
         narrowFit =
-            Camera.frame narrowViewport map group zoomed
-
-        tilesClearPanels : Camera.Viewport -> List Point -> Camera.Camera -> Bool
-        tilesClearPanels view positions camera =
-            let
-                tilePixels : Float
-                tilePixels =
-                    min (0.92 * view.size.x) (0.98 * view.size.y) * camera.zoom / 17
-
-                tileIsClear : Point -> Bool
-                tileIsClear position =
-                    let
-                        left : Float
-                        left =
-                            view.size.x / 2 + camera.offset.x + (position.x - 8.5) * tilePixels
-
-                        top : Float
-                        top =
-                            view.size.y / 2 + camera.offset.y + (position.y - 8.5) * tilePixels
-                    in
-                    (left >= 0)
-                        && (left + tilePixels <= view.size.x - view.rightInset)
-                        && (top >= 0)
-                        && (top + tilePixels <= view.size.y - view.bottomInset)
-            in
-            List.all tileIsClear positions
+            Camera.frame Camera.Overhead narrowViewport map group zoomed
 
         expect : String -> Bool -> List String
         expect name passed =
@@ -4775,19 +4920,19 @@ cameraChecks =
     in
     List.concat
         [ expect "overview stays fixed as subjects switch between opposite map corners"
-            (Camera.frame viewport map group overview == overview)
+            (Camera.frame Camera.Overhead viewport map group overview == overview)
         , expect "visible unit does not recenter a zoomed view"
-            (Camera.frame viewport map [ { x = 9, y = 8 } ] zoomed == zoomed)
+            (Camera.frame Camera.Overhead viewport map [ { x = 9, y = 8 } ] zoomed == zoomed)
         , expect "offscreen unit triggers a pan without unnecessary zoom"
             (panned.offset /= zoomed.offset && panned.zoom == zoomed.zoom)
         , expect "new visible subject retains the previous playback pan"
-            (Camera.frame viewport map [ { x = 15, y = 1 } ] panned == panned)
+            (Camera.frame Camera.Overhead viewport map [ { x = 15, y = 1 } ] panned == panned)
         , expect "idle frames retain the last camera"
-            (Camera.frame viewport map [] panned == panned)
+            (Camera.frame Camera.Overhead viewport map [] panned == panned)
         , expect "distant simultaneous subjects fit together without repeated reframing"
-            (fitted.zoom < zoomed.zoom && Camera.frame viewport map group fitted == fitted)
+            (fitted.zoom < zoomed.zoom && Camera.frame Camera.Overhead viewport map group fitted == fitted)
         , expect "narrow viewport uses its horizontal bounds"
-            (Camera.frame
+            (Camera.frame Camera.Overhead
                 { size =
                     { x = 320
                     , y = 900
@@ -4801,29 +4946,29 @@ cameraChecks =
                 /= zoomed
             )
         , expect "a southern tile covered by controls pans into the clear area without changing zoom"
-            (not (tilesClearPanels withControls southernUnit overview)
-                && tilesClearPanels withControls southernUnit aboveControls
+            (not (tilesClearPanels withControls map southernUnit overview)
+                && tilesClearPanels withControls map southernUnit aboveControls
                 && (aboveControls.zoom == overview.zoom)
             )
         , expect "an unobscured tile retains the view with controls present"
-            (Camera.frame withControls map [ { x = 8, y = 8 } ] overview == overview)
+            (Camera.frame Camera.Overhead withControls map [ { x = 8, y = 8 } ] overview == overview)
         , expect "a pan above controls settles without repeated reframing"
-            (Camera.frame withControls map southernUnit aboveControls == aboveControls)
+            (Camera.frame Camera.Overhead withControls map southernUnit aboveControls == aboveControls)
         , expect "simultaneous subjects fit above the controls and beside the right panel"
-            (tilesClearPanels withControls group fittedAboveControls
-                && (Camera.frame withControls map group fittedAboveControls == fittedAboveControls)
+            (tilesClearPanels withControls map group fittedAboveControls
+                && (Camera.frame Camera.Overhead withControls map group fittedAboveControls == fittedAboveControls)
             )
         , expect "wrapped controls and a narrow battlefield keep every subject clear of both panels"
-            (tilesClearPanels narrowViewport group narrowFit
-                && (Camera.frame narrowViewport map group narrowFit == narrowFit)
+            (tilesClearPanels narrowViewport map group narrowFit
+                && (Camera.frame Camera.Overhead narrowViewport map group narrowFit == narrowFit)
             )
         , expect "an eastern subject pans clear of the inspector without unnecessary zoom"
-            (tilesClearPanels withInspector offscreen besideInspector
+            (tilesClearPanels withInspector map offscreen besideInspector
                 && (besideInspector.zoom == zoomed.zoom)
-                && (Camera.frame withInspector map offscreen besideInspector == besideInspector)
+                && (Camera.frame Camera.Overhead withInspector map offscreen besideInspector == besideInspector)
             )
         , expect "simultaneous subjects fit beside the inspector and keep the full viewport coordinate system"
-            (tilesClearPanels withInspector group fittedBesideInspector
-                && (Camera.frame withInspector map group fittedBesideInspector == fittedBesideInspector)
+            (tilesClearPanels withInspector map group fittedBesideInspector
+                && (Camera.frame Camera.Overhead withInspector map group fittedBesideInspector == fittedBesideInspector)
             )
         ]

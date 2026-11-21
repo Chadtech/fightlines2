@@ -6,6 +6,12 @@ are retained locally and ignored by Git; back them up separately. The scripts in
 `tools/` and `make sprites` can regenerate exports when the local `artwork/`
 directory is available. A fresh clone does not include that directory.
 
+- `collision-burst-anime-v1.png`: transparent 640 × 320 collision effect,
+  downscaled from the approved built-in imagegen illustration. The battlefield
+  centers its painted flash between the units and aligns the two-tile image
+  with their contact axis. The original PNG is in
+  `artwork/effects/collision-burst-v1/`.
+
 - `fightlines-logo-v1.png`: transparent 2146 x 732 home-page wordmark, created
   with built-in imagegen. Tall italic ivory lettering sits over a thick yellow
   underline, with a flush g descender and a small explosion at the right.

@@ -305,6 +305,7 @@ checks lobbyId friendlyId enemyId shared =
             , depots = []
             , supplyCrates = []
             , departures = []
+            , collisions = []
             , losses = []
             , sabotages = []
             , indirectImpacts = []
@@ -318,7 +319,8 @@ checks lobbyId friendlyId enemyId shared =
                 { zoom = 1.25
                 , offset = { x = 50, y = -25 }
                 }
-            , remainingPanMs = 100
+            , target = { zoom = 1.2, offset = { x = 48, y = -24 } }
+            , pan = Just { from = { zoom = 1.5, offset = { x = 75, y = -30 } }, elapsedMs = 100 }
             }
 
         playbackResized : Bool
@@ -348,7 +350,8 @@ checks lobbyId friendlyId enemyId shared =
                                 { zoom = 1
                                 , offset = { x = 40, y = -20 }
                                 }
-                            , remainingPanMs = mobileCamera.remainingPanMs
+                            , target = { zoom = 1, offset = { x = 40, y = -20 } }
+                            , pan = Just { from = { zoom = 1, offset = { x = 50, y = -20 } }, elapsedMs = 100 }
                             }
                     in
                     case resized.currentTurn.phase of
@@ -479,7 +482,7 @@ checks lobbyId friendlyId enemyId shared =
                 expectedCamera : Camera.Camera
                 expectedCamera =
                     BattlefieldNavigation.camera before.navigation
-                        |> Camera.centerOn viewport before.map exit
+                        |> Camera.centerOn Camera.Overhead viewport before.map exit
             in
             case TurnLifecycle.selection after.currentTurn.phase of
                 Just (UnitSelection infantry) ->
@@ -576,6 +579,7 @@ checks lobbyId friendlyId enemyId shared =
                             [ { durationMs = 0
                               , units = []
                               , departures = []
+                              , collisions = []
                               , losses = []
                               , sabotages = []
                               , indirectImpacts = []

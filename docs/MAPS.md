@@ -206,10 +206,12 @@ gun and trucks near the base. Depot squares stay clear.
   starting armies, wooded shores, mountain defenses, and winding roads. Narrow
   land routes connect the bases around the water, while scattered supply and
   fuel depots stretch logistics across the shoreline.
-- **Three Crossings**: a mirrored green river battlefield showcasing animated,
-  impassable water. Northern and southern causeways and a central island crossing
-  are the only land routes between banks. Each crossing has a neutral supply
-  depot; home fuel depots support flanking and transport. Forests
+- **Three Crossings**: a green river battlefield with red starting in the
+  northwest and blue in the southeast. The terrain has 180° rotational symmetry,
+  and each starting corner has a fuel depot. Small mountain clusters sit along
+  the southwest and northeast edges.
+  Northern and southern causeways and a central island crossing are the only land
+  routes between banks. Each crossing has a neutral supply depot. Forests
   conceal the bank approaches, and hills overlook the crossings. Rocky banks
   surround the river, with mirrored beach coves and sandy island corners. Each player
   commands three infantry, two tanks, a field gun, and two trucks.

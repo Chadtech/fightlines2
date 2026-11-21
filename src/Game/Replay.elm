@@ -27,6 +27,7 @@ import Audio
 import Browser.Dom
 import Effect as E exposing (Eff)
 import Error
+import Features
 import Game.AnimationFrame as AnimationFrame
 import Game.Archive as Archive
 import Game.Assets as Assets
@@ -368,8 +369,7 @@ movingUnits model =
         Playing playing ->
             PlaybackPresentation.movingUnits
                 { playback = Just playing.animation
-                , paused = playing.paused
-                , camera = playing.camera
+                , paused = playing.paused || (model.viewport == Nothing)
                 , skipLossDialogs = model.skipUnitLossDialogs
                 }
 
@@ -384,7 +384,6 @@ firingInfantry model =
             PlaybackPresentation.firingInfantry
                 { playback = Just playing.animation
                 , paused = playing.paused
-                , camera = playing.camera
                 }
 
         Ready ->
@@ -425,7 +424,7 @@ startPlayback model =
                         )
                     )
             )
-                |> updateCamera
+                |> updateCamera 0
                 |> E.withOut
 
         Ready ->
@@ -614,7 +613,7 @@ navigate change model =
             else
                 model
                     |> mapNavigation (change >> BattlefieldNavigation.finishReturn)
-                    |> updateCamera
+                    |> updateCamera 0
 
         Ready ->
             model
@@ -774,7 +773,7 @@ continueCombat model =
                             )
                     )
                         |> applyFrame next.frame
-                        |> updateCamera
+                        |> updateCamera 0
                         |> updateLossDialog (activeDialogHtmlId model)
 
                 Nothing ->
@@ -802,36 +801,12 @@ setCombatMapView mapView model =
             model
 
 
-cameraSettling : Maybe PlaybackPresentation.PlaybackCamera -> Bool
-cameraSettling camera =
-    (camera |> Maybe.map .remainingPanMs |> Maybe.withDefault 0) > 0
-
-
 advancePlayback : Float -> Model -> ( Model, Eff Msg )
 advancePlayback delta model =
     case model.timeline of
         Playing playing ->
             if playing.paused then
                 model
-                    |> E.withOut
-
-            else if cameraSettling playing.camera then
-                (model
-                    |> setTimeline
-                        (Playing
-                            (playing
-                                |> setPlaybackCamera
-                                    (Maybe.map
-                                        (\held ->
-                                            held
-                                                |> PlaybackPresentation.setRemainingPanMs
-                                                    (max 0 (held.remainingPanMs - delta))
-                                        )
-                                        playing.camera
-                                    )
-                            )
-                        )
-                )
                     |> E.withOut
 
             else
@@ -866,13 +841,13 @@ advancePlayback delta model =
                                         )
                                 )
                                     |> applyFrame frame
+                                    |> updateCamera delta
                         in
                         if PlaybackPresentation.readyToAutomaticallyClose model.automaticallyCloseCombatTheater animation then
                             continueCombat updated
 
                         else
                             updated
-                                |> updateCamera
                                 |> updateLossDialog (activeDialogHtmlId model)
 
         Ready ->
@@ -880,8 +855,8 @@ advancePlayback delta model =
                 |> E.withOut
 
 
-updateCamera : Model -> Model
-updateCamera model =
+updateCamera : Float -> Model -> Model
+updateCamera deltaMs model =
     case ( model.timeline, model.viewport ) of
         ( Playing playing, Just viewport ) ->
             if playing.paused then
@@ -895,9 +870,12 @@ updateCamera model =
                                 |> setPlaybackCamera
                                     (Just
                                         (PlaybackPresentation.frameCamera
-                                            viewport
-                                            model.battlefield.map
-                                            (BattlefieldNavigation.camera model.navigation)
+                                            { viewport = viewport
+                                            , map = model.battlefield.map
+                                            , projection = Battlefield.projection model.shared.features
+                                            , saved = BattlefieldNavigation.camera model.navigation
+                                            , deltaMs = deltaMs
+                                            }
                                             playing.animation
                                             playing.camera
                                         )
@@ -1146,7 +1124,7 @@ update msg model =
                                 )
                             )
                     )
-                        |> updateCamera
+                        |> updateCamera 0
                         |> E.withOut
 
                 Err error ->
@@ -1157,11 +1135,19 @@ update msg model =
                         |> E.withOut
 
         AnimationTimerElapsed ->
+            let
+                collisionHeld : Bool
+                collisionHeld =
+                    playback model
+                        |> Maybe.map TurnPlayback.collisionInProgress
+                        |> Maybe.withDefault False
+            in
             if
                 List.any
                     (\unit -> Unit.onMap unit && Unit.isDying unit)
                     model.battlefield.units
                     || ((playback model |> Maybe.andThen TurnPlayback.activeEncounter) /= Nothing)
+                    || collisionHeld
             then
                 model
                     |> E.withOut
@@ -1211,7 +1197,7 @@ update msg model =
                                         )
                                     )
                             )
-                                |> updateCamera
+                                |> updateCamera 0
                                 |> updateLossDialog (activeDialogHtmlId model)
 
                         Ready ->
@@ -1432,11 +1418,11 @@ battlefieldPresentation model =
 battlefieldView : Model -> Html Msg
 battlefieldView model =
     let
-        heldCamera : Maybe Camera.Camera
+        heldCamera : Maybe PlaybackPresentation.PlaybackCamera
         heldCamera =
             case model.timeline of
                 Playing playing ->
-                    playing.camera |> Maybe.map .camera
+                    playing.camera
 
                 Ready ->
                     Nothing
@@ -1465,6 +1451,7 @@ battlefieldView model =
             Battlefield.viewportAttributes
                 { dragging = BattlefieldNavigation.active model.navigation
                 , interaction = Battlefield.interaction presentation
+                , crtEffect = Features.enabled Features.CrtBattlefield model.shared.features
                 }
                 |> List.map (A.map BattlefieldMsg)
     in
@@ -1474,9 +1461,12 @@ battlefieldView model =
             { camera =
                 Maybe.withDefault
                     (BattlefieldNavigation.camera model.navigation)
-                    heldCamera
+                    (Maybe.map .camera heldCamera)
+            , map = model.battlefield.map
+            , projection = Battlefield.projection model.shared.features
+            , reducedMotionCamera = Maybe.map .target heldCamera
             , transitioning =
-                (heldCamera /= Nothing) || BattlefieldNavigation.returning model.navigation
+                (heldCamera == Nothing) && BattlefieldNavigation.returning model.navigation
             }
             [ Battlefield.toSvg args
                 |> H.fromUnstyled
@@ -1868,7 +1858,9 @@ subscriptions model =
     Sub.batch
         [ ScreenSize.subscription WindowResized
         , Time.every 400 (\_ -> AnimationTimerElapsed)
-        , PlaybackPresentation.subscriptions (playback model)
+        , PlaybackPresentation.subscriptions
+            (model.viewport /= Nothing)
+            (playback model)
             |> Sub.map PlaybackMsg
         , BattlefieldNavigation.subscriptions model.navigation
             |> Sub.map NavigationMsg

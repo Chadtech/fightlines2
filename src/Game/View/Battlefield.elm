@@ -17,6 +17,7 @@ module Game.View.Battlefield exposing
     , interaction
     , navigationControls
     , pointerPressedDecoder
+    , projection
     , toSvg
     , touchInputDecoder
     , viewportAttributes
@@ -27,6 +28,7 @@ import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Api.Enum.SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind
 import Css
+import Features
 import Game.AnimationFrame as AnimationFrame
 import Game.ArmyStyle exposing (ArmyStyle)
 import Game.BattlefieldNavigation as Navigation exposing (TouchInput)
@@ -481,6 +483,7 @@ page messages where the viewport is assembled.
 viewportAttributes :
     { dragging : Bool
     , interaction : Interaction
+    , crtEffect : Bool
     }
     -> List (H.Attribute Msg)
 viewportAttributes view =
@@ -513,6 +516,7 @@ viewportAttributes view =
         , S.touchActionNone
         , S.containerSize
         , cursorStyle
+        , S.when view.crtEffect [ crtScreen ]
         ]
     , HtmlEvents.on "touchstart" (Decode.map TouchInputReceived touchInputDecoder)
     , HtmlEvents.on "touchmove" (Decode.map TouchInputReceived touchInputDecoder)
@@ -526,16 +530,65 @@ viewportAttributes view =
     ]
 
 
+{-| Keep the scanlines and phosphor stripes fixed to the screen as the camera
+moves. A static overlay also avoids flicker and leaves the SVG's hit areas intact.
+-}
+crtScreen : Css.Style
+crtScreen =
+    let
+        vignette : String
+        vignette =
+            "radial-gradient(ellipse, transparent 45%, "
+                ++ S.blackStr
+                ++ "52 82%, "
+                ++ S.blackStr
+                ++ "b3 100%)"
+
+        glassGlow : String
+        glassGlow =
+            "radial-gradient(ellipse at 48% 23%, "
+                ++ S.gray5Str
+                ++ "16, transparent 60%)"
+
+        scanlines : String
+        scanlines =
+            "repeating-linear-gradient(0deg, "
+                ++ S.blackStr
+                ++ "40 0 1px, transparent 1px 4px)"
+
+        phosphorStripes : String
+        phosphorStripes =
+            "repeating-linear-gradient(90deg, "
+                ++ S.red1Str
+                ++ "16 0 1px, "
+                ++ S.green1Str
+                ++ "16 1px 2px, "
+                ++ S.blue1Str
+                ++ "16 2px 3px)"
+    in
+    Css.after
+        [ S.contentEmpty
+        , S.absolute
+        , S.inset0
+        , S.pointerEventsNone
+        , Css.property "background-image"
+            (String.join ", " [ vignette, glassGlow, scanlines, phosphorStripes ])
+        ]
+
+
 {-| Size the board at the camera's zoom so WebKit paints the SVG at its
 displayed size. The viewport centers the board before applying the pan offset.
 -}
 camera :
     { camera : Camera
+    , map : Map
+    , projection : Camera.Projection
+    , reducedMotionCamera : Maybe Camera
     , transitioning : Bool
     }
     -> List (Html Msg)
     -> Html Msg
-camera view =
+camera view children =
     let
         durationMs : Float
         durationMs =
@@ -544,20 +597,70 @@ camera view =
 
             else
                 0
+
+        reducedMotionCamera : Camera
+        reducedMotionCamera =
+            Maybe.withDefault view.camera view.reducedMotionCamera
+
+        cameraStyle : String -> Camera -> String
+        cameraStyle prefix positioned =
+            String.concat
+                [ prefix
+                , "-width:"
+                , Camera.boardWidth view.projection view.map positioned
+                , ";"
+                , prefix
+                , "-left:"
+                , String.fromFloat positioned.offset.x
+                , "px;"
+                , prefix
+                , "-top:"
+                , String.fromFloat positioned.offset.y
+                , "px;"
+                ]
+
+        boardTransform : String
+        boardTransform =
+            Camera.boardTransform view.projection view.map
     in
     H.div
-        [ A.css
+        [ A.attribute "style"
+            (cameraStyle "--camera" view.camera
+                ++ cameraStyle "--reduced-motion-camera" reducedMotionCamera
+            )
+        , A.css
             [ S.relative
-            , S.widthValue (Camera.boardWidth view.camera)
+            , S.widthValue "var(--camera-width)"
             , S.shrink0
-            , S.leftValue (String.fromFloat view.camera.offset.x ++ "px")
-            , S.topValue (String.fromFloat view.camera.offset.y ++ "px")
+            , S.leftValue "var(--camera-left)"
+            , S.topValue "var(--camera-top)"
+            , S.when (view.projection == Camera.Tilted) [ S.containerInlineSize ]
             , Css.property "transition-property" "left, top, width"
             , Css.property "transition-timing-function" "ease-in-out"
             , Css.property "transition-duration" (String.fromFloat durationMs ++ "ms")
-            , S.reducedMotion [ Css.property "transition-duration" "0ms" ]
+            , S.reducedMotion
+                [ Css.property "transition-duration" "0ms"
+                , S.widthValue "var(--reduced-motion-camera-width)"
+                , S.leftValue "var(--reduced-motion-camera-left)"
+                , S.topValue "var(--reduced-motion-camera-top)"
+                ]
             ]
         ]
+        [ H.div
+            [ A.css
+                [ S.transform boardTransform ]
+            ]
+            children
+        ]
+
+
+projection : Features.Model -> Camera.Projection
+projection features =
+    if Features.enabled Features.BoardTilt features then
+        Camera.Tilted
+
+    else
+        Camera.Overhead
 
 
 navigationControls : Int -> Html Msg
@@ -1230,6 +1333,12 @@ toSvg args =
                 |> Maybe.map playbackImpacts
                 |> Maybe.withDefault (Svg.text "")
 
+        collisionOverlay : Svg Msg
+        collisionOverlay =
+            animation
+                |> Maybe.map (TurnPlayback.visibleCollisions >> CombatEffects.collisions)
+                |> Maybe.withDefault (Svg.text "")
+
         rotationOverlay : List (Svg Msg)
         rotationOverlay =
             case rotationPreview of
@@ -1303,6 +1412,7 @@ toSvg args =
             , List.filterMap depotStockView args.buildings
             , [ indirectFireOverlay ]
             , targetPreview
+            , [ collisionOverlay ]
             , spotlightOverlay
             , lossOverlay
             ]

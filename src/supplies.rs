@@ -18,7 +18,7 @@ pub struct SupplyRules {
 
 pub fn rules() -> SupplyRules {
     SupplyRules {
-        depot_capacity: 1024,
+        depot_capacity: 768,
         crate_capacity: 256,
         fuel_depot_capacity: 4096,
         fuel_drum_capacity: 1024,
@@ -409,7 +409,7 @@ mod tests {
     #[test]
     fn new_sources_use_resource_specific_capacities() {
         for (kind, depot_capacity, cargo_capacity) in [
-            (ResourceKind::Supply, 1024, 256),
+            (ResourceKind::Supply, 768, 256),
             (ResourceKind::Fuel, 4096, 1024),
         ] {
             let depot = ResourceStock::depot(kind);
@@ -864,7 +864,7 @@ mod tests {
                 .supply_cargo
                 .is_empty()
         );
-        assert_eq!(board.buildings.get_mut(0).fixture()?.stock.current, 747);
+        assert_eq!(board.buildings.first().fixture()?.stock.current, 491);
         Ok(())
     }
 
@@ -1045,7 +1045,7 @@ mod tests {
                 .supply_cargo
                 .is_empty()
         );
-        assert_eq!(board.buildings.first().fixture()?.stock.current, 1024);
+        assert_eq!(board.buildings.first().fixture()?.stock.current, 768);
         Ok(())
     }
 

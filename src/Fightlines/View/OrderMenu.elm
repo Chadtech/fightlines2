@@ -54,9 +54,23 @@ keyCommands map depots unit =
         |> KeyCmd.batch
 
 
-toHtml : List Building -> Map -> Camera -> Coordinate -> Unit -> Html Msg
-toHtml depots map camera position unit =
-    Lazy.lazy6 ordersView depots map camera.offset camera.zoom position unit
+toHtml :
+    Camera.Projection
+    -> List Building
+    -> Map
+    -> Camera
+    -> Coordinate
+    -> Unit
+    -> Html Msg
+toHtml projection depots map camera position unit =
+    Lazy.lazy7 ordersView
+        projection
+        depots
+        map
+        camera.offset
+        camera.zoom
+        position
+        unit
 
 
 {-| Order choices inside the mobile task rail, without a map anchor.
@@ -77,14 +91,15 @@ embedded depots map unit =
 
 
 ordersView :
-    List Building
+    Camera.Projection
+    -> List Building
     -> Map
     -> Point
     -> Float
     -> Coordinate
     -> Unit
     -> Html Msg
-ordersView depots map offset zoom position unit =
+ordersView projection depots map offset zoom position unit =
     let
         camera : Camera
         camera =
@@ -104,9 +119,11 @@ ordersView depots map offset zoom position unit =
 
         menuAnchor : { x : String, y : String }
         menuAnchor =
-            Camera.anchor camera
-                { x = toFloat horizontalEdge / toFloat map.width - 0.5
-                , y = (toFloat position.y + 0.5 - toFloat map.height / 2) / toFloat map.width
+            Camera.anchor projection
+                map
+                camera
+                { x = toFloat horizontalEdge
+                , y = toFloat position.y + 0.5
                 }
 
         horizontalOffset : String

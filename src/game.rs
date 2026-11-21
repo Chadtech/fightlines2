@@ -667,6 +667,7 @@ fn observed_board(
             losses: Vec::new(),
             sabotages: Vec::new(),
             departures: Vec::new(),
+            collisions: Vec::new(),
             indirect_impacts: Vec::new(),
             buildings: scenario.buildings.clone(),
             supply_crates: scenario.supply_crates.clone(),

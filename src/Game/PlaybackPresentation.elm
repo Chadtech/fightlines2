@@ -9,6 +9,7 @@ module Game.PlaybackPresentation exposing
     , encodePreference
     , firingInfantry
     , frameCamera
+    , limitZoom
     , loadPreference
     , loss
     , lossDialog
@@ -16,7 +17,6 @@ module Game.PlaybackPresentation exposing
     , movingUnits
     , ownerName
     , readyToAutomaticallyClose
-    , setRemainingPanMs
     , subscriptions
     )
 
@@ -40,6 +40,7 @@ import Html.Styled as H exposing (Html)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import LocalStorage exposing (LocalStorage)
+import Point exposing (Point)
 import Preference
 import Util.Html.Event as HtmlEvent
 import Util.List as ListUtil
@@ -54,7 +55,14 @@ import View.Dialog as Dialog exposing (Dialog)
 
 type alias PlaybackCamera =
     { camera : Camera
-    , remainingPanMs : Float
+    , target : Camera
+    , pan : Maybe Pan
+    }
+
+
+type alias Pan =
+    { from : Camera
+    , elapsedMs : Float
     }
 
 
@@ -91,9 +99,17 @@ preferenceKey preference =
 ----------------------------------------------------------------
 
 
-setRemainingPanMs : Float -> PlaybackCamera -> PlaybackCamera
-setRemainingPanMs remainingPanMs camera =
-    { camera | remainingPanMs = remainingPanMs }
+limitZoom : Float -> PlaybackCamera -> PlaybackCamera
+limitZoom maxZoom held =
+    let
+        limit : Camera -> Camera
+        limit camera =
+            Camera.zoomAt { x = 0, y = 0 } (min maxZoom camera.zoom) camera
+    in
+    { camera = limit held.camera
+    , target = limit held.target
+    , pan = Maybe.map (\pan -> { pan | from = limit pan.from }) held.pan
+    }
 
 
 cameraPanDurationMs : Float
@@ -101,8 +117,8 @@ cameraPanDurationMs =
     1200
 
 
-{-| Play once as the presentation clock crosses each shot or impact.
-An unchanged clock (pause or camera hold) cannot replay a cue. A new encounter
+{-| Play once when a collision hold starts or the theater clock crosses a cue.
+An unchanged clock during a pause cannot replay a cue. A new encounter
 or rewind starts a fresh interval instead of catching up old shots.
 -}
 audioBetween :
@@ -111,6 +127,24 @@ audioBetween :
     }
     -> List Audio.Event
 audioBetween transition =
+    let
+        holdingCollision : Maybe TurnPlayback.Playback -> Bool
+        holdingCollision =
+            Maybe.map TurnPlayback.collisionInProgress >> Maybe.withDefault False
+    in
+    if holdingCollision transition.after && not (holdingCollision transition.before) then
+        [ Audio.movementCollision ]
+
+    else
+        combatAudioBetween transition
+
+
+combatAudioBetween :
+    { before : Maybe TurnPlayback.Playback
+    , after : Maybe TurnPlayback.Playback
+    }
+    -> List Audio.Event
+combatAudioBetween transition =
     case
         ( transition.before
             |> Maybe.andThen TurnPlayback.panels
@@ -185,16 +219,10 @@ ambience state =
 firingInfantry :
     { playback : Maybe TurnPlayback.Playback
     , paused : Bool
-    , camera : Maybe PlaybackCamera
     }
     -> List Audio.FiringInfantry
 firingInfantry state =
-    let
-        cameraSettling : Bool
-        cameraSettling =
-            (state.camera |> Maybe.map .remainingPanMs |> Maybe.withDefault 0) > 0
-    in
-    if state.paused || cameraSettling then
+    if state.paused then
         []
 
     else
@@ -204,22 +232,17 @@ firingInfantry state =
             |> Maybe.withDefault []
 
 
-{-| Follow the same projected movement edges as the sprites. Camera holds,
-replay pauses and casualty dialogs freeze movement and therefore silence it.
+{-| Follow the same projected movement edges as the sprites. Replay pauses and
+casualty dialogs freeze movement and therefore silence it.
 -}
 movingUnits :
     { playback : Maybe TurnPlayback.Playback
     , paused : Bool
-    , camera : Maybe PlaybackCamera
     , skipLossDialogs : Bool
     }
     -> List Audio.MovingUnit
 movingUnits state =
     let
-        cameraSettling : Bool
-        cameraSettling =
-            (state.camera |> Maybe.map .remainingPanMs |> Maybe.withDefault 0) > 0
-
         lossHeld : Bool
         lossHeld =
             loss state.skipLossDialogs state.playback /= Nothing
@@ -241,49 +264,129 @@ movingUnits state =
 
         moving : TurnPlayback.Playback -> List Audio.MovingUnit
         moving animation =
-            let
-                ids : List UnitId
-                ids =
-                    TurnPlayback.movingPositions (Just animation) |> List.map .unitId
-            in
-            animation.current.units
-                |> List.filter (\unit -> List.member unit.id ids && not (Unit.isDying unit))
-                |> List.filterMap movementSound
+            if TurnPlayback.collisionInProgress animation then
+                []
+
+            else
+                let
+                    ids : List UnitId
+                    ids =
+                        TurnPlayback.movingPositions (Just animation) |> List.map .unitId
+                in
+                animation.current.units
+                    |> List.filter (\unit -> List.member unit.id ids && not (Unit.isDying unit))
+                    |> List.filterMap movementSound
     in
-    if state.paused || cameraSettling || lossHeld then
+    if state.paused || lossHeld then
         []
 
     else
         state.playback |> Maybe.map moving |> Maybe.withDefault []
 
 
-{-| Anticipate visible travel before it starts. Once moving, a pan runs alongside
-the animation so camera tracking cannot repeatedly interrupt movement voices.
+{-| Ease toward the visible route on the playback clock. Keep the subjects
+of the actual frame in view even when a new sighting changes the target.
 -}
-frameCamera : Camera.Viewport -> Map -> Camera -> TurnPlayback.Playback -> Maybe PlaybackCamera -> PlaybackCamera
-frameCamera viewport map saved animation held =
+frameCamera :
+    { viewport : Camera.Viewport
+    , map : Map
+    , projection : Camera.Projection
+    , saved : Camera
+    , deltaMs : Float
+    }
+    -> TurnPlayback.Playback
+    -> Maybe PlaybackCamera
+    -> PlaybackCamera
+frameCamera config animation held =
     let
         previous : Camera
         previous =
-            held |> Maybe.map .camera |> Maybe.withDefault saved
+            held |> Maybe.map .camera |> Maybe.withDefault config.saved
+
+        previousTarget : Camera
+        previousTarget =
+            held |> Maybe.map .target |> Maybe.withDefault config.saved
+
+        subjects : List Point
+        subjects =
+            TurnPlayback.focusPositions animation
+
+        keepSubjectsVisible : Camera -> Camera
+        keepSubjectsVisible =
+            Camera.keepVisible
+                config.projection
+                config.viewport
+                config.map
+                subjects
 
         target : Camera
         target =
-            Camera.frame viewport map (TurnPlayback.cameraPositions animation) previous
+            Camera.frame
+                config.projection
+                config.viewport
+                config.map
+                (TurnPlayback.cameraPositions animation)
+                previousTarget
 
-        holdForPan : Bool
-        holdForPan =
-            (held == Nothing) || List.isEmpty (TurnPlayback.movingPositions (Just animation))
-
-        remainingPanMs : Float
-        remainingPanMs =
-            if (target /= previous) && holdForPan then
-                cameraPanDurationMs
+        pan : Maybe Pan
+        pan =
+            if target == previousTarget then
+                held
+                    |> Maybe.andThen .pan
+                    |> Maybe.map
+                        (\current ->
+                            { current | elapsedMs = current.elapsedMs + config.deltaMs }
+                        )
 
             else
-                held |> Maybe.map .remainingPanMs |> Maybe.withDefault 0
+                Just { from = keepSubjectsVisible previous, elapsedMs = 0 }
+
+        activePan : Maybe Pan
+        activePan =
+            case pan of
+                Just current ->
+                    if current.elapsedMs < cameraPanDurationMs then
+                        Just current
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
+
+        camera : Camera
+        camera =
+            activePan
+                |> Maybe.map (easeCamera target)
+                |> Maybe.withDefault target
     in
-    { camera = target, remainingPanMs = remainingPanMs }
+    { camera = keepSubjectsVisible camera
+    , target = target
+    , pan = activePan
+    }
+
+
+easeCamera : Camera -> Pan -> Camera
+easeCamera target pan =
+    let
+        elapsed : Float
+        elapsed =
+            pan.elapsedMs / cameraPanDurationMs
+
+        progress : Float
+        progress =
+            elapsed * elapsed * (3 - 2 * elapsed)
+
+        interpolate : Float -> Float -> Float
+        interpolate from to =
+            from + (to - from) * progress
+    in
+    { offset =
+        { x = interpolate pan.from.offset.x target.offset.x
+        , y = interpolate pan.from.offset.y target.offset.y
+        }
+    , zoom = interpolate pan.from.zoom target.zoom
+    }
 
 
 loadPreference : Preference -> LocalStorage -> ( Bool, Maybe Error )
@@ -404,8 +507,8 @@ readyToAutomaticallyClose automaticallyClose animation =
 ----------------------------------------------------------------
 
 
-subscriptions : Maybe TurnPlayback.Playback -> Sub Msg
-subscriptions playback =
+subscriptions : Bool -> Maybe TurnPlayback.Playback -> Sub Msg
+subscriptions cameraReady playback =
     let
         panel : Maybe TurnPlayback.Panel
         panel =
@@ -413,7 +516,7 @@ subscriptions playback =
 
         animationFrames : Sub Msg
         animationFrames =
-            if playback /= Nothing then
+            if cameraReady && (playback /= Nothing) then
                 Browser.Events.onAnimationFrameDelta FrameElapsed
 
             else

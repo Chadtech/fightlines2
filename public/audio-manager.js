@@ -30,6 +30,7 @@ function createAudioManager(reportError = () => {}, assets = createAssetLoader()
       "audio/combat/impact-04.ogg",
       "audio/combat/impact-05.ogg",
     ],
+    movementCollision: ["audio/movement/collision-thud-v1.ogg"],
   });
   const movementFiles = Object.freeze({
     truck: "audio/movement/truck-volvo-6s.ogg",
@@ -469,7 +470,9 @@ function createAudioManager(reportError = () => {}, assets = createAssetLoader()
     // clicks when the player eventually interacts with or returns to the page.
     if (!context || document.hidden || muted) return;
     const combat = event.play === "tankFire" || event.play === "fieldGunFire" || event.play === "combatImpact";
-    const group = combat ? "combat" : "ui";
+    const collision = event.play === "movementCollision";
+    const group = combat || collision ? "combat" : "ui";
+    const channel = collision ? "movement" : combat ? "combat" : "interface";
     const files = sounds[event.play];
     const variant = nextVariants.get(event.play) ?? 0;
     const file = files[variant % files.length];
@@ -486,7 +489,7 @@ function createAudioManager(reportError = () => {}, assets = createAssetLoader()
       if (expired || cancelled || context.state !== "running") return;
       // UI click coalescing must never suppress distinct shots or impacts that
       // cross their timestamps on the same animation tick.
-      if (!combat && now - (lastPlayed.get(event.play) ?? -Infinity) < 40) return;
+      if (group === "ui" && now - (lastPlayed.get(event.play) ?? -Infinity) < 40) return;
       const groupSources = [...activeSources]
         .filter(([, activeGroup]) => activeGroup === group)
         .map(([source]) => source);
@@ -498,7 +501,7 @@ function createAudioManager(reportError = () => {}, assets = createAssetLoader()
       }
       const source = context.createBufferSource();
       source.buffer = buffer;
-      source.connect(channels[combat ? "combat" : "interface"]);
+      source.connect(channels[channel]);
       source.onended = () => {
         activeSources.delete(source);
         source.disconnect();
